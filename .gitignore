@@ -1,0 +1,77 @@
+# ─── Dependencies ───────────────────────────────────────────────
+node_modules/
+
+# ─── Build outputs ──────────────────────────────────────────────
+dist/
+build/
+*.js.map
+
+# ─── Environment & secrets ──────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+auth.json
+
+# ─── Cloud credentials ──────────────────────────────────────────
+.aws/
+.npmrc
+.netrc
+
+# ─── Lambda bundles ─────────────────────────────────────────────
+*.zip
+
+# ─── Terraform ──────────────────────────────────────────────────
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
+*.local.tfvars
+local.*
+
+# ─── AWS SAM (futuro) ───────────────────────────────────────────
+.aws-sam/
+samconfig.toml
+
+# ─── Coverage & test reports ────────────────────────────────────
+coverage/
+.nyc_output/
+junit.xml
+
+# ─── Logs ───────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+
+# ─── IDE ────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.history/
+.vscode-test/
+
+# ─── OS ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ─── Backups & temp ─────────────────────────────────────────────
+*.bak
+*.tmp
+*.orig
+/tmp/
+
+# ─── Profiling ──────────────────────────────────────────────────
+*.cpuprofile
+*.heapsnapshot
+
+# ─── AI/Dev meta (não vai para o repo público) ─────────────────
+.claude/
+.learnings/

@@ -1,0 +1,19 @@
+{
+  "name": "fiscal-digital",
+  "private": true,
+  "workspaces": [
+    "packages/engine",
+    "packages/collector",
+    "packages/analyzer",
+    "packages/publisher",
+    "packages/api"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
