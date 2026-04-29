@@ -14,8 +14,7 @@
     "@anthropic-ai/sdk": "^0.54.0",
     "@aws-sdk/client-dynamodb": "^3.0.0",
     "@aws-sdk/lib-dynamodb": "^3.0.0",
-    "@aws-sdk/client-secrets-manager": "^3.0.0",
-    "brutils": "^2.0.0"
+    "@aws-sdk/client-secrets-manager": "^3.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
