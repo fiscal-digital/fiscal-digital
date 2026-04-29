@@ -91,8 +91,12 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
       },
       {
-        # Resource = "*" obrigatório — secretsmanager:DescribeSecret não suporta resource-level em alguns contextos
-        Action   = ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"]
+        # GetResourcePolicy necessário para o data source do Terraform ler a secret
+        Action = [
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:GetResourcePolicy",
+        ]
         Effect   = "Allow"
         Resource = data.aws_secretsmanager_secret.anthropic.arn
         Sid      = "SecretsManagerRead"
@@ -117,6 +121,7 @@ resource "aws_iam_role_policy" "github_actions" {
           "lambda:DeleteEventSourceMapping",
           "lambda:GetEventSourceMapping",
           "lambda:ListEventSourceMappings",
+          "lambda:ListTags",
           "lambda:UpdateEventSourceMapping",
         ]
         Effect   = "Allow"
