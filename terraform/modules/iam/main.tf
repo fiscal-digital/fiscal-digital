@@ -53,15 +53,15 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
       },
       {
-        Sid    = "TerraformLock"
-        Effect = "Allow"
-        Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+        Sid      = "TerraformLock"
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
         Resource = "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/fiscal-digital-terraform-lock"
       },
       {
-        Sid    = "LambdaDeploy"
-        Effect = "Allow"
-        Action = ["lambda:UpdateFunctionCode", "lambda:GetFunction", "lambda:PublishVersion", "lambda:UpdateAlias"]
+        Sid      = "LambdaDeploy"
+        Effect   = "Allow"
+        Action   = ["lambda:UpdateFunctionCode", "lambda:GetFunction", "lambda:PublishVersion", "lambda:UpdateAlias"]
         Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:fiscal-digital-*"
       },
       {
@@ -90,6 +90,39 @@ resource "aws_iam_role_policy" "github_actions" {
           "arn:aws:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alias/fiscal-digital-*",
         ]
       },
+      {
+        # Resource = "*" obrigatório — secretsmanager:DescribeSecret não suporta resource-level em alguns contextos
+        Action   = ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"]
+        Effect   = "Allow"
+        Resource = data.aws_secretsmanager_secret.anthropic.arn
+        Sid      = "SecretsManagerRead"
+      },
+      {
+        # Resource = "*" obrigatório — iam:List* não suporta resource-level (ver IAM Action Reference)
+        Action   = ["iam:ListOpenIDConnectProviders"]
+        Effect   = "Allow"
+        Resource = "*"
+        Sid      = "IAMReadAccount"
+      },
+      {
+        # Resource = "*" obrigatório — kms:List* não suporta resource-level
+        Action   = ["kms:ListAliases", "kms:ListKeys"]
+        Effect   = "Allow"
+        Resource = "*"
+        Sid      = "KMSReadAccount"
+      },
+      {
+        Action = [
+          "lambda:CreateEventSourceMapping",
+          "lambda:DeleteEventSourceMapping",
+          "lambda:GetEventSourceMapping",
+          "lambda:ListEventSourceMappings",
+          "lambda:UpdateEventSourceMapping",
+        ]
+        Effect   = "Allow"
+        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:event-source-mapping:*"
+        Sid      = "LambdaEventSourceMappings"
+      },
     ]
   })
 }
@@ -112,8 +145,8 @@ resource "aws_iam_policy" "lambda_logs" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
-      Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+      Effect   = "Allow"
+      Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
       Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/fiscal-digital-*:*"
     }]
   })
