@@ -8,13 +8,40 @@ resource "aws_dynamodb_table" "alerts" {
     kms_key_arn = var.kms_key_arn
   }
 
-  attribute { name = "pk";         type = "S" }
-  attribute { name = "cityId";     type = "S" }
-  attribute { name = "createdAt";  type = "S" }
-  attribute { name = "cnpj";       type = "S" }
-  attribute { name = "secretaria"; type = "S" }
-  attribute { name = "published";  type = "S" }
-  attribute { name = "riskScore";  type = "N" }
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+
+  attribute {
+    name = "cityId"
+    type = "S"
+  }
+
+  attribute {
+    name = "createdAt"
+    type = "S"
+  }
+
+  attribute {
+    name = "cnpj"
+    type = "S"
+  }
+
+  attribute {
+    name = "secretaria"
+    type = "S"
+  }
+
+  attribute {
+    name = "published"
+    type = "S"
+  }
+
+  attribute {
+    name = "riskScore"
+    type = "N"
+  }
 
   global_secondary_index {
     name            = "GSI1-city-date"
@@ -55,7 +82,10 @@ resource "aws_dynamodb_table" "gazettes" {
     kms_key_arn = var.kms_key_arn
   }
 
-  attribute { name = "pk"; type = "S" }
+  attribute {
+    name = "pk"
+    type = "S"
+  }
 }
 
 resource "aws_dynamodb_table" "suppliers" {
@@ -68,5 +98,8 @@ resource "aws_dynamodb_table" "suppliers" {
     kms_key_arn = var.kms_key_arn
   }
 
-  attribute { name = "pk"; type = "S" }
+  attribute {
+    name = "pk"
+    type = "S"
+  }
 }

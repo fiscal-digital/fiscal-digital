@@ -106,7 +106,7 @@ Backfill Fase 1: 01/01/2021 → hoje (gestão Adiló completa).
 
 - **Arquitetura:** 100% Serverless AWS (Lambda, API Gateway, SQS, DynamoDB)
 - **Linguagem:** TypeScript Strict Mode
-- **Runtime:** Node.js 24.x (`nodejs24.x` nas Lambdas)
+- **Runtime:** Node.js 22.x (`nodejs22.x` nas Lambdas — provider AWS ainda não suporta 24.x)
 - **Infraestrutura:** Terraform com estado remoto
 - **Segurança:** OIDC — `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` proibidos
 - **Commits:** sem `Co-Authored-By: Claude` — créditos apenas para contribuidores humanos
