@@ -1,0 +1,65 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared libs
+        run: npm run build -w packages/engine
+
+      - name: Bundle Lambdas
+        run: |
+          npm run bundle --workspace=packages/collector
+          npm run bundle --workspace=packages/analyzer
+          npm run bundle --workspace=packages/publisher
+          npm run bundle --workspace=packages/api
+
+      - name: Zip Lambdas
+        run: |
+          for pkg in collector analyzer publisher api; do
+            zip -j packages/$pkg/dist/function.zip packages/$pkg/dist/index.js
+          done
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: terraform apply -var-file=environments/prod.tfvars -auto-approve
+
+      - name: Deploy Lambda code
+        run: |
+          for pkg in collector analyzer publisher api; do
+            aws lambda update-function-code \
+              --function-name fiscal-digital-${pkg}-prod \
+              --zip-file fileb://packages/${pkg}/dist/function.zip \
+              --no-cli-pager
+          done
