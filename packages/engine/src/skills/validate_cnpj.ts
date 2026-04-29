@@ -21,7 +21,7 @@ export interface ValidateCNPJInput {
   cnpj: string
 }
 
-export const validateCNPJ: Skill<ValidateCNPJInput> = {
+export const validateCNPJ: Skill<ValidateCNPJInput, Partial<SupplierProfile>> = {
   name: 'validate_cnpj',
   description: 'Valida CNPJ na Receita Federal via BrasilAPI e retorna dados cadastrais',
 

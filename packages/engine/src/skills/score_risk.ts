@@ -4,7 +4,7 @@ export interface ScoreRiskInput {
   factors: RiskFactor[]
 }
 
-export const scoreRisk: Skill<ScoreRiskInput> = {
+export const scoreRisk: Skill<ScoreRiskInput, number> = {
   name: 'score_risk',
   description: 'Calcula riskScore composto (0–100) baseado em fatores ponderados',
 

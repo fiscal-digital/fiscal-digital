@@ -17,7 +17,7 @@ export interface ExtractEntitiesInput {
   gazetteUrl: string
 }
 
-export const extractEntities: Skill<ExtractEntitiesInput> = {
+export const extractEntities: Skill<ExtractEntitiesInput, ExtractedEntities> = {
   name: 'extract_entities',
   description: 'Extrai secretaria, tipo do ato, fornecedor e base legal com Claude Haiku (prompt caching)',
 

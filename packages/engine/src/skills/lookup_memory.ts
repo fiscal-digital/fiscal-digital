@@ -6,7 +6,7 @@ export interface LookupMemoryInput {
   table: string
 }
 
-export const lookupMemory: Skill<LookupMemoryInput> = {
+export const lookupMemory: Skill<LookupMemoryInput, Record<string, unknown> | null> = {
   name: 'lookup_memory',
   description: 'Consulta histórico de entidade no DynamoDB',
 
