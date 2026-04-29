@@ -18,7 +18,7 @@ resource "aws_lambda_function" "collector" {
   function_name    = "fiscal-digital-collector-prod"
   role             = var.collector_role_arn
   handler          = "index.handler"
-  runtime          = "nodejs24.x"
+  runtime          = "nodejs22.x"
   timeout          = 300
   memory_size      = 512
   filename         = data.archive_file.placeholder.output_path
@@ -39,7 +39,7 @@ resource "aws_lambda_function" "analyzer" {
   function_name    = "fiscal-digital-analyzer-prod"
   role             = var.analyzer_role_arn
   handler          = "index.handler"
-  runtime          = "nodejs24.x"
+  runtime          = "nodejs22.x"
   timeout          = 300
   memory_size      = 512
   filename         = data.archive_file.placeholder.output_path
@@ -60,7 +60,7 @@ resource "aws_lambda_function" "publisher" {
   function_name    = "fiscal-digital-publisher-prod"
   role             = var.publisher_role_arn
   handler          = "index.handler"
-  runtime          = "nodejs24.x"
+  runtime          = "nodejs22.x"
   timeout          = 120
   memory_size      = 256
   filename         = data.archive_file.placeholder.output_path
@@ -79,7 +79,7 @@ resource "aws_lambda_function" "api" {
   function_name    = "fiscal-digital-api-prod"
   role             = var.api_role_arn
   handler          = "index.handler"
-  runtime          = "nodejs24.x"
+  runtime          = "nodejs22.x"
   timeout          = 30
   memory_size      = 256
   filename         = data.archive_file.placeholder.output_path

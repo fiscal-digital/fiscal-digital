@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node24 --outfile=dist/index.js --external:@aws-sdk/*",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.js --external:@aws-sdk/*",
     "test": "jest",
     "lint": "eslint src --ext .ts"
   },
@@ -15,7 +15,7 @@
     "@aws-sdk/client-sqs": "^3.0.0"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^22.0.0",
     "@types/aws-lambda": "^8.0.0",
     "typescript": "^5.0.0",
     "esbuild": "^0.20.0",
