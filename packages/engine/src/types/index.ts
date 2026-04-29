@@ -14,10 +14,10 @@ export interface Evidence {
   date: string     // YYYY-MM-DD
 }
 
-export interface Skill<TInput = unknown> {
+export interface Skill<TInput = unknown, TData = unknown> {
   name: string
   description: string
-  execute(input: TInput): Promise<SkillResult>
+  execute(input: TInput): Promise<SkillResult<TData>>
 }
 
 export interface SkillResult<TData = unknown> {

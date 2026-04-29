@@ -6,8 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.js --external:@aws-sdk/*",
-    "test": "jest",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node24 --outfile=dist/index.js --external:@aws-sdk/*",
+    "test": "jest --passWithNoTests",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
@@ -16,12 +16,12 @@
     "snoowrap": "^1.23.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^24.0.0",
     "@types/aws-lambda": "^8.0.0",
-    "typescript": "^5.0.0",
-    "esbuild": "^0.20.0",
-    "jest": "^29.0.0",
-    "@types/jest": "^29.0.0",
-    "ts-jest": "^29.0.0"
+    "typescript": "^6.0.0",
+    "esbuild": "^0.28.0",
+    "jest": "^30.0.0",
+    "@types/jest": "^30.0.0",
+    "ts-jest": "^29.4.0"
   }
 }

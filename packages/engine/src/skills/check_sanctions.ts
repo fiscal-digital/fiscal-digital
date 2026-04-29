@@ -20,7 +20,7 @@ export interface SanctionResult {
   records: SanctionRecord[]
 }
 
-export const checkSanctions: Skill<CheckSanctionsInput> = {
+export const checkSanctions: Skill<CheckSanctionsInput, SanctionResult> = {
   name: 'check_sanctions',
   description: 'Verifica se empresa consta no CEIS/CNEP (CGU) — empresas suspensas e multadas',
 

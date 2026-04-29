@@ -27,7 +27,7 @@ interface QDResponse {
   gazettes: QDGazette[]
 }
 
-export const queryDiario: Skill<QueryDiarioInput> = {
+export const queryDiario: Skill<QueryDiarioInput, { gazettes: Gazette[]; total: number }> = {
   name: 'query_diario',
   description: 'Busca gazettes na API do Querido Diário por território e palavras-chave',
 

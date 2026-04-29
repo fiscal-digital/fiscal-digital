@@ -15,7 +15,7 @@ export interface GenerateNarrativeInput {
   finding: Finding
 }
 
-export const generateNarrative: Skill<GenerateNarrativeInput> = {
+export const generateNarrative: Skill<GenerateNarrativeInput, string> = {
   name: 'generate_narrative',
   description: 'Gera narrativa legível do achado com Claude Haiku (somente riskScore >= 60)',
 

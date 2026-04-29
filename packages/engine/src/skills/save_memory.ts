@@ -7,7 +7,7 @@ export interface SaveMemoryInput {
   item: Record<string, unknown>
 }
 
-export const saveMemory: Skill<SaveMemoryInput> = {
+export const saveMemory: Skill<SaveMemoryInput, void> = {
   name: 'save_memory',
   description: 'Salva entidade ou achado no DynamoDB',
 
