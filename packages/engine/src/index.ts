@@ -1,5 +1,6 @@
 export * from './types'
 export * from './regex'
+export * from './cities'
 
 export { queryDiario } from './skills/query_diario'
 export { extractEntities } from './skills/extract_entities'

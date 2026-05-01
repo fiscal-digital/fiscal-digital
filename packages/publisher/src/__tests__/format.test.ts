@@ -37,7 +37,8 @@ describe('formatAlertText', () => {
 
     // Tipo e cidade
     expect(text).toContain('FRACIONAMENTO')
-    expect(text).toContain('4305108')
+    expect(text).toContain('Caxias do Sul')
+    expect(text).toContain('#CaxiasdoSul')
 
     // Narrative
     expect(text).toContain('três dispensas de licitação consecutivas')
