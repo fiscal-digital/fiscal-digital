@@ -9,6 +9,7 @@
     "sync": "node scripts/sync-brand.mjs",
     "prebuild": "node scripts/sync-brand.mjs",
     "build": "tsc",
+    "pretest": "node scripts/sync-brand.mjs",
     "test": "jest --passWithNoTests",
     "lint": "eslint src --ext .ts"
   },
