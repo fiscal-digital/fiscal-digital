@@ -1,4 +1,4 @@
-import type { Finding, Gazette } from '../types'
+import type { Finding, Gazette, SupplierProfile, SkillResult } from '../types'
 import type { extractEntities as _extractEntities } from '../skills/extract_entities'
 import type { saveMemory as _saveMemory } from '../skills/save_memory'
 
@@ -20,14 +20,18 @@ import type { saveMemory as _saveMemory } from '../skills/save_memory'
  *     (depende de range_key em suppliers-prod)
  *  3. `generateNarrative`  — Haiku gera texto factual com fonte citada (Anthropic API)
  *  4. `saveMemory`         — persiste entidade/achado no DynamoDB (AWS)
+ *  5. `validateCNPJ`       — BrasilAPI: data de abertura, situação cadastral (Receita Federal)
+ *                            Declarado como opcional — usado apenas pelo Fiscal de Fornecedores.
+ *                            Fallback ao import direto quando não injetado.
  */
 export interface FiscalContext {
-  alertsTable?: string                                                      // default 'fiscal-digital-alerts-prod'
-  now?: () => Date                                                          // default () => new Date()
-  extractEntities?: typeof _extractEntities                                 // permite mock em teste
-  queryAlertsByCnpj?: (cnpj: string, sinceISO: string) => Promise<Finding[]>  // injetável p/ teste
-  generateNarrative?: (...args: unknown[]) => Promise<string>               // mock em teste
-  saveMemory?: typeof _saveMemory                                           // permite mock em teste
+  alertsTable?: string                                                                    // default 'fiscal-digital-alerts-prod'
+  now?: () => Date                                                                        // default () => new Date()
+  extractEntities?: typeof _extractEntities                                               // permite mock em teste
+  queryAlertsByCnpj?: (cnpj: string, sinceISO: string) => Promise<Finding[]>            // injetável p/ teste
+  generateNarrative?: (...args: unknown[]) => Promise<string>                            // mock em teste
+  saveMemory?: typeof _saveMemory                                                         // permite mock em teste
+  validateCNPJ?: (input: { cnpj: string }) => Promise<SkillResult<Partial<SupplierProfile>>>  // Fiscal de Fornecedores
 }
 
 export interface AnalisarInput {
