@@ -77,6 +77,12 @@ export interface ExtractedEntities {
    * - `null`            — ambíguo; fallback para heurística regex (OBRA_RE).
    */
   subtype?: 'obra_engenharia' | 'servico' | 'compra' | null
+  /**
+   * Valor monetário original do contrato — preenchido apenas em excerpts de aditivos
+   * que citam explicitamente o valor original. null/undefined = não citado, fallback
+   * para lookup histórico em alerts-prod.
+   */
+  valorOriginalContrato?: number
 }
 
 export interface SupplierProfile {
