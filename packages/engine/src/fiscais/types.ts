@@ -2,6 +2,25 @@ import type { Finding, Gazette } from '../types'
 import type { extractEntities as _extractEntities } from '../skills/extract_entities'
 import type { saveMemory as _saveMemory } from '../skills/save_memory'
 
+/**
+ * Contrato de injeção de dependências para todos os Fiscais.
+ *
+ * **Regra de ouro:** toda skill com side-effect externo (AWS DynamoDB,
+ * Anthropic API, Querido Diário API, Receita Federal API) DEVE ser
+ * declarada aqui como campo opcional e injetada via `context` em vez
+ * de importada diretamente na lógica do Fiscal. Isso garante:
+ *  - Testabilidade: testes rodam sem AWS real nem Anthropic real.
+ *  - Extensibilidade: futuros Fiscais (Contratos, Fornecedores, Pessoal)
+ *    herdam o mesmo padrão de DI apenas declarando os campos que precisam.
+ *
+ * **Injetáveis padrão (MVP):**
+ *  1. `extractEntities`    — Haiku extrai CNPJ, valor, secretaria, tipo do ato (Anthropic API)
+ *  2. `queryAlertsByCnpj`  — consulta histórico de dispensas no DynamoDB (AWS)
+ *     TODO: renomear para `queryDispensasByCnpj` quando MIT-02 for desbloqueado
+ *     (depende de range_key em suppliers-prod)
+ *  3. `generateNarrative`  — Haiku gera texto factual com fonte citada (Anthropic API)
+ *  4. `saveMemory`         — persiste entidade/achado no DynamoDB (AWS)
+ */
 export interface FiscalContext {
   alertsTable?: string                                                      // default 'fiscal-digital-alerts-prod'
   now?: () => Date                                                          // default () => new Date()
