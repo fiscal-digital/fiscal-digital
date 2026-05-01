@@ -57,6 +57,54 @@ Todo achado linka para o Querido Diário. Nunca replicamos o dado.
 
 ---
 
+## Brand Pack — owned by `fiscal-digital-web`
+
+Brand pack vive em [`fiscal-digital-web/brand/`](../fiscal-digital-web/brand/),
+não neste repo. **Mudanças no brand requerem PR no repo `fiscal-digital-web`.**
+Para guia completo, ler `fiscal-digital-web/CLAUDE.md` + `fiscal-digital-web/brand/README.md`.
+
+### Contrato de consumo da engine
+
+A engine consome ~30% do brand. Sync é **build-time**:
+
+- `engine/scripts/sync-brand.mjs` baixa via `gh api` os 3 arquivos necessários
+  (`glossary.json`, `voice-tone.md`, `colors.json`) do repo `fiscal-digital-web`
+  antes do TypeScript compile / bundle Lambda.
+- Em dev local com `fiscal-digital-web/` clonado vizinho, o script copia
+  diretamente do irmão sem `gh api`.
+- Arquivos sincronizados ficam em `engine/brand/` (gitignored, gerados em build).
+
+Pontos de consumo dentro da engine:
+
+- **Publisher** valida cada narrativa contra `glossary.json#avoid` antes de
+  publicar — qualquer hit rejeita o post (não há override). É mais barato
+  regenerar do que retratar.
+- **System prompts** de cada Fiscal incluem `voice-tone.md` em prompt caching.
+- **Mapeamento `riskScore → cor visual`** segue `colors.json#risk` — único
+  source of truth.
+- Quando um terceiro consumidor (`-collectors`, `-analytics`) também precisar
+  do brand, **migrar para npm package privado** `@fiscal-digital/brand` no
+  GitHub Packages.
+
+### Bilíngue (transversal)
+
+Site e brand são **PT-BR (default) + EN**. Site usa roteamento path-based:
+`/` é PT, `/en` é EN. Alertas ficam em PT-BR (citam lei brasileira) com
+summary EN curto. "Fiscal Digital" é proper noun — não traduzido.
+
+Tagline canônica:
+- PT: "Fiscalização autônoma de gastos públicos"
+- EN: "Autonomous oversight of Brazilian municipal spending"
+
+### Para sessões Claude trabalhando neste repo (engine + IaC)
+
+Se a tarefa toca em **Fiscal prompts, publisher validation, ou conteúdo
+gerado**, conferir as regras na fonte: `../fiscal-digital-web/brand/voice-tone.md`
+e `../fiscal-digital-web/brand/glossary.json`. Para qualquer tarefa de visual
+ou copy de site, abrir sessão dedicada em `fiscal-digital-web/`.
+
+---
+
 ## Mapa de Repositórios
 
 | Repo | Conteúdo | Deploy |
