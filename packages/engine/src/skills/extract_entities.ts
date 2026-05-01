@@ -14,6 +14,7 @@ Analise o texto e extraia:
   "servico" (consultoria, assessoria, manutenção de equipamentos não-imobiliária, limpeza, eventos, tecnologia da informação) |
   "compra" (aquisição de bens, equipamentos, veículos, materiais) |
   null (ambíguo ou não aplicável)
+- valorOriginalContrato: quando o texto for de aditivo e citar explicitamente o valor original do contrato (ex: "valor original de R$ X", "contrato originalmente firmado por R$ X", "valor inicial do contrato de R$ X"), extrair o número; null caso contrário
 
 Responda APENAS com JSON válido, sem texto adicional.`
 
@@ -62,6 +63,7 @@ export const extractEntities: Skill<ExtractEntitiesInput, ExtractedEntities> = {
         supplier: llm.supplier,
         legalBasis: llm.legalBasis,
         subtype: llm.subtype ?? null,
+        valorOriginalContrato: llm.valorOriginalContrato ?? undefined,
       },
       source: input.gazetteUrl,
       confidence: 0.85,
