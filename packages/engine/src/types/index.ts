@@ -4,6 +4,7 @@ export type FindingType =
   | 'aditivo_abusivo'
   | 'prorrogacao_excessiva'
   | 'pico_nomeacoes'
+  | 'rotatividade_anormal'
   | 'concentracao_fornecedor'
   | 'dispensa_irregular'
   | 'inexigibilidade_sem_justificativa'
