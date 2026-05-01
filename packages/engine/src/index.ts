@@ -19,3 +19,6 @@ export type { ValidateCNPJInput } from './skills/validate_cnpj'
 export type { CheckSanctionsInput, SanctionResult, SanctionRecord } from './skills/check_sanctions'
 export type { ScoreRiskInput } from './skills/score_risk'
 export type { GenerateNarrativeInput } from './skills/generate_narrative'
+
+export { fiscalLicitacoes } from './fiscais/licitacoes'
+export type { Fiscal, AnalisarInput, FiscalContext } from './fiscais/types'
