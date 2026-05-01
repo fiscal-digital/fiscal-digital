@@ -22,7 +22,11 @@ export type { GenerateNarrativeInput } from './skills/generate_narrative'
 
 export { fiscalLicitacoes } from './fiscais/licitacoes'
 export { fiscalContratos } from './fiscais/contratos'
+export { fiscalFornecedores } from './fiscais/fornecedores'
+export { fiscalPessoal } from './fiscais/pessoal'
+export { fiscalGeral } from './fiscais/geral'
 export type { Fiscal, AnalisarInput, FiscalContext } from './fiscais/types'
+export type { FiscalGeralInput } from './fiscais/geral'
 
 export { validateNarrative } from './brand-gate'
 export type { NarrativeValidationResult } from './brand-gate'
