@@ -1,96 +1,42 @@
-import {
-  SecretsManagerClient,
-  GetSecretValueCommand,
-} from '@aws-sdk/client-secrets-manager'
 import type { SQSEvent } from 'aws-lambda'
-import { getCityOrFallback, type Finding } from '@fiscal-digital/engine'
-import { RedditClient, RateLimitError } from './reddit'
-import { formatAlertText } from './format'
+import { validateNarrative, type Finding } from '@fiscal-digital/engine'
+import type { PublishChannel } from './channels/types'
+import {
+  AlreadyPublishedError,
+  RateLimitError,
+} from './channels/types'
+import { loadEnabledChannels } from './channels/registry'
+import { PublicationsStore } from './publications-store'
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+const channels: PublishChannel[] = loadEnabledChannels()
+const store = new PublicationsStore()
 
-interface RedditSecrets {
-  client_id: string
-  client_secret: string
-  username: string
-  password: string
-}
-
-// ---------------------------------------------------------------------------
-// Module-scope cache — reutilizado em Lambda warm starts
-// ---------------------------------------------------------------------------
-
-let cachedRedditSecrets: RedditSecrets | null = null
-
-// ---------------------------------------------------------------------------
-// Secrets
-// ---------------------------------------------------------------------------
-
-const secretsClient = new SecretsManagerClient({})
-
-async function loadSecrets(): Promise<RedditSecrets> {
-  if (cachedRedditSecrets) return cachedRedditSecrets
-
-  const cmd = new GetSecretValueCommand({
-    SecretId: 'fiscaldigital-reddit-prod',
-  })
-  const res = await secretsClient.send(cmd)
-
-  if (!res.SecretString) {
-    throw new Error('Secret fiscaldigital-reddit-prod está vazio ou binário')
+async function publishOnChannel(
+  channel: PublishChannel,
+  finding: Finding,
+): Promise<void> {
+  const findingId = finding.id ?? ''
+  if (!findingId) {
+    throw new Error(`Finding sem id — fiscal ${finding.fiscalId} cidade ${finding.cityId}`)
   }
 
-  cachedRedditSecrets = JSON.parse(res.SecretString) as RedditSecrets
-  return cachedRedditSecrets
+  // Pre-check para evitar chamada paga em retry SQS
+  if (await store.alreadyPublished(findingId, channel.name)) {
+    throw new AlreadyPublishedError(channel.name, findingId)
+  }
+
+  const result = await channel.publish(finding)
+  await store.recordPublication(findingId, result)
 }
-
-// ---------------------------------------------------------------------------
-// Publisher
-// ---------------------------------------------------------------------------
-
-/**
- * Publica um Finding como post de texto no subreddit correspondente.
- * Subreddit é derivado da cidade via `getCityOrFallback`; pode ser overridden
- * por env `REDDIT_SUBREDDIT` (útil em testes/dry-run).
- */
-async function publishToReddit(finding: Finding): Promise<void> {
-  const creds = await loadSecrets()
-  const client = new RedditClient(creds)
-  const city = getCityOrFallback(finding.cityId)
-
-  const subreddit = process.env.REDDIT_SUBREDDIT ?? city.subreddit
-
-  const token = await client.getAccessToken()
-  const title = `[${finding.type.replace(/_/g, '-').toUpperCase()}] ${city.name} — riskScore ${finding.riskScore}/100`
-  const text = formatAlertText(finding)
-
-  const result = await client.submitText(
-    token.access_token,
-    subreddit,
-    title,
-    text,
-  )
-
-  console.log('[publisher] Reddit post criado', {
-    url: result.json.data.url,
-    id: result.json.data.id,
-    findingId: finding.id,
-    riskScore: finding.riskScore,
-  })
-}
-
-// ---------------------------------------------------------------------------
-// Lambda Handler
-// ---------------------------------------------------------------------------
 
 export const handler = async (event: SQSEvent): Promise<void> => {
-  console.log('[publisher] processando', { records: event.Records.length })
+  console.log('[publisher] processando', {
+    records: event.Records.length,
+    channels: channels.map((c) => c.name),
+  })
 
   for (const record of event.Records) {
     let finding: Finding
-
     try {
       finding = JSON.parse(record.body) as Finding
     } catch (err) {
@@ -101,22 +47,61 @@ export const handler = async (event: SQSEvent): Promise<void> => {
       continue
     }
 
-    // Publicar no Reddit
-    try {
-      await publishToReddit(finding)
-    } catch (err) {
+    const check = validateNarrative(finding.narrative)
+    if (!check.valid) {
+      console.error('[publisher] narrativa rejeitada por brand gate', {
+        findingId: finding.id, hits: check.hits,
+      })
+      // Throw → record vai para DLQ. TODO: regenerar via Haiku no analyzer.
+      throw new Error(`narrativa rejeitada: termos proibidos (${check.hits.join(', ')})`)
+    }
+
+    const targets = channels.filter((c) => c.enabled(finding))
+    if (targets.length === 0) {
+      console.warn('[publisher] nenhum canal habilitado para finding', {
+        findingId: finding.id,
+        type: finding.type,
+        riskScore: finding.riskScore,
+      })
+      continue
+    }
+
+    const results = await Promise.allSettled(
+      targets.map((c) => publishOnChannel(c, finding)),
+    )
+
+    let fatal: unknown
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i]
+      const channelName = targets[i].name
+      if (r.status === 'fulfilled') continue
+
+      const err = r.reason
       if (err instanceof RateLimitError) {
-        // Logar e continuar — SQS retry fará nova tentativa no próximo ciclo
-        console.warn('[publisher] rate limit Reddit', {
+        console.warn('[publisher] rate limit', {
+          channel: channelName,
           retryAfterSeconds: err.retryAfterSeconds,
           findingId: finding.id,
         })
         continue
       }
-      // Outros erros: relançar para que o record vá para a DLQ
-      throw err
+      if (err instanceof AlreadyPublishedError) {
+        console.info('[publisher] já publicado — skip idempotente', {
+          channel: channelName,
+          findingId: finding.id,
+        })
+        continue
+      }
+      // Erro fatal — registra mas continua processando outros canais
+      console.error('[publisher] erro fatal no canal', {
+        channel: channelName,
+        findingId: finding.id,
+        err,
+      })
+      fatal = err
     }
 
-    // TODO: twitter-api-v2 publish
+    // Se algum canal falhou de forma fatal, lança para o record ir pra DLQ
+    if (fatal) throw fatal
   }
 }

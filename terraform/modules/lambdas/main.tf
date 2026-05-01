@@ -67,7 +67,14 @@ resource "aws_lambda_function" "publisher" {
   source_code_hash = data.archive_file.placeholder.output_base64sha256
 
   environment {
-    variables = local.common_env
+    variables = merge(local.common_env, {
+      # Canais — habilitar via *_ENABLED. Default: dry-run desabilitado.
+      # Smoke test inicial deve subir com *_DRY_RUN=true para validar sem postar.
+      X_ENABLED       = var.x_enabled
+      X_DRY_RUN       = var.x_dry_run
+      REDDIT_ENABLED  = var.reddit_enabled
+      REDDIT_DRY_RUN  = var.reddit_dry_run
+    })
   }
 
   lifecycle {

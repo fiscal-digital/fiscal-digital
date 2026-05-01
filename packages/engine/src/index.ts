@@ -23,3 +23,6 @@ export type { GenerateNarrativeInput } from './skills/generate_narrative'
 export { fiscalLicitacoes } from './fiscais/licitacoes'
 export { fiscalContratos } from './fiscais/contratos'
 export type { Fiscal, AnalisarInput, FiscalContext } from './fiscais/types'
+
+export { validateNarrative } from './brand-gate'
+export type { NarrativeValidationResult } from './brand-gate'

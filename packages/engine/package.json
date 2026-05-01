@@ -6,6 +6,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
+    "sync": "node scripts/sync-brand.mjs",
+    "prebuild": "node scripts/sync-brand.mjs",
     "build": "tsc",
     "test": "jest --passWithNoTests",
     "lint": "eslint src --ext .ts"

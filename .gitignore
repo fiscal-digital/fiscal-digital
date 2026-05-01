@@ -71,6 +71,9 @@ ehthumbs.db
 *.cpuprofile
 *.heapsnapshot
 
+# ─── Brand pack (sincronizado em build-time de fiscal-digital-web) ─
+packages/engine/src/brand/
+
 # ─── AI/Dev meta (não vai para o repo público) ─────────────────
 .claude/
 .learnings/
