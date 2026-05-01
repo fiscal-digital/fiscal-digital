@@ -35,7 +35,7 @@ Uma dispensa de licitação é publicada com valor **acima** do limite legal est
 - Obras e serviços de engenharia (inciso I): valor > R$ 130.984,20
 - Demais serviços e compras (inciso II): valor > R$ 65.492,11
 
-A classificação entre inciso I e inciso II é feita por heurística de palavras-chave no texto do excerpt (obra, engenharia, reforma, construção, pavimentação).
+A classificação entre inciso I e inciso II é feita primariamente pelo campo `subtype` extraído pelo Haiku no `extract_entities` skill; quando `subtype` é nulo, aplica-se fallback por heurística de palavras-chave no texto do excerpt (obra, engenharia, reforma, construção, pavimentação).
 
 ### Padrão B — Fracionamento de contrato (Art. 75, §1º)
 
@@ -87,14 +87,20 @@ Mesmo que R$ 125.000,00 > limite inciso II (R$ 65.492,11), a classificação cor
 
 ## 5. Limitações Conhecidas
 
-### 5.1. Heurística inciso I vs II por palavras-chave
+### 5.1. Classificação inciso I vs II via LLM (MIT-01)
 
-A classificação entre inciso I (obras/engenharia) e inciso II (demais serviços) é feita por regex no texto do excerpt. Casos ambíguos podem ser classificados incorretamente, por exemplo:
+A classificação entre inciso I (obras/engenharia) e inciso II (demais serviços) agora é feita em duas camadas:
 
-- "Dispensa para reforma de equipamento de informática" — "reforma" dispara a heurística de obra, mas tecnicamente é serviço (inciso II). Pode gerar falso negativo (teto mais alto aplicado).
-- "Locação de equipamentos para obras" — pode ser classificado como obra quando é serviço.
+1. **Primária — campo `subtype` do `extract_entities` (Haiku):** o LLM classifica o objeto da contratação como `obra_engenharia`, `servico`, `compra` ou `null`. Quando presente, esse valor determina o inciso diretamente.
+2. **Fallback — heurística regex (`OBRA_RE`):** aplicada apenas quando `subtype` é `null` (Haiku não classificou ou texto ambíguo). Detecta palavras-chave: obra, engenharia, reforma, construção, pavimentação.
 
-**TODO (próximo sprint):** melhorar classificação com extração LLM do tipo de contrato.
+**Falso negativo resolvido (MIT-01):**
+
+- "Dispensa para reforma de equipamento de informática, R$ 80.000,00" — **Antes do MIT-01:** "reforma" disparava OBRA_RE → inciso I (teto R$ 130.984,20) → valor abaixo do teto → **nenhum alerta gerado** (falso negativo). **Agora:** Haiku classifica como `compra` → inciso II (teto R$ 65.492,11) → R$ 80k excede o teto → **dispara `dispensa_irregular` corretamente**.
+
+Caso ainda ambíguo documentado:
+
+- "Locação de equipamentos para obras" — pode ser classificado como `obra_engenharia` pelo Haiku quando é serviço. Monitorar via feedback loop de falsos positivos.
 
 ### 5.2. Dispensas por emergência (Art. 75, inciso VIII)
 

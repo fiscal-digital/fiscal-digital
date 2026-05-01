@@ -39,6 +39,13 @@ function narrativaFactual(
   )
 }
 
+function classificarInciso(excerpt: string, subtype?: string | null): 'I' | 'II' {
+  if (subtype === 'obra_engenharia') return 'I'
+  if (subtype === 'servico' || subtype === 'compra') return 'II'
+  // Fallback: heurística regex quando LLM não classificou
+  return OBRA_RE.test(excerpt) ? 'I' : 'II'
+}
+
 async function generateNarrativaDispensa(
   finding: Finding,
   context: FiscalContext,
@@ -91,7 +98,7 @@ export const fiscalLicitacoes: Fiscal = {
       })
 
       const entities = extractResult.data
-      const { cnpjs, values, secretaria, actType, supplier, legalBasis } = entities
+      const { cnpjs, values, secretaria, supplier, legalBasis } = entities
 
       if (values.length === 0) continue
 
@@ -99,9 +106,8 @@ export const fiscalLicitacoes: Fiscal = {
       const cnpj = cnpjs[0] ?? undefined
 
       // Etapa 3 — Classificação Art. 75 I vs II
-      const isObraEngenharia = OBRA_RE.test(excerpt)
-      const inciso: 'I' | 'II' = isObraEngenharia ? 'I' : 'II'
-      const teto = isObraEngenharia ? LEI_14133_ART_75_I_LIMITE : LEI_14133_ART_75_II_LIMITE
+      const inciso: 'I' | 'II' = classificarInciso(excerpt, entities.subtype)
+      const teto = inciso === 'I' ? LEI_14133_ART_75_I_LIMITE : LEI_14133_ART_75_II_LIMITE
       const legalBasisStr = `Lei 14.133/2021, Art. 75, ${inciso}`
 
       // Para histórico de fracionamento: persistir todas as dispensas (mesmo legais)
