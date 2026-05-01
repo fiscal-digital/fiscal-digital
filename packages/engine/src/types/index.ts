@@ -64,6 +64,19 @@ export interface ExtractedEntities {
   actType?: string
   supplier?: string
   legalBasis?: string
+  /**
+   * Classifica o objeto da contratação para inferir o inciso aplicável da
+   * Lei 14.133/2021, Art. 75 (I vs II).
+   *
+   * - `obra_engenharia` — obras civis, reforma de imóvel, pavimentação.
+   *   Aplica-se o inciso I (teto maior).
+   * - `servico`         — consultoria, manutenção não-imobiliária, eventos,
+   *   limpeza. Aplica-se o inciso II (teto menor).
+   * - `compra`          — aquisição de bens, equipamentos, veículos.
+   *   Aplica-se o inciso II (teto menor).
+   * - `null`            — ambíguo; fallback para heurística regex (OBRA_RE).
+   */
+  subtype?: 'obra_engenharia' | 'servico' | 'compra' | null
 }
 
 export interface SupplierProfile {

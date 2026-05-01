@@ -13,6 +13,8 @@ import {
   gazetteDispensaFracionamento,
   gazetteDispensaNaoFracionamento,
   gazetteDispensaBaixoRisco,
+  gazetteDispensaReformaEquipamento,
+  gazetteDispensaObraFallbackRegex,
 } from './fixtures'
 
 // ─── Mock helpers ────────────────────────────────────────────────────────────
@@ -31,6 +33,7 @@ function makeExtractEntitiesMock(override: Partial<ExtractedEntities> = {}) {
         actType: 'dispensa',
         supplier: 'Tech Solutions LTDA',
         legalBasis: 'Lei 14.133/2021, Art. 75, II',
+        subtype: null,
         ...override,
       } as ExtractedEntities,
       source: 'https://queridodiario.ok.org.br',
@@ -161,6 +164,7 @@ describe('fiscalLicitacoes', () => {
       extractEntities: makeExtractEntitiesMock({
         values: [150000],
         legalBasis: 'Lei 14.133/2021, Art. 75, I',
+        subtype: 'obra_engenharia',
       }),
     })
 
@@ -184,6 +188,7 @@ describe('fiscalLicitacoes', () => {
       extractEntities: makeExtractEntitiesMock({
         values: [125000],
         legalBasis: 'Lei 14.133/2021, Art. 75, I',
+        subtype: 'obra_engenharia',
       }),
     })
 
@@ -327,6 +332,7 @@ describe('fiscalLicitacoes', () => {
           actType: 'dispensa',
           supplier: 'Traduções BR LTDA',
           legalBasis: undefined,  // sem base legal → legalBasisCitada = 50
+          subtype: null,
         } as ExtractedEntities,
         source: 'https://queridodiario.ok.org.br',
         confidence: 0.20,  // confiança baixa → riskScore mais baixo
@@ -359,6 +365,57 @@ describe('fiscalLicitacoes', () => {
       expect(finding.narrative).toMatch(/limite legal/)
       expect(finding.narrative).toMatch(/Lei 14\.133\/2021/)
     }
+  })
+
+  // Caso 11 — "reforma de equipamento" R$ 80k com subtype='compra' → dispensa_irregular inciso II
+  // Resolve falso negativo histórico: antes do MIT-01, "reforma" disparava OBRA_RE → inciso I (teto
+  // maior, R$ 130k) → valor R$ 80k não excedia o teto → nenhum alerta. Agora o Haiku classifica
+  // corretamente como 'compra' → inciso II (teto R$ 65.492,11) → dispara dispensa_irregular.
+  it('11. subtype compra: reforma de equipamento R$ 80k → dispensa_irregular inciso II (falso negativo resolvido)', async () => {
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        cnpjs: ['55.444.333/0001-22'],
+        values: [80000],
+        legalBasis: 'Lei 14.133/2021, Art. 75, II',
+        subtype: 'compra',
+      }),
+    })
+
+    const findings = await fiscalLicitacoes.analisar({
+      gazette: gazetteDispensaReformaEquipamento,
+      cityId: '4305108',
+      context,
+    })
+
+    const dispensa_irregular = findings.filter(f => f.type === 'dispensa_irregular')
+    expect(dispensa_irregular).toHaveLength(1)
+    expect(dispensa_irregular[0].legalBasis).toBe('Lei 14.133/2021, Art. 75, II')
+    expect(dispensa_irregular[0].value).toBe(80000)
+    expect(dispensa_irregular[0].value!).toBeGreaterThan(LEI_14133_ART_75_II_LIMITE)
+  })
+
+  // Caso 12 — sem subtype (Haiku retornou null) + excerpt contendo "obra" → fallback regex → inciso I
+  it('12. fallback regex: subtype null + excerpt com "obra" → classificado como inciso I via OBRA_RE', async () => {
+    // Valor R$ 120k: abaixo teto I (R$ 130.984,20) → nenhuma dispensa_irregular
+    // Se fallback falhar e usar inciso II, R$ 120k > R$ 65.492,11 → geraria falso positivo
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        cnpjs: ['11.222.333/0001-44'],
+        values: [120000],
+        legalBasis: 'Lei 14.133/2021, Art. 75, I',
+        subtype: null,
+      }),
+    })
+
+    const findings = await fiscalLicitacoes.analisar({
+      gazette: gazetteDispensaObraFallbackRegex,
+      cityId: '4305108',
+      context,
+    })
+
+    // R$ 120k < teto I (R$ 130.984,20) → sem dispensa_irregular (fallback corretamente aplicou inciso I)
+    const dispensa_irregular = findings.filter(f => f.type === 'dispensa_irregular')
+    expect(dispensa_irregular).toHaveLength(0)
   })
 })
 

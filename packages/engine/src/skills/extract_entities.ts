@@ -9,6 +9,11 @@ Analise o texto e extraia:
 - actType: tipo do ato — contrato | licitacao | dispensa | inexigibilidade | nomeacao | exoneracao | aditivo | prorrogacao | outro (string ou null)
 - supplier: razão social da empresa ou pessoa contratada (string ou null)
 - legalBasis: base legal citada, ex: "Lei 14.133/2021, Art. 75" (string ou null)
+- subtype: classifica o objeto da contratação para determinar o inciso da Lei 14.133/2021 Art. 75 —
+  "obra_engenharia" (obras civis, reforma de imóvel/prédio/escola/estrada, construção, pavimentação) |
+  "servico" (consultoria, assessoria, manutenção de equipamentos não-imobiliária, limpeza, eventos, tecnologia da informação) |
+  "compra" (aquisição de bens, equipamentos, veículos, materiais) |
+  null (ambíguo ou não aplicável)
 
 Responda APENAS com JSON válido, sem texto adicional.`
 
@@ -56,6 +61,7 @@ export const extractEntities: Skill<ExtractEntitiesInput, ExtractedEntities> = {
         actType: llm.actType,
         supplier: llm.supplier,
         legalBasis: llm.legalBasis,
+        subtype: llm.subtype ?? null,
       },
       source: input.gazetteUrl,
       confidence: 0.85,

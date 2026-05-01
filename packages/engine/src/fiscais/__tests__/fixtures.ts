@@ -100,3 +100,25 @@ export const gazetteDispensaBaixoRisco: Gazette = {
     'DISPENSA DE LICITAÇÃO n° 035/2026. Objeto: serviços de tradução de documentos. Valor: R$ 65.500,00. Base Legal: Art. 75. Contratada: Traduções BR LTDA, CNPJ: 99.000.111/0001-33. Secretaria Municipal de Relações Internacionais.',
   ],
 }
+
+// Caso 11 — "Reforma de equipamento de informática" R$ 80k com subtype='compra'
+// Falso negativo histórico: antes do MIT-01, "reforma" disparava OBRA_RE → inciso I (teto R$ 130k)
+// → valor R$ 80k abaixo do teto → sem alerta. Com subtype='compra' → inciso II → dispara corretamente.
+export const gazetteDispensaReformaEquipamento: Gazette = {
+  ...BASE_GAZETTE,
+  id: 'gazette-test-011',
+  excerpts: [
+    'DISPENSA DE LICITAÇÃO n° 041/2026. Objeto: reforma de equipamento de informática e substituição de componentes. Valor: R$ 80.000,00. Base Legal: Lei 14.133/2021, Art. 75, II. Contratada: InfoTech Soluções LTDA, CNPJ: 55.444.333/0001-22. Secretaria Municipal de Educação.',
+  ],
+}
+
+// Caso 12 — Dispensa obra R$ 120k com subtype=null → fallback regex classifica como inciso I
+// R$ 120k < teto I (R$ 130.984,20) → sem alerta. Valida que o fallback OBRA_RE ainda funciona
+// corretamente quando o LLM não classifica (subtype null).
+export const gazetteDispensaObraFallbackRegex: Gazette = {
+  ...BASE_GAZETTE,
+  id: 'gazette-test-012',
+  excerpts: [
+    'DISPENSA DE LICITAÇÃO n° 042/2026. Objeto: obra de ampliação do Centro Comunitário. Valor: R$ 120.000,00. Base Legal: Lei 14.133/2021, Art. 75, I. Contratada: Construtora Regional LTDA, CNPJ: 11.222.333/0001-44. Secretaria Municipal de Obras.',
+  ],
+}
