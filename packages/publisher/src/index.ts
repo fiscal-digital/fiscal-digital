@@ -3,6 +3,7 @@ import { validateNarrative, type Finding } from '@fiscal-digital/engine'
 import type { PublishChannel } from './channels/types'
 import {
   AlreadyPublishedError,
+  ChannelDryRunError,
   RateLimitError,
 } from './channels/types'
 import { loadEnabledChannels } from './channels/registry'
@@ -87,6 +88,13 @@ export const handler = async (event: SQSEvent): Promise<void> => {
       }
       if (err instanceof AlreadyPublishedError) {
         console.info('[publisher] já publicado — skip idempotente', {
+          channel: channelName,
+          findingId: finding.id,
+        })
+        continue
+      }
+      if (err instanceof ChannelDryRunError) {
+        console.info('[publisher] dry-run — sem persistência', {
           channel: channelName,
           findingId: finding.id,
         })

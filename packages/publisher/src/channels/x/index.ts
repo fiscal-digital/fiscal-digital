@@ -4,11 +4,12 @@ import {
 } from '@aws-sdk/client-secrets-manager'
 import type { Finding } from '@fiscal-digital/engine'
 import type { PublishChannel, PublishResult } from '../types'
+import { ChannelDryRunError } from '../types'
 import { XClient, type XCredentials } from './client'
 import { formatTweet, tweetLength } from './format'
 
 const X_SECRET_ID = 'fiscaldigital-x-prod'
-const X_USERNAME = 'LiFiscalDigital' // bot oficial — CLAUDE.md
+const X_USERNAME = 'LiFiscalDigital'
 
 let cachedClient: XClient | null = null
 const secretsClient = new SecretsManagerClient({})
@@ -40,17 +41,26 @@ export class XChannel implements PublishChannel {
     const length = tweetLength(text)
 
     if (process.env.X_DRY_RUN === 'true') {
+      // Validar credenciais real — falha aqui é melhor que falha no primeiro post real
+      const client = await loadClient()
+      const me = await client.verifyCredentials()
+      const matches = me.username === X_USERNAME
+      console.log('[x] DRY_RUN — credentials OK', {
+        asUser: me.username,
+        expected: X_USERNAME,
+        matches,
+      })
+      if (!matches) {
+        throw new Error(
+          `[x] DRY_RUN abort — token autoriza @${me.username} mas esperávamos @${X_USERNAME}. Regerar Access Token logado como @${X_USERNAME}.`,
+        )
+      }
       console.log('[x] DRY_RUN — would tweet', {
         findingId: finding.id,
         length,
         preview: text,
       })
-      return {
-        channel: 'x',
-        externalId: 'dry-run',
-        url: `https://x.com/${X_USERNAME}/status/dry-run`,
-        publishedAt: new Date().toISOString(),
-      }
+      throw new ChannelDryRunError('x', text)
     }
 
     const client = await loadClient()
