@@ -40,6 +40,10 @@ module "lambdas" {
   alerts_queue_arn   = module.sqs.alerts_queue_arn
   gazettes_queue_url = module.sqs.gazettes_queue_url
   alerts_queue_url   = module.sqs.alerts_queue_url
+  x_enabled          = var.x_enabled
+  x_dry_run          = var.x_dry_run
+  reddit_enabled     = var.reddit_enabled
+  reddit_dry_run     = var.reddit_dry_run
 }
 
 module "eventbridge" {
@@ -47,4 +51,11 @@ module "eventbridge" {
   environment          = var.environment
   collector_lambda_arn = module.lambdas.collector_arn
   collector_role_arn   = module.iam.collector_role_arn
+}
+
+module "monitoring" {
+  source            = "./modules/monitoring"
+  gazettes_dlq_name = module.sqs.gazettes_dlq_name
+  alerts_dlq_name   = module.sqs.alerts_dlq_name
+  alert_email       = var.alert_email
 }
