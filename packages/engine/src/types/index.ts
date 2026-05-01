@@ -7,6 +7,7 @@ export type FindingType =
   | 'concentracao_fornecedor'
   | 'dispensa_irregular'
   | 'inexigibilidade_sem_justificativa'
+  | 'padrao_recorrente'
 
 export interface Evidence {
   source: string   // URL do Querido Diário — OBRIGATÓRIO
