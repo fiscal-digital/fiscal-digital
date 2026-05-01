@@ -280,8 +280,10 @@ resource "aws_iam_role_policy" "publisher" {
         ]
       },
       {
+        # GenerateDataKey necessário para UpdateItem em tabela com SSE-KMS
+        # (publications-store grava resultado de cada canal no item do Finding)
         Effect   = "Allow"
-        Action   = ["kms:Decrypt"]
+        Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
         Resource = var.kms_key_arn
       },
     ]
