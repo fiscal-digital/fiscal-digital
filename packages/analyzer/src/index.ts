@@ -5,6 +5,9 @@ import type { SQSEvent } from 'aws-lambda'
 import {
   fiscalLicitacoes,
   fiscalContratos,
+  fiscalFornecedores,
+  fiscalPessoal,
+  fiscalGeral,
   extractEntities,
   saveMemory,
   generateNarrative,
@@ -127,16 +130,19 @@ async function processRecord(body: string): Promise<void> {
   const cityId = msg.territory_id
   const ctx = buildContext()
 
-  // Run both Fiscais in parallel; use allSettled so one failure never stops the other
-  const [licitacoesResult, contratosResult] = await Promise.allSettled([
-    fiscalLicitacoes.analisar({ gazette, cityId, context: ctx }),
-    fiscalContratos.analisar({ gazette, cityId, context: ctx }),
-  ])
+  // Run all 4 specialized Fiscais in parallel; allSettled ensures one failure never stops the others
+  const [licitacoesResult, contratosResult, fornecedoresResult, pessoalResult] =
+    await Promise.allSettled([
+      fiscalLicitacoes.analisar({ gazette, cityId, context: ctx }),
+      fiscalContratos.analisar({ gazette, cityId, context: ctx }),
+      fiscalFornecedores.analisar({ gazette, cityId, context: ctx }),
+      fiscalPessoal.analisar({ gazette, cityId, context: ctx }),
+    ])
 
-  const allFindings: Finding[] = []
+  const specializedFindings: Finding[] = []
 
   if (licitacoesResult.status === 'fulfilled') {
-    allFindings.push(...licitacoesResult.value)
+    specializedFindings.push(...licitacoesResult.value)
   } else {
     console.error('[analyzer] fiscalLicitacoes falhou', {
       gazetteId: gazette.id,
@@ -145,13 +151,35 @@ async function processRecord(body: string): Promise<void> {
   }
 
   if (contratosResult.status === 'fulfilled') {
-    allFindings.push(...contratosResult.value)
+    specializedFindings.push(...contratosResult.value)
   } else {
     console.error('[analyzer] fiscalContratos falhou', {
       gazetteId: gazette.id,
       error: contratosResult.reason,
     })
   }
+
+  if (fornecedoresResult.status === 'fulfilled') {
+    specializedFindings.push(...fornecedoresResult.value)
+  } else {
+    console.error('[analyzer] fiscalFornecedores falhou', {
+      gazetteId: gazette.id,
+      error: fornecedoresResult.reason,
+    })
+  }
+
+  if (pessoalResult.status === 'fulfilled') {
+    specializedFindings.push(...pessoalResult.value)
+  } else {
+    console.error('[analyzer] fiscalPessoal falhou', {
+      gazetteId: gazette.id,
+      error: pessoalResult.reason,
+    })
+  }
+
+  // FiscalGeral consolida os findings dos 4 Fiscais especializados e adiciona
+  // eventuais meta-findings padrao_recorrente (riskScore >= 90)
+  const allFindings: Finding[] = fiscalGeral.consolidar({ findings: specializedFindings, cityId })
 
   // Persist all Findings regardless of riskScore, then selectively enqueue for publish
   await Promise.allSettled(
@@ -191,7 +219,8 @@ async function processRecord(body: string): Promise<void> {
   console.log('[analyzer] gazette processada', {
     gazetteId: gazette.id,
     cityId,
-    findings: allFindings.length,
+    findingsEspecializados: specializedFindings.length,
+    findingsTotal: allFindings.length,
   })
 }
 

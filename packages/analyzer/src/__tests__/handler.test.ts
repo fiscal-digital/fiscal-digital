@@ -33,7 +33,11 @@ jest.mock('@aws-sdk/lib-dynamodb', () => ({
 }))
 
 // Mocks for fiscais and skills from engine
-const mockAnalisar = jest.fn()
+const mockAnalisarLicitacoes = jest.fn()
+const mockAnalisarContratos = jest.fn()
+const mockAnalisarFornecedores = jest.fn()
+const mockAnalisarPessoal = jest.fn()
+const mockConsolidar = jest.fn()
 const mockSaveMemoryExecute = jest.fn().mockResolvedValue({
   data: undefined,
   source: 'dynamodb:mock',
@@ -46,8 +50,11 @@ const mockGenerateNarrativeExecute = jest.fn().mockResolvedValue({
 })
 
 jest.mock('@fiscal-digital/engine', () => ({
-  fiscalLicitacoes: { id: 'fiscal-licitacoes', description: 'mock', analisar: mockAnalisar },
-  fiscalContratos: { id: 'fiscal-contratos', description: 'mock', analisar: mockAnalisar },
+  fiscalLicitacoes: { id: 'fiscal-licitacoes', description: 'mock', analisar: mockAnalisarLicitacoes },
+  fiscalContratos: { id: 'fiscal-contratos', description: 'mock', analisar: mockAnalisarContratos },
+  fiscalFornecedores: { id: 'fiscal-fornecedores', description: 'mock', analisar: mockAnalisarFornecedores },
+  fiscalPessoal: { id: 'fiscal-pessoal', description: 'mock', analisar: mockAnalisarPessoal },
+  fiscalGeral: { id: 'fiscal-geral', description: 'mock', consolidar: mockConsolidar },
   extractEntities: { name: 'extract_entities', description: 'mock', execute: jest.fn() },
   saveMemory: { name: 'save_memory', description: 'mock', execute: mockSaveMemoryExecute },
   generateNarrative: { name: 'generate_narrative', description: 'mock', execute: mockGenerateNarrativeExecute },
@@ -139,31 +146,38 @@ beforeEach(() => {
     source: 'dynamodb:mock',
     confidence: 1.0,
   })
+  // Default: all specialized fiscais return empty arrays
+  mockAnalisarLicitacoes.mockResolvedValue([])
+  mockAnalisarContratos.mockResolvedValue([])
+  mockAnalisarFornecedores.mockResolvedValue([])
+  mockAnalisarPessoal.mockResolvedValue([])
+  // Default: fiscalGeral.consolidar passes findings through unchanged
+  mockConsolidar.mockImplementation(({ findings }: { findings: unknown[] }) => findings)
   process.env.ALERTS_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789012/fiscal-digital-queue-prod'
   process.env.ALERTS_TABLE = 'fiscal-digital-alerts-prod'
 })
 
 // ---------------------------------------------------------------------------
-// Test 1: gazette válida → chama ambos os Fiscais
+// Test 1: gazette válida → chama todos os 4 Fiscais especializados
 // ---------------------------------------------------------------------------
 
-test('gazette válida chama fiscalLicitacoes e fiscalContratos', async () => {
-  mockAnalisar.mockResolvedValue([])
-
+test('gazette válida chama os 4 Fiscais especializados', async () => {
   const msg = makeCollectorMessage()
   const event = makeSQSEvent([makeSQSRecord(msg)])
 
   await handler(event)
 
-  // analisar é compartilhado entre os dois fiscais no mock — deve ter sido chamado 2×
-  expect(mockAnalisar).toHaveBeenCalledTimes(2)
+  expect(mockAnalisarLicitacoes).toHaveBeenCalledTimes(1)
+  expect(mockAnalisarContratos).toHaveBeenCalledTimes(1)
+  expect(mockAnalisarFornecedores).toHaveBeenCalledTimes(1)
+  expect(mockAnalisarPessoal).toHaveBeenCalledTimes(1)
 
-  // Ambas as chamadas devem receber a gazette convertida corretamente
-  const calls = mockAnalisar.mock.calls
-  expect(calls[0][0].gazette.id).toBe('gazette-001')
-  expect(calls[1][0].gazette.id).toBe('gazette-001')
-  expect(calls[0][0].cityId).toBe('4305108')
-  expect(calls[1][0].cityId).toBe('4305108')
+  // Todos recebem a gazette convertida corretamente
+  expect(mockAnalisarLicitacoes.mock.calls[0][0].gazette.id).toBe('gazette-001')
+  expect(mockAnalisarContratos.mock.calls[0][0].gazette.id).toBe('gazette-001')
+  expect(mockAnalisarFornecedores.mock.calls[0][0].gazette.id).toBe('gazette-001')
+  expect(mockAnalisarPessoal.mock.calls[0][0].gazette.id).toBe('gazette-001')
+  expect(mockAnalisarLicitacoes.mock.calls[0][0].cityId).toBe('4305108')
 })
 
 // ---------------------------------------------------------------------------
@@ -172,7 +186,7 @@ test('gazette válida chama fiscalLicitacoes e fiscalContratos', async () => {
 
 test('finding com riskScore < 60 não é enfileirado para publicação', async () => {
   const lowRiskFinding = makeFinding({ riskScore: 55, confidence: 0.90 })
-  mockAnalisar.mockResolvedValueOnce([lowRiskFinding]).mockResolvedValueOnce([])
+  mockAnalisarLicitacoes.mockResolvedValue([lowRiskFinding])
 
   const msg = makeCollectorMessage()
   const event = makeSQSEvent([makeSQSRecord(msg)])
@@ -190,7 +204,7 @@ test('finding com riskScore < 60 não é enfileirado para publicação', async (
 
 test('finding com riskScore >= 60 e confidence >= 0.70 é enfileirado para publicação', async () => {
   const publishableFinding = makeFinding({ riskScore: 75, confidence: 0.85 })
-  mockAnalisar.mockResolvedValueOnce([publishableFinding]).mockResolvedValueOnce([])
+  mockAnalisarLicitacoes.mockResolvedValue([publishableFinding])
 
   const msg = makeCollectorMessage()
   const event = makeSQSEvent([makeSQSRecord(msg)])
@@ -206,16 +220,14 @@ test('finding com riskScore >= 60 e confidence >= 0.70 é enfileirado para publi
 })
 
 // ---------------------------------------------------------------------------
-// Test 4: falha de 1 fiscal não impede o outro (Promise.allSettled)
+// Test 4: falha de 1 fiscal não impede os outros (Promise.allSettled)
 // ---------------------------------------------------------------------------
 
 test('falha em fiscalLicitacoes não impede fiscalContratos de rodar', async () => {
   const contratosResult = makeFinding({ fiscalId: 'fiscal-contratos', type: 'aditivo_abusivo', riskScore: 70, confidence: 0.80 })
 
-  // Primeiro chamado (licitacoes) lança; segundo (contratos) retorna finding
-  mockAnalisar
-    .mockRejectedValueOnce(new Error('Anthropic timeout'))
-    .mockResolvedValueOnce([contratosResult])
+  mockAnalisarLicitacoes.mockRejectedValue(new Error('Anthropic timeout'))
+  mockAnalisarContratos.mockResolvedValue([contratosResult])
 
   const msg = makeCollectorMessage()
   const event = makeSQSEvent([makeSQSRecord(msg)])
@@ -236,8 +248,7 @@ test('falha em fiscalLicitacoes não impede fiscalContratos de rodar', async () 
 
 test('body inválido não interrompe processamento dos records subsequentes', async () => {
   const validFinding = makeFinding({ riskScore: 65, confidence: 0.75 })
-  // licitacoes retorna finding, contratos retorna vazio
-  mockAnalisar.mockResolvedValueOnce([validFinding]).mockResolvedValueOnce([])
+  mockAnalisarLicitacoes.mockResolvedValue([validFinding])
 
   const invalidRecord = makeSQSRecord('this is not json', 'msg-invalid')
   const validRecord = makeSQSRecord(makeCollectorMessage(), 'msg-valid')
@@ -247,8 +258,71 @@ test('body inválido não interrompe processamento dos records subsequentes', as
   // Não deve lançar
   await expect(handler(event)).resolves.toBeUndefined()
 
-  // O record válido deve ter sido processado — ambos os fiscais foram chamados
-  expect(mockAnalisar).toHaveBeenCalledTimes(2)
+  // O record válido deve ter sido processado — os 4 Fiscais foram chamados para ele
+  expect(mockAnalisarLicitacoes).toHaveBeenCalledTimes(1)
+  expect(mockAnalisarContratos).toHaveBeenCalledTimes(1)
+  expect(mockAnalisarFornecedores).toHaveBeenCalledTimes(1)
+  expect(mockAnalisarPessoal).toHaveBeenCalledTimes(1)
   // Finding válido (riskScore=65, confidence=0.75) deve ter sido publicado uma vez
   expect(mockSqsSend).toHaveBeenCalledTimes(1)
+})
+
+// ---------------------------------------------------------------------------
+// Test 6: fiscalGeral.consolidar é chamado com findings dos 4 Fiscais
+// ---------------------------------------------------------------------------
+
+test('fiscalGeral.consolidar recebe todos os findings dos Fiscais especializados', async () => {
+  const licitacoesFinding = makeFinding({ fiscalId: 'fiscal-licitacoes', type: 'dispensa_irregular', cnpj: '12.345.678/0001-90' })
+  const contratosFinding = makeFinding({ fiscalId: 'fiscal-contratos', type: 'aditivo_abusivo', cnpj: '12.345.678/0001-90' })
+  const fornecedoresFinding = makeFinding({ fiscalId: 'fiscal-fornecedores', type: 'cnpj_jovem', cnpj: '12.345.678/0001-90' })
+  const pessoalFinding = makeFinding({ fiscalId: 'fiscal-pessoal', type: 'pico_nomeacoes', cnpj: undefined })
+
+  mockAnalisarLicitacoes.mockResolvedValue([licitacoesFinding])
+  mockAnalisarContratos.mockResolvedValue([contratosFinding])
+  mockAnalisarFornecedores.mockResolvedValue([fornecedoresFinding])
+  mockAnalisarPessoal.mockResolvedValue([pessoalFinding])
+
+  const msg = makeCollectorMessage()
+  const event = makeSQSEvent([makeSQSRecord(msg)])
+
+  await handler(event)
+
+  expect(mockConsolidar).toHaveBeenCalledTimes(1)
+  const consolidarArg = mockConsolidar.mock.calls[0][0] as { findings: Finding[]; cityId: string }
+  expect(consolidarArg.cityId).toBe('4305108')
+  expect(consolidarArg.findings).toHaveLength(4)
+  expect(consolidarArg.findings.map((f: Finding) => f.type)).toEqual(
+    expect.arrayContaining(['dispensa_irregular', 'aditivo_abusivo', 'cnpj_jovem', 'pico_nomeacoes']),
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Test 7: meta-finding padrao_recorrente gerado pelo FiscalGeral é enfileirado
+// ---------------------------------------------------------------------------
+
+test('meta-finding padrao_recorrente do fiscalGeral com riskScore >= 90 é enfileirado', async () => {
+  const specializedFinding = makeFinding({ riskScore: 75, confidence: 0.85 })
+  const metaFinding = makeFinding({
+    fiscalId: 'fiscal-geral',
+    type: 'padrao_recorrente',
+    riskScore: 90,
+    confidence: 0.85,
+  })
+
+  mockAnalisarLicitacoes.mockResolvedValue([specializedFinding])
+  // fiscalGeral devolve o finding original + o meta-finding
+  mockConsolidar.mockReturnValue([specializedFinding, metaFinding])
+
+  const msg = makeCollectorMessage()
+  const event = makeSQSEvent([makeSQSRecord(msg)])
+
+  await handler(event)
+
+  // Ambos devem ser enfileirados (ambos têm riskScore >= 60 e confidence >= 0.70)
+  expect(mockSqsSend).toHaveBeenCalledTimes(2)
+  const sentTypes = mockSqsSend.mock.calls.map(([cmd]) => {
+    const body = JSON.parse((cmd as { MessageBody: string }).MessageBody) as Finding
+    return body.type
+  })
+  expect(sentTypes).toEqual(expect.arrayContaining(['dispensa_irregular', 'padrao_recorrente']))
 })
