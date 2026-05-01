@@ -21,4 +21,5 @@ export type { ScoreRiskInput } from './skills/score_risk'
 export type { GenerateNarrativeInput } from './skills/generate_narrative'
 
 export { fiscalLicitacoes } from './fiscais/licitacoes'
+export { fiscalContratos } from './fiscais/contratos'
 export type { Fiscal, AnalisarInput, FiscalContext } from './fiscais/types'
