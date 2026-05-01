@@ -1,7 +1,7 @@
 // Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
 exports[`formatAlertText formata o Finding de exemplo conforme template do CLAUDE.md 1`] = `
-"🔍 FRACIONAMENTO — 4305108
+"🔍 FRACIONAMENTO — Caxias do Sul
 
 Foram identificadas três dispensas de licitação consecutivas para o mesmo fornecedor, somando R$ 145.000,00, acima do limite legal de R$ 50.000,00 para serviços.
 
@@ -15,5 +15,5 @@ Foram identificadas três dispensas de licitação consecutivas para o mesmo for
 ⚖️ Base legal: Lei 14.133/2021, Art. 75, II
 
 🔗 Fonte: https://queridodiario.ok.org.br/4305108/2024-03-15/excerpt/12345
-#FiscalDigital #4305108 #TransparênciaPublica"
+#FiscalDigital #CaxiasdoSul #TransparênciaPublica"
 `;

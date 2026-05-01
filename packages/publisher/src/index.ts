@@ -3,7 +3,7 @@ import {
   GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager'
 import type { SQSEvent } from 'aws-lambda'
-import type { Finding } from '@fiscal-digital/engine'
+import { getCityOrFallback, type Finding } from '@fiscal-digital/engine'
 import { RedditClient, RateLimitError } from './reddit'
 import { formatAlertText } from './format'
 
@@ -52,19 +52,18 @@ async function loadSecrets(): Promise<RedditSecrets> {
 
 /**
  * Publica um Finding como post de texto no subreddit correspondente.
- * TODO: mapeamento IBGE → subreddit por cidade (ex: 4305108 → r/CaxiasDoSul)
+ * Subreddit é derivado da cidade via `getCityOrFallback`; pode ser overridden
+ * por env `REDDIT_SUBREDDIT` (útil em testes/dry-run).
  */
 async function publishToReddit(finding: Finding): Promise<void> {
   const creds = await loadSecrets()
   const client = new RedditClient(creds)
+  const city = getCityOrFallback(finding.cityId)
 
-  const subreddit =
-    process.env.REDDIT_SUBREDDIT ??
-    // TODO: mapeamento IBGE → subreddit (ex: 4305108 → 'CaxiasDoSul')
-    'test'
+  const subreddit = process.env.REDDIT_SUBREDDIT ?? city.subreddit
 
   const token = await client.getAccessToken()
-  const title = `[${finding.type.replace(/_/g, '-').toUpperCase()}] Caxias do Sul — riskScore ${finding.riskScore}/100`
+  const title = `[${finding.type.replace(/_/g, '-').toUpperCase()}] ${city.name} — riskScore ${finding.riskScore}/100`
   const text = formatAlertText(finding)
 
   const result = await client.submitText(

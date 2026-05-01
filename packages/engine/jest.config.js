@@ -5,4 +5,14 @@ module.exports = {
   moduleNameMapper: {
     '^@fiscal-digital/engine$': '<rootDir>/src/index.ts',
   },
+  transform: {
+    '^.+\\.tsx?$': [
+      'ts-jest',
+      {
+        tsconfig: {
+          types: ['node', 'jest'],
+        },
+      },
+    ],
+  },
 }

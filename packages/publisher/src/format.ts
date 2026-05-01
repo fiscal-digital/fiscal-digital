@@ -1,4 +1,4 @@
-import type { Finding } from '@fiscal-digital/engine'
+import { getCityOrFallback, type Finding } from '@fiscal-digital/engine'
 
 /**
  * Mapeamento de FindingType → descrição curta para o campo ⚠️ do alerta.
@@ -37,21 +37,12 @@ function formatDateBR(iso: string): string {
 }
 
 /**
- * Deriva o nome legível da cidade a partir do cityId (territory_id IBGE).
- * TODO: substituir por lookup real quando o mapeamento IBGE→nome estiver disponível.
- */
-function cityLabel(cityId: string): string {
-  // TODO: mapeamento IBGE → nome da cidade (ex: 4305108 → "Caxias do Sul")
-  return cityId
-}
-
-/**
  * Formata um Finding no template de alerta do CLAUDE.md ("Formato de Alerta Publicado").
  * Campos opcionais são omitidos se ausentes.
  */
 export function formatAlertText(finding: Finding): string {
   const tipo = finding.type.replace(/_/g, '-').toUpperCase()
-  const cidade = cityLabel(finding.cityId)
+  const city = getCityOrFallback(finding.cityId)
   const evidenceDate =
     finding.evidence.length > 0 ? finding.evidence[0].date : ''
   const source =
@@ -59,7 +50,7 @@ export function formatAlertText(finding: Finding): string {
 
   const lines: string[] = []
 
-  lines.push(`🔍 ${tipo} — ${cidade}`)
+  lines.push(`🔍 ${tipo} — ${city.name}`)
   lines.push('')
   lines.push(finding.narrative)
 
@@ -97,8 +88,7 @@ export function formatAlertText(finding: Finding): string {
     lines.push(`🔗 Fonte: ${source}`)
   }
 
-  // TODO: mapeamento IBGE → hashtag da cidade (ex: 4305108 → #CaxiasDoSul)
-  lines.push(`#FiscalDigital #${cidade} #TransparênciaPublica`)
+  lines.push(`#FiscalDigital #${city.hashtag} #TransparênciaPublica`)
 
   return lines.join('\n')
 }
