@@ -4,7 +4,7 @@ import {
 } from '@aws-sdk/client-secrets-manager'
 import { getCityOrFallback, type Finding } from '@fiscal-digital/engine'
 import type { PublishChannel, PublishResult } from '../types'
-import { RateLimitError as ChannelRateLimitError } from '../types'
+import { ChannelDryRunError, RateLimitError as ChannelRateLimitError } from '../types'
 import {
   RedditClient,
   RateLimitError as RedditRateLimitError,
@@ -48,12 +48,7 @@ export class RedditChannel implements PublishChannel {
         subreddit,
         title,
       })
-      return {
-        channel: 'reddit',
-        externalId: 'dry-run',
-        url: `https://reddit.com/r/${subreddit}/comments/dry-run`,
-        publishedAt: new Date().toISOString(),
-      }
+      throw new ChannelDryRunError('reddit', `${title}\n\n${text}`)
     }
 
     const creds = await loadCreds()

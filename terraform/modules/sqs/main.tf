@@ -4,7 +4,7 @@ resource "aws_sqs_queue" "gazettes_dlq" {
 }
 
 resource "aws_sqs_queue" "gazettes" {
-  name                       = "fiscal-digital-gazettes-queue-prod"
+  name = "fiscal-digital-gazettes-queue-prod"
   # 6x analyzer Lambda timeout (300s) = 1800s — AWS best practice
   visibility_timeout_seconds = 1800
   message_retention_seconds  = 86400
@@ -22,7 +22,7 @@ resource "aws_sqs_queue" "alerts_dlq" {
 }
 
 resource "aws_sqs_queue" "alerts" {
-  name                       = "fiscal-digital-queue-prod"
+  name = "fiscal-digital-queue-prod"
   # 6x publisher Lambda timeout (120s) = 720s — AWS best practice
   visibility_timeout_seconds = 720
   message_retention_seconds  = 86400

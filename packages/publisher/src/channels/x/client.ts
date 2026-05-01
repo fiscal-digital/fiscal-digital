@@ -2,11 +2,18 @@ import { TwitterApi, ApiResponseError } from 'twitter-api-v2'
 import { RateLimitError } from '../types'
 
 /**
- * Credenciais OAuth 1.0a User Context da app no developer.x.com.
- * Schema gravado em AWS Secrets Manager (secret: fiscaldigital-x-prod).
+ * OAuth 1.0a User Context — schema do secret fiscaldigital-x-prod.
  *
- * Nomes em snake_case por convenção do CLAUDE.md / outros bots.
- * São mapeados para appKey/appSecret/accessToken/accessSecret pelo SDK.
+ * 4 keys obtidas em developer.x.com → app → Keys and tokens:
+ *   - Consumer Keys (API Key + API Key Secret)
+ *   - Authentication Tokens (Access Token + Access Token Secret)
+ *
+ * Access Token deve ser gerado **logado como @LiFiscalDigital**, com permissão
+ * Read+Write já salva em User authentication settings — caso contrário, herda
+ * Read-only e o tweet falha com 403.
+ *
+ * Nomes em snake_case por convenção do CLAUDE.md; mapeados para appKey/appSecret/
+ * accessToken/accessSecret pelo SDK twitter-api-v2.
  */
 export interface XCredentials {
   api_key: string
@@ -18,7 +25,7 @@ export interface XCredentials {
 export interface PostedTweet {
   id: string
   text: string
-  url: string // canonical URL — derivada do username + id
+  url: string
 }
 
 export class XClient {
@@ -34,23 +41,22 @@ export class XClient {
   }
 
   /**
-   * Valida credenciais sem efeito colateral chamando /2/users/me.
+   * Valida credenciais sem efeito colateral via /2/users/me.
    * Útil em smoke test e em cold start de Lambda para falhar cedo se as keys estão erradas.
-   * @returns username retornado pelo X — útil para verificar se token aponta pra conta certa
    */
   async verifyCredentials(): Promise<{ username: string; id: string }> {
     try {
       const me = await this.api.v2.me()
       return { username: me.data.username, id: me.data.id }
     } catch (err) {
-      this.rethrow(err)
+      this.rethrow(err, 'verifyCredentials')
     }
   }
 
   /**
-   * Posta um tweet via POST /2/tweets.
-   * @throws RateLimitError se 429 — caller deve logar e deixar SQS retry no próximo ciclo
-   * @throws Error com mensagem clara para outros HTTP errors (401 = creds erradas, 403 = permissão Read-only, etc.)
+   * Posta tweet via POST /2/tweets.
+   * @throws RateLimitError em 429 — caller loga e deixa SQS retry no próximo ciclo
+   * @throws Error em 401 (creds erradas), 403 (app sem Read+Write), 5xx (retry)
    */
   async tweet(text: string): Promise<PostedTweet> {
     try {
@@ -61,21 +67,25 @@ export class XClient {
         url: `https://x.com/${this.username}/status/${res.data.id}`,
       }
     } catch (err) {
-      this.rethrow(err)
+      this.rethrow(err, 'tweet')
     }
   }
 
-  private rethrow(err: unknown): never {
+  private rethrow(err: unknown, op: string): never {
     if (err instanceof ApiResponseError) {
       if (err.code === 429 || err.rateLimitError) {
-        const reset = err.rateLimit?.reset // unix timestamp em segundos
+        const reset = err.rateLimit?.reset
         const retryAfterSeconds = reset
           ? Math.max(0, reset - Math.floor(Date.now() / 1000))
-          : 900 // fallback: 15min (janela padrão do X)
-        throw new RateLimitError('x', retryAfterSeconds, `X 429 — reset em ${retryAfterSeconds}s`)
+          : 900
+        throw new RateLimitError(
+          'x',
+          retryAfterSeconds,
+          `X 429 em ${op} — reset em ${retryAfterSeconds}s`,
+        )
       }
       throw new Error(
-        `X API error: HTTP ${err.code} — ${err.data?.detail ?? err.message}`,
+        `X API ${op} error: HTTP ${err.code} — ${err.data?.detail ?? err.message}`,
       )
     }
     throw err
