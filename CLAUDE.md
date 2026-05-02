@@ -259,10 +259,10 @@ Fonte: gazettes com `nomeação`, `exoneração`, `cargo comissionado`
 ## LLM — Extração e Análise
 
 ```
-Modelo:    Claude Haiku 4.5 (claude-haiku-4-5-20251001)
-Conta:     Anthropic pessoal do Diego
-Secret:    fiscaldigital-anthropic-prod → campo: api_key
-Estratégia: prompt caching no system prompt dos Fiscais
+Camada 2 (extração):  Amazon Nova Lite  (amazon.nova-lite-v1:0) via AWS Bedrock
+Camada 3 (narrativa): Claude Haiku 4.5  (us.anthropic.claude-haiku-4-5-20251001-v1:0) via AWS Bedrock
+Credenciais: IAM role da Lambda analyzer (sem API key, sem Secrets Manager)
+Estratégia: sem prompt caching (Bedrock ConverseCommand não suporta cache_control)
 ```
 
 ### Arquitetura de processamento em 3 camadas
@@ -271,12 +271,13 @@ Estratégia: prompt caching no system prompt dos Fiscais
 Camada 1 — Regex (grátis)
   → CNPJ, valores (R$), datas, números de contrato
 
-Camada 2 — Claude Haiku 4.5 com cache (extração e classificação)
+Camada 2 — Nova Lite via Bedrock (extração e classificação)
   → tipo de ato, secretaria, fornecedor, contexto legal
-  → system prompt com regras fiscais em cache
+  → ~$0.047 por 1.000 gazettes processadas
 
-Camada 3 — Claude Haiku 4.5 (narrativa — apenas riskScore >= 60)
+Camada 3 — Claude Haiku 4.5 via Bedrock (narrativa — apenas riskScore >= 60)
   → texto legível com fonte citada, pronto para publicação
+  → ~$0.77 por 1.000 gazettes com achado publicado
 ```
 
 ---

@@ -283,6 +283,13 @@ resource "aws_iam_role_policy" "analyzer" {
         Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
         Resource = var.kms_key_arn
       },
+      {
+        # Resource = "*" — foundation-model e inference-profile ARNs não têm account ID
+        Sid      = "BedrockInvoke"
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel"]
+        Resource = "*"
+      },
     ]
   })
 }

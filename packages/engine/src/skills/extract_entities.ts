@@ -1,8 +1,7 @@
-import { getAnthropicClient, HAIKU_MODEL } from '../utils/anthropic'
+import { invokeModel, EXTRACTION_MODEL } from '../utils/bedrock'
 import { extractAll } from '../regex'
 import type { ExtractedEntities, Skill, SkillResult } from '../types'
 
-// Cached via prompt caching — define once at module level
 const SYSTEM_PROMPT = `Você é um extrator de entidades de diários oficiais municipais brasileiros.
 Analise o texto e extraia:
 - secretaria: nome da secretaria municipal responsável (string ou null)
@@ -25,32 +24,21 @@ export interface ExtractEntitiesInput {
 
 export const extractEntities: Skill<ExtractEntitiesInput, ExtractedEntities> = {
   name: 'extract_entities',
-  description: 'Extrai secretaria, tipo do ato, fornecedor e base legal com Claude Haiku (prompt caching)',
+  description: 'Extrai secretaria, tipo do ato, fornecedor e base legal com Nova Lite via Bedrock',
 
   async execute(input: ExtractEntitiesInput): Promise<SkillResult<ExtractedEntities>> {
     const base = extractAll(input.text)
 
-    const anthropic = await getAnthropicClient()
-
-    const res = await anthropic.messages.create({
-      model: HAIKU_MODEL,
-      max_tokens: 256,
-      system: [
-        {
-          type: 'text',
-          text: SYSTEM_PROMPT,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      messages: [{ role: 'user', content: input.text.slice(0, 4000) }],
+    const text = await invokeModel({
+      modelId: EXTRACTION_MODEL,
+      systemPrompt: SYSTEM_PROMPT,
+      userMessage: input.text.slice(0, 4000),
+      maxTokens: 256,
     })
 
     let llm: Partial<ExtractedEntities> = {}
     try {
-      const block = res.content[0]
-      if (block.type === 'text') {
-        llm = JSON.parse(block.text) as Partial<ExtractedEntities>
-      }
+      llm = JSON.parse(text) as Partial<ExtractedEntities>
     } catch {
       // Regex-only result is still valid — LLM response was malformed
     }
