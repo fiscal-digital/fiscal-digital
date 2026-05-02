@@ -11,8 +11,12 @@ const FISCAL_ID = 'fiscal-publicidade'
 // propaganda e mídia paga. Escolha conservadora — match exige um dos termos abaixo
 // para que a etapa 2 (extração de valor + janela eleitoral) seja executada.
 
+// Calibração 2026-05-02: regex expandida para capturar variantes comuns em gazettes
+// brasileiras, como "campanhas educativas", "comunicação social", "agência de propaganda",
+// "marketing institucional". Conservador o suficiente para evitar falsos positivos
+// (sempre exige CONTRATACAO_RE também na etapa 3).
 const PUBLICIDADE_RE =
-  /\b(?:publicidade(?:\s+institucional)?|propaganda(?:\s+institucional)?|divulga[çc][ãa]o\s+(?:institucional|oficial|de\s+atos)|inser[çc][ãa]o(?:\s+(?:paga|publicit[áa]ria))?|inser[çc][õo]es\s+(?:em\s+m[íi]dia|publicit[áa]rias)|m[íi]dia\s+(?:impressa|televisiva|digital|eletr[ôo]nica|paga|institucional)|an[úu]ncio(?:s)?(?:\s+publicit[áa]rios?|\s+institucionais?)?|veicula[çc][ãa]o\s+(?:publicit[áa]ria|de\s+(?:propaganda|m[íi]dia)))\b/i
+  /\b(?:publicidade|propaganda|divulga[çc][ãa]o|inser[çc][ãaõo](?:es)?|m[íi]dia|an[úu]ncio(?:s)?|veicula[çc][ãa]o|campanha(?:s)?\s+(?:educativ[ao]s?|publicit[áa]ri[ao]s?|institucion[ai][il]s?|de\s+(?:divulga[çc][ãa]o|comunica[çc][ãa]o))|comunica[çc][ãa]o\s+social|marketing(?:\s+institucional)?|ag[êe]ncia\s+de\s+(?:propaganda|publicidade|comunica[çc][ãa]o)|ve[íi]culo\s+de\s+comunica[çc][ãa]o|spots?\s+publicit[áa]rios?|outdoor(?:s)?|busdoor(?:s)?|painel\s+publicit[áa]rio|jornal\s+oficial|r[áa]dio\s+(?:cidade|comunit[áa]ria)|emissora\s+de\s+(?:r[áa]dio|tv|televis[ãa]o))\b/i
 
 // Indicadores de contratação onerosa — ajuda a separar "publicidade institucional"
 // real de menções incidentais (ex: "secretaria de comunicação" sem contrato).
