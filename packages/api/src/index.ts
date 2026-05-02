@@ -1,7 +1,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb'
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda'
-import { CITIES, getCityOrFallback } from '@fiscal-digital/engine'
+import { CITIES, getCityOrFallback, pdfCacheUrl } from '@fiscal-digital/engine'
 import type { Finding } from '@fiscal-digital/engine'
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' }))
@@ -308,29 +308,35 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       return ok(JSON.stringify({
         total: findings.length,
         filters,
-        items: findings.map(f => ({
-          id: f.id,
-          fiscalId: f.fiscalId,
-          type: f.type,
-          cityId: f.cityId,
-          city: getCityOrFallback(f.cityId).name,
-          state: getCityOrFallback(f.cityId).uf,
-          riskScore: f.riskScore,
-          confidence: f.confidence,
-          value: f.value,
-          cnpj: f.cnpj,
-          contractNumber: f.contractNumber,
-          secretaria: f.secretaria,
-          legalBasis: f.legalBasis,
-          narrative: f.narrative,
-          // `source` mantido como alias de evidence[0].source para backwards
-          // compat com `fiscal-digital-web/lib/api.ts` atual.
-          source: f.evidence?.[0]?.source,
-          evidence: f.evidence ?? [],
-          published: f.published,
-          publishedAt: f.publishedAt,
-          createdAt: f.createdAt,
-        })),
+        items: findings.map(f => {
+          const source = f.evidence?.[0]?.source
+          return {
+            id: f.id,
+            fiscalId: f.fiscalId,
+            type: f.type,
+            cityId: f.cityId,
+            city: getCityOrFallback(f.cityId).name,
+            state: getCityOrFallback(f.cityId).uf,
+            riskScore: f.riskScore,
+            confidence: f.confidence,
+            value: f.value,
+            cnpj: f.cnpj,
+            contractNumber: f.contractNumber,
+            secretaria: f.secretaria,
+            legalBasis: f.legalBasis,
+            narrative: f.narrative,
+            // `source` mantido como alias de evidence[0].source para backwards
+            // compat com `fiscal-digital-web/lib/api.ts` atual.
+            source,
+            // CDN cache derivado do source — site usa para iframe inline.
+            // Pode ser null se source não for QD ou ausente.
+            cachedPdfUrl: pdfCacheUrl(source),
+            evidence: f.evidence ?? [],
+            published: f.published,
+            publishedAt: f.publishedAt,
+            createdAt: f.createdAt,
+          }
+        }),
       }, null, 2), 'application/json; charset=UTF-8')
     }
 
