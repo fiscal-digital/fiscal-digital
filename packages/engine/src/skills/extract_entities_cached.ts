@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import { extractEntities } from './extract_entities'
 import { lookupMemory } from './lookup_memory'
 import { saveMemory } from './save_memory'
+import { extractAll } from '../regex'
 import type { ExtractedEntities, Skill, SkillResult } from '../types'
 
 export interface ExtractEntitiesCachedInput {
@@ -102,8 +103,12 @@ export function createCachedExtractEntities(opts: {
           cached?.entities &&
           (cached.schemaVersion ?? 0) >= EXTRACTION_SCHEMA_VERSION
         ) {
+          // Merge regex base com cached LLM entities — defensivo contra cache items
+          // populados por migrate-cache.mjs que não fizeram merge regex (LRN-021).
+          // Regex é local/grátis, então sempre re-aplicamos para garantir shape completo.
+          const base = extractAll(input.text)
           const result: SkillResult<ExtractedEntities> = {
-            data: cached.entities,
+            data: { ...base, ...cached.entities },
             source: input.gazetteUrl,
             confidence: cached.confidence ?? 0.85,
           }
