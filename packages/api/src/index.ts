@@ -202,19 +202,31 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+// Espelho de fiscal-digital-web/lib/findings.ts FINDING_TYPE_LABELS (versão PT).
+// Mantenha sincronizado nos dois lados — labels divergentes confundem leitores
+// que veem RSS + site.
 function typeLabel(type: string): string {
   const labels: Record<string, string> = {
-    dispensa_irregular: 'DISPENSA IRREGULAR',
-    fracionamento: 'FRACIONAMENTO',
-    aditivo_abusivo: 'ADITIVO ABUSIVO',
-    prorrogacao_excessiva: 'PRORROGAÇÃO EXCESSIVA',
-    cnpj_jovem: 'CNPJ JOVEM',
-    concentracao_fornecedor: 'CONCENTRAÇÃO FORNECEDOR',
-    pico_nomeacoes: 'PICO NOMEAÇÕES',
-    rotatividade_anormal: 'ROTATIVIDADE ANORMAL',
-    padrao_recorrente: 'PADRÃO RECORRENTE',
+    dispensa_irregular: 'Dispensa irregular',
+    fracionamento: 'Fracionamento',
+    aditivo_abusivo: 'Aditivo abusivo',
+    prorrogacao_excessiva: 'Prorrogação excessiva',
+    cnpj_jovem: 'CNPJ jovem',
+    concentracao_fornecedor: 'Concentração de fornecedor',
+    pico_nomeacoes: 'Pico de nomeações',
+    rotatividade_anormal: 'Rotatividade anormal',
+    inexigibilidade_sem_justificativa: 'Inexigibilidade sem justificativa',
+    padrao_recorrente: 'Padrão recorrente',
+    convenio_sem_chamamento: 'Convênio sem chamamento',
+    repasse_recorrente_osc: 'Repasse recorrente a OSC',
+    diaria_irregular: 'Diária irregular',
+    publicidade_eleitoral: 'Publicidade em janela vedada',
+    locacao_sem_justificativa: 'Locação sem justificativa',
+    nepotismo_indicio: 'Indício de nepotismo',
+    cnpj_situacao_irregular: 'CNPJ em situação irregular',
+    fornecedor_sancionado: 'Fornecedor sancionado (CGU)',
   }
-  return labels[type] ?? type.toUpperCase()
+  return labels[type] ?? type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 function buildRss(findings: Finding[], channelTitle: string, selfUrl: string): string {
