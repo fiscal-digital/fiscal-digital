@@ -11,18 +11,26 @@
  *   node packages/collector/scripts/backfill.mjs
  *   node packages/collector/scripts/backfill.mjs --dry-run
  *   node packages/collector/scripts/backfill.mjs --from=2023-01-01
+ *   node packages/collector/scripts/backfill.mjs --city=4314902   (Porto Alegre)
  *
- * Custo estimado: < $0.50 Bedrock + ~$0.02 Lambda para o acervo completo
+ * Cidades disponíveis:
+ *   4305108 — Caxias do Sul (padrão)
+ *   4314902 — Porto Alegre
+ *
+ * Custo estimado: < $0.50 Bedrock por cidade
  */
 
 import { execSync } from 'child_process'
 import { writeFileSync, unlinkSync, existsSync } from 'fs'
-import { tmpdir } from 'os'
 import { join } from 'path'
 
 const FUNCTION_NAME = 'fiscal-digital-collector-prod'
-const TERRITORY_ID = '4305108'  // Caxias do Sul
 const REGION = 'us-east-1'
+
+const CITY_NAMES = {
+  '4305108': 'Caxias do Sul',
+  '4314902': 'Porto Alegre',
+}
 
 // ── Gerar semestres ──────────────────────────────────────────────────────────
 
@@ -45,22 +53,22 @@ function generateSemesters(fromStr) {
 
 // ── Invocar Lambda via AWS CLI ───────────────────────────────────────────────
 
-function invokeBackfill(since) {
+function invokeBackfill(since, territoryId) {
   const payload = JSON.stringify({
     version: '0',
-    id: `backfill-${since}`,
+    id: `backfill-${territoryId}-${since}`,
     source: 'manual-backfill',
     account: '',
     time: new Date().toISOString(),
     region: REGION,
     resources: [],
     'detail-type': 'Scheduled Event',
-    detail: { backfill: true, territory_id: TERRITORY_ID, since },
+    detail: { backfill: true, territory_id: territoryId, since },
   })
 
   // Escrever payload em arquivo temporário (evita problemas com aspas no shell)
-  const payloadFile = join(process.cwd(), `backfill-payload-${since}.json`)
-  const resultFile = join(process.cwd(), `backfill-result-${since}.json`)
+  const payloadFile = join(process.cwd(), `backfill-payload-${territoryId}-${since}.json`)
+  const resultFile = join(process.cwd(), `backfill-result-${territoryId}-${since}.json`)
 
   try {
     writeFileSync(payloadFile, payload, 'utf-8')
@@ -106,12 +114,14 @@ async function main() {
   const args = process.argv.slice(2)
   const dryRun = args.includes('--dry-run')
   const fromArg = args.find(a => a.startsWith('--from='))?.replace('--from=', '')
+  const TERRITORY_ID = args.find(a => a.startsWith('--city='))?.replace('--city=', '') ?? '4305108'
+  const cityName = CITY_NAMES[TERRITORY_ID] ?? TERRITORY_ID
 
   const semesters = generateSemesters(fromArg)
   const startYear = fromArg?.slice(0, 4) ?? '2021'
 
   console.log(`\n${'='.repeat(62)}`)
-  console.log('  Fiscal Digital — Backfill Caxias do Sul (gestão Adiló)')
+  console.log(`  Fiscal Digital — Backfill ${cityName}`)
   console.log(`  Desde ${startYear} · ${semesters.length} semestres · território ${TERRITORY_ID}`)
   if (dryRun) console.log('  Modo: DRY-RUN — apenas lista períodos')
   console.log(`${'='.repeat(62)}\n`)
@@ -133,7 +143,7 @@ async function main() {
     const prefix = `[${String(i + 1).padStart(2)}/${semesters.length}] ${since} → ${until}`
     process.stdout.write(`${prefix} ... `)
 
-    const { processed, sent, durationMs, ok, error } = invokeBackfill(since)
+    const { processed, sent, durationMs, ok, error } = invokeBackfill(since, TERRITORY_ID)
 
     if (ok) {
       totalProcessed += Number(processed) || 0

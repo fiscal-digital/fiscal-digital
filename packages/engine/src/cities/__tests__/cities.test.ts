@@ -14,9 +14,23 @@ describe('cities', () => {
     expect(c?.active).toBe(true)
   })
 
-  it('Porto Alegre (4314902) está mapeada mas inativa (Fase 2)', () => {
+  it('Porto Alegre (4314902) está ativa', () => {
     const c = getCity('4314902')
-    expect(c?.active).toBe(false)
+    expect(c).toBeDefined()
+    expect(c?.name).toBe('Porto Alegre')
+    expect(c?.active).toBe(true)
+  })
+
+  it('São Paulo (3550308) está ativa', () => {
+    const c = getCity('3550308')
+    expect(c?.name).toBe('São Paulo')
+    expect(c?.active).toBe(true)
+  })
+
+  it('Curitiba (4106902) está ativa', () => {
+    const c = getCity('4106902')
+    expect(c?.name).toBe('Curitiba')
+    expect(c?.active).toBe(true)
   })
 
   it('getCity retorna undefined para IBGE desconhecido', () => {
@@ -30,10 +44,14 @@ describe('cities', () => {
     expect(c.active).toBe(false)
   })
 
-  it('activeCities retorna apenas cidades de Fase 1', () => {
+  it('activeCities inclui todas as cidades ativas', () => {
     const active = activeCities()
-    expect(active).toHaveLength(1)
-    expect(active[0].cityId).toBe('4305108')
+    const ids = active.map(c => c.cityId)
+    expect(ids).toContain('4305108') // Caxias do Sul
+    expect(ids).toContain('4314902') // Porto Alegre
+    expect(ids).toContain('3550308') // São Paulo
+    expect(ids).toContain('4106902') // Curitiba
+    expect(active.every(c => c.active)).toBe(true)
   })
 
   it('todas as cidades têm cityId IBGE de 7 dígitos numéricos', () => {
