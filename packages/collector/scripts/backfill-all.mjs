@@ -11,6 +11,13 @@
 
 import { execSync } from 'child_process'
 
+// PoC = Caxias do Sul (origem MVP) + Porto Alegre (capital escala média)
+// Ver CLAUDE.md "Cidades-padrão para Provas de Conceito"
+const POC_CITIES = [
+  { id: '4305108', name: 'Caxias do Sul' },
+  { id: '4314902', name: 'Porto Alegre' },
+]
+
 const PENDING = [
   { id: '3304557', name: 'Rio de Janeiro' },
   { id: '5300108', name: 'Brasília' },

@@ -19,7 +19,8 @@
 
 Agente autônomo de fiscalização de gastos públicos municipais no Brasil.
 Transforma dados públicos em alertas verificáveis para a sociedade.
-Primeira cobertura: Caxias do Sul (RS) — gestão Adiló Didomenico (2021–atual).
+Cobertura: top 50 cidades brasileiras por população + capitais (RS como origem
+do MVP, gestão Adiló de Caxias do Sul 2021–atual).
 
 ## Inspiração e Ecossistema
 
@@ -122,33 +123,66 @@ ou copy de site, abrir sessão dedicada em `fiscal-digital-web/`.
 - **DNS:** AWS Route 53 (`us-east-1`)
 - **Hosted Zone:** fiscaldigital.org
 
-### Subdomínios
+### Subdomínios e rotas
+
+Estratégia atual: **single-domain com rotas por cidade** (não subdomínio por cidade).
+Subdomínio por cidade fica para depois — gera complexidade de DNS/cert para 50+
+cidades sem ganho real no MVP.
 
 ```
-fiscaldigital.org                              → landing institucional
+fiscaldigital.org                              → landing institucional (PT)
+fiscaldigital.org/en                           → landing institucional (EN)
+fiscaldigital.org/alertas                      → feed global de achados
+fiscaldigital.org/cidades/{slug}               → painel por cidade (futuro)
 www.fiscaldigital.org                          → redirect para raiz
-api.fiscaldigital.org                          → API pública REST
-caxias.fiscaldigital.org                       → painel gestão Adiló
-porto-alegre.fiscaldigital.org                 → painel Porto Alegre (Fase 2)
-{cidade}.fiscaldigital.org/alertas             → feed de achados
-{cidade}.fiscaldigital.org/fornecedores/{cnpj} → perfil de fornecedor
-{cidade}.fiscaldigital.org/secretarias/{id}    → painel por secretaria
+api.fiscaldigital.org                          → API pública REST (RSS + JSON)
 ```
+
+API pública atual (Sprint 5): exposta via Lambda Function URL pública. Migração
+para `api.fiscaldigital.org` formal aguarda decisão sobre custódia de cert.
 
 ---
 
 ## Cidades Cobertas
 
-| Fase | Cidade | IBGE | Gazettes QD | Status |
-|---|---|---|---|---|
-| **MVP (Fase 1)** | Caxias do Sul | 4305108 | 5.861 | Ativo |
-| **Fase 2** | Porto Alegre | 4314902 | 10.000+ | Planejado |
-| Futuro | Canoas | 4304606 | 0 | Aguarda cobertura QD |
-| Futuro | Passo Fundo | 4314100 | 0 | Aguarda cobertura QD |
+Fonte de verdade: [`packages/engine/src/cities/index.ts`](packages/engine/src/cities/index.ts).
+Adicionar cidade = adicionar entry naquele arquivo.
 
-Backfill Fase 1: 01/01/2021 → hoje (gestão Adiló completa).
+**Cobertura atual: 50 cidades ativas + 2 planejadas (22 estados).**
+
+- **Origem do MVP:** Caxias do Sul (RS, IBGE 4305108) — gestão Adiló Didomenico
+  (2021–atual). Backfill prioritário: 01/01/2021 → hoje.
+- **Capitais (todas):** Brasília, São Paulo, Rio de Janeiro, Salvador, Fortaleza,
+  Belo Horizonte, Manaus, Curitiba, Recife, Goiânia, Belém, Porto Alegre, Maceió,
+  Natal, Campo Grande, João Pessoa, Teresina, São Luís, Aracaju, Cuiabá,
+  Florianópolis, Porto Velho.
+- **Outras grandes:** Caxias do Sul, Campinas, Guarulhos, São Gonçalo, São Bernardo
+  do Campo, Duque de Caxias, Nova Iguaçu, Santo André, Osasco, Sorocaba, Uberlândia,
+  Ribeirão Preto, São José dos Campos, Jaboatão dos Guararapes, Contagem, Joinville,
+  Feira de Santana, Londrina, Juiz de Fora, Aparecida de Goiânia, Serra, Campos dos
+  Goytacazes, Belford Roxo, Niterói, São José do Rio Preto, Ananindeua, Vila Velha,
+  Mogi das Cruzes.
+- **Planejadas (sem cobertura QD ainda):** Canoas (RS), Passo Fundo (RS).
+
+Cobertura efetiva por cidade depende do Querido Diário ter o município indexado.
+Se QD não cobre, o collector pula sem erro.
 
 ---
+
+## Cidades-padrão para Provas de Conceito
+
+Ao testar mudanças no engine (novo Fiscal, refactor de cache, migration script, etc.),
+**sempre rodar primeiro contra Caxias do Sul + Porto Alegre** antes de aplicar
+ao top 50.
+
+Razão:
+- **Caxias do Sul** (4305108): origem do MVP, gestão Adiló completa 2021→hoje,
+  3.289 gazettes / 13.707 excerpts. Cobertura denso e diversa.
+- **Porto Alegre** (4314902): capital, escala média (1.206 gazettes), perfil
+  diferente do interior — valida generalização.
+
+As duas juntas cobrem ~10% do volume total mas representam padrões suficientes
+para validar comportamento. Custo de PoC: ~$0.90 vs ~$9 do top 50 completo.
 
 ## Smoke Tests em Prod — sempre limpar após uso
 
@@ -332,13 +366,13 @@ Camada 3 — Claude Haiku 4.5 via Bedrock (narrativa — apenas riskScore >= 60)
 
 ```
 00:00  EventBridge → fiscal-digital-collector-prod
-00:10  Coleta novas gazettes (Querido Diário API)
+00:10  Coleta novas gazettes (Querido Diário API, 60 req/min)
 00:20  Regex: CNPJ, valores, datas (Camada 1)
-00:25  Haiku classifica atos (Camada 2, com cache)
-00:40  Fiscais rodam análises e cruzamentos no DynamoDB
+00:25  Nova Lite via Bedrock classifica atos (Camada 2, sem cache)
+00:40  Fiscais (5) rodam análises e cruzamentos no DynamoDB
 00:50  Fiscal Geral consolida riskScore
 00:55  riskScore >= 60 → SQS fiscal-digital-queue-prod
-01:00  fiscal-digital-publisher-prod → X + Reddit + DynamoDB
+01:00  fiscal-digital-publisher-prod → Reddit (live DRY_RUN) + X (DRY_RUN) + DynamoDB
 ```
 
 ---
