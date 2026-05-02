@@ -249,11 +249,16 @@ Skills próprias e memória persistente no DynamoDB.
 O Fiscal Geral orquestra os demais.
 
 ```
-Fiscal Geral (orquestrador)
-  ├── Fiscal de Licitações
-  ├── Fiscal de Contratos
-  ├── Fiscal de Fornecedores
-  └── Fiscal de Pessoal
+Fiscal Geral (orquestrador, cross-gazette via consolidarAsync)
+  ├── Fiscal de Licitações       — Lei 14.133/2021 Art. 75
+  ├── Fiscal de Contratos        — Lei 14.133/2021 Art. 125 + 107
+  ├── Fiscal de Fornecedores     — RFB + CGU (CEIS/CNEP)
+  ├── Fiscal de Pessoal          — Lei 9.504/97 (período eleitoral)
+  ├── Fiscal de Convênios        — Lei 13.019/2014 (OSCs)
+  ├── Fiscal de Nepotismo        — STF Súmula Vinculante 13
+  ├── Fiscal de Publicidade      — Lei 9.504/97 Art. 73 VI "b"
+  ├── Fiscal de Locação          — Lei 14.133/2021 Art. 74 III
+  └── Fiscal de Diárias          — Lei 8.112/90 Art. 58 + BrasilAPI feriados
 ```
 
 ### Contrato de Skill (TypeScript)
@@ -296,23 +301,47 @@ interface Finding {
 | `validate_cnpj` | Valida CNPJ na Receita Federal |
 | `check_sanctions` | Verifica empresa no CEIS/CNEP (CGU) |
 
-### Fiscais MVP (Fase 1)
+### Fiscais Ativos (10 em produção)
 
 **Fiscal de Licitações**
 Detecta: dispensas, fracionamento de contrato, inexigibilidades sem justificativa
 Base legal: Lei 14.133/2021, Art. 75 (teto R$ 100k obras / R$ 50k serviços)
 
 **Fiscal de Contratos**
-Detecta: aditivos > 25% do valor original, prorrogações excessivas
-Base legal: Lei 14.133/2021, Art. 125
+Detecta: aditivos > 25% do valor original (50% para reformas), prorrogações excessivas
+Base legal: Lei 14.133/2021, Art. 125 + Art. 107
 
 **Fiscal de Fornecedores**
-Detecta: CNPJ com < 6 meses na data do contrato, concentração > 40% por secretaria
-Fonte: Receita Federal CNPJ API + histórico DynamoDB
+Detecta: CNPJ < 12 meses na data do contrato, concentração > 40% por secretaria, situação cadastral irregular (RFB), empresa sancionada (CGU CEIS/CNEP)
+Fonte: BrasilAPI CNPJ + CGU + histórico DynamoDB
 
 **Fiscal de Pessoal**
-Detecta: pico de nomeações em períodos eleitorais, rotatividade anormal
+Detecta: pico de nomeações em períodos eleitorais (≥ 3 atos por gazette em janela; ≥ 7 fora), rotatividade anormal
 Fonte: gazettes com `nomeação`, `exoneração`, `cargo comissionado`
+
+**Fiscal Geral** (orquestrador)
+Detecta: `padrao_recorrente` — ≥ 3 findings mesmo CNPJ em 12 meses (cross-gazette via `consolidarAsync` + `queryAlertsByCnpj`)
+
+**Fiscal de Convênios** (entregue 2026-05-02)
+Detecta: convênio sem chamamento público, repasses recorrentes a OSC sem renovação formal
+Base legal: Lei 13.019/2014 (Marco Regulatório das OSCs)
+
+**Fiscal de Nepotismo** (entregue 2026-05-02, conservador por design)
+Detecta: indício de nepotismo por sobrenome incomum coincidente em cargo comissionado (threshold confidence ≥ 0.95)
+Base legal: STF Súmula Vinculante 13, CF Art. 37
+
+**Fiscal de Publicidade** (entregue 2026-05-02)
+Detecta: contratação publicitária na janela vedada (3 meses antes da eleição até 31/12)
+Base legal: Lei 9.504/97 Art. 73 VI "b" + VII
+
+**Fiscal de Locação** (entregue 2026-05-02)
+Detecta: locação inexigível citada sem fundamento (TODO: cruzar com IPTU para preço justo)
+Base legal: Lei 14.133/2021 Art. 74 III
+
+**Fiscal de Diárias** (entregue 2026-05-02)
+Detecta: pagamento em final de semana / feriado sem justificativa, valor > limite (R$ 800)
+Fonte: BrasilAPI feriados nacionais (com cache em memória)
+Base legal: Lei 8.112/90 Art. 58
 
 ---
 
