@@ -5,131 +5,91 @@
 
 ---
 
-## Fiscais Existentes (Sprint 1-2)
+## Fiscais em Produção (9 ativos)
 
 ### 1. FiscalLicitacoes — `fiscal-licitacoes`
-- **Status:** ✅ em prod, bug fixed em 2026-05-02 (NULL cnpj GSI)
+- **Status:** ✅ em prod, calibrado 2026-05-02
 - **Detecta:**
-  - Dispensa irregular: valor > teto Lei 14.133/2021 Art. 75 I/II
-  - Fracionamento: múltiplas dispensas mesmo CNPJ ultrapassando teto
+  - `dispensa_irregular`: valor > teto Lei 14.133/2021 Art. 75 I/II
+  - `fracionamento`: múltiplas dispensas mesmo CNPJ ultrapassando teto
 - **Base legal:** Lei 14.133/2021, Art. 75 + §1º
-- **Findings hist.:** 4 (Caxias SMED + Curitiba SGM)
 - **Próximas calibrações:**
-  - Threshold de fracionamento (12 meses, mesmo CNPJ + secretaria)
+  - Inexigibilidade Art. 74 (sub-tipo distinto, fora de escopo MVP)
   - Edge: dispensa com valor "estimado" vs "homologado"
-  - Inexigibilidade Art. 74 (fora de escopo MVP, sub-tipo distinto)
 
 ### 2. FiscalContratos — `fiscal-contratos`
-- **Status:** ✅ em prod, bug fixed em 2026-05-02 (NULL cnpj GSI)
+- **Status:** ✅ em prod
 - **Detecta:**
-  - Aditivo abusivo: > 25% do valor original (50% para reformas)
-  - Prorrogação excessiva: > 10 anos vigência total (Art. 107)
+  - `aditivo_abusivo`: > 25% do valor original (50% para reformas)
+  - `prorrogacao_excessiva`: > 10 anos vigência total (Art. 107)
 - **Base legal:** Lei 14.133/2021, Art. 125 §1º + Art. 107
-- **Findings hist.:** 0 (após fix, ainda re-analisar histórico)
 - **Pendências:**
   - Validação de prorrogação requer histórico do contrato original (depende de MIT-02 suppliers schema)
   - Reforma vs obra normal: classificação via `subtype` extraído pela Nova Lite
 
 ### 3. FiscalFornecedores — `fiscal-fornecedores`
-- **Status:** ⚠️ em prod com throttling (3% Bedrock errors), Etapa 2-3 pendentes
+- **Status:** ✅ em prod, calibrado 2026-05-02 (threshold 12 meses + situação irregular + sancionado CGU)
 - **Detecta:**
-  - CNPJ jovem: empresa < 6 meses no momento do contrato
-  - Concentração: > 40% dos contratos de uma secretaria com mesmo CNPJ
-- **Base legal:** indícios — Lei 14.133/2021 não proíbe explicitamente, mas justifica investigação
-- **Findings hist.:** 0
-- **Pendências:**
-  - Throttle Bedrock: adicionar retry-with-backoff em `extract_entities.ts`
-  - validateCNPJ via BrasilAPI (skill já existe; integração com Fiscal não confirmada)
-  - check_sanctions CGU CEIS/CNEP (skill existe; integração pendente)
+  - `cnpj_jovem`: empresa < 12 meses no momento do contrato
+  - `concentracao_fornecedor`: > 40% dos contratos de uma secretaria com mesmo CNPJ
+  - `cnpj_situacao_irregular`: situação cadastral suspensa/inapta/baixada/nula (RFB)
+  - `fornecedor_sancionado`: empresa em CEIS/CNEP da CGU
+- **Base legal:** Lei 14.133/2021 Art. 14 + decretos CGU
+- **Skills:** validateCNPJ (BrasilAPI) + checkSanctions (CGU CEIS/CNEP)
 
 ### 4. FiscalPessoal — `fiscal-pessoal`
-- **Status:** ⚠️ código OK (12 unit tests passando) mas **threshold alto demais → nunca dispara**
+- **Status:** ✅ em prod, calibrado 2026-05-02 (threshold per-gazette: 3+ atos em janela eleitoral, 7+ fora)
 - **Detecta:**
-  - Pico de nomeações: ≥ **5 atos por excerpt** em janela eleitoral, ≥ **10 fora**
-  - Rotatividade: exoneração+nomeação no mesmo excerpt
-- **Auditoria 2026-05-02:**
-  - Excerpts são windows de 300 chars — raramente cabem 5 nomeações
-  - Probabilidade de trigger ≈ 0% em prática
-  - Janela eleitoral 2024 já passou; 2026 começa jul/2026
-- **Calibração proposta (UH-23):**
-  - Mudar de "atos por excerpt" para "atos por gazette" (somar todos os excerpts)
-  - Limiar 3+ atos por gazette em janela eleitoral
-  - Cross-gazette: contar atos do mesmo cargo em N dias
-- **Bloqueio:** schema de personas em DynamoDB (não implementado) para cross-gazette
+  - `pico_nomeacoes`: ≥ 3 atos por gazette em janela eleitoral, ≥ 7 fora
+  - `rotatividade_anormal`: exoneração+nomeação no mesmo excerpt
+- **Base legal:** Lei 9.504/97 (período eleitoral)
+- **Pendências:**
+  - Cross-gazette: contar atos do mesmo cargo em N dias (depende schema personas)
 
 ### 5. FiscalGeral — `fiscal-geral`
-- **Status:** ⚠️ design gap — funciona em isolamento mas **nunca dispara em prod**
-- **Função:**
-  - Consolida findings dos 4 Fiscais especializados (mesmo gazette)
-  - Detecta `padrao_recorrente`: ≥ 3 findings mesmo CNPJ → meta-finding riskScore 90+
-- **Auditoria 2026-05-02:**
-  - **Design gap:** `consolidar()` recebe findings de UM gazette, não cross-gazette
-  - 1 gazette típica gera 0-2 findings, raramente 3+ no mesmo CNPJ
-  - Resultado: meta-finding nunca emite
-- **Fix arquitetural proposto (UH-24):**
-  - Modo histórico: `consolidar()` chama `queryAlertsByCnpj` para cada CNPJ visto
-  - Cross-gazette padrão_recorrente: ≥ 3 findings mesmo CNPJ em janela 12 meses
-  - Move parte da lógica para um Lambda periódico (não inline no analyzer)
-- **Custo computacional:** baixo (Query GSI por CNPJ é barato)
+- **Status:** ✅ em prod com `consolidarAsync` (cross-gazette)
+- **Detecta:**
+  - `padrao_recorrente`: ≥ 3 findings mesmo CNPJ em janela 12 meses (`HISTORICO_JANELA_MESES`)
+- **Função:** consolida findings dos 4 Fiscais especializados via `queryAlertsByCnpj`
 
----
-
-## Fiscais Planejados (Sprint 7+)
-
-### A. FiscalConvenios — `fiscal-convenios`
-- **Detectaria:**
-  - Convênios > R$ X firmados sem licitação prévia OU procedimento simplificado
-  - Repasses recorrentes ao mesmo OSC sem renovação contratual formal
+### 6. FiscalConvenios — `fiscal-convenios`
+- **Status:** ✅ em prod (entregue 2026-05-02)
+- **Detecta:**
+  - `convenio_sem_chamamento`: termo de fomento/colaboração sem chamamento público
+  - `repasse_recorrente_osc`: repasses sucessivos ao mesmo OSC sem renovação formal
 - **Base legal:** Lei 13.019/2014 (Marco Regulatório das OSCs), Decreto 8.726/2016
-- **Skills necessárias:** extractEntities (já existe), regex extra para `convênio`/`termo de fomento`
-- **Estimativa:** M (1-2 dias)
-- **Bloqueia:** UH-22 Phase 2 deployed ✅ (cache + state tracking funciona)
 
-### B. FiscalNepotismo — `fiscal-nepotismo`
-- **Detectaria:**
-  - Nomeação de cônjuge/parente até 3º grau de servidor já no quadro
-  - Cargos em comissão para parentes do alto escalão (alcaide, secretários)
+### 7. FiscalNepotismo — `fiscal-nepotismo`
+- **Status:** ✅ em prod, conservador por design (alto risco reputacional)
+- **Detecta:**
+  - `nepotismo_indicio`: nomeação com sobrenome incomum coincidente + cargo em comissão
 - **Base legal:** STF Súmula Vinculante 13, CF Art. 37
-- **Skills necessárias:**
-  - extractEntities (já existe) — extrai nome do nomeado
-  - **NOVA skill:** `lookup_kinship` — cruzar nome com TSE (ficha eleitoral) ou Receita Federal CPF
-- **Bloqueio externo:** acesso a dados de parentesco — possível via TSE; sem TSE = heurística por sobrenome (alta taxa de FP)
-- **Estimativa:** L (3-5 dias) — depende de fonte de parentesco
-- **Risco:** alto risco reputacional (acusação errada). Threshold de confiança elevado (>= 0.95) obrigatório.
+- **Notas:**
+  - Threshold de confiança alto (>= 0.95) obrigatório
+  - Skill `lookup_kinship` (cruzamento TSE/CPF) ainda não integrada — heurística por sobrenome
 
-### C. FiscalPublicidade — `fiscal-publicidade`
-- **Detectaria:**
-  - Gastos de publicidade institucional 3 meses antes de eleição (proibido)
-  - Inserções pagas em mídia que mencionem nome do alcaide
-- **Base legal:** Lei 9.504/97 Art. 73 (Lei das Eleições)
-- **Skills necessárias:**
-  - Calendário eleitoral (constante: outubro de cada 2 anos para municipais)
-  - extractEntities + regex `publicidade institucional` / `propaganda`
-- **Estimativa:** S-M (1-2 dias)
-- **Janela ativa:** julho-outubro de anos eleitorais (2026, 2028, 2030...)
+### 8. FiscalPublicidade — `fiscal-publicidade`
+- **Status:** ✅ em prod, calibrado 2026-05-02 (regex expandida)
+- **Detecta:**
+  - `publicidade_eleitoral`: contratação publicitária na janela vedada (3 meses antes da eleição até 31/12)
+- **Base legal:** Lei 9.504/97 Art. 73 VI "b" + VII
+- **Janelas hardcoded:** 2024-07-06→2024-12-31, 2026-07-04→2026-12-31, 2028-07-01→2028-12-31
 
-### D. FiscalLocacao — `fiscal-locacao`
-- **Detectaria:**
-  - Locação de imóvel pelo município com valor > 30% acima do m²/região
-  - Locação a empresa do quadro (conflito de interesse)
-- **Base legal:** Lei 14.133/2021 Art. 74 III (locação inexigível requer justificativa)
-- **Skills necessárias:**
-  - **NOVA skill:** `lookup_imovel_iptu` — cruzar com base IPTU (se município publicar)
-  - extractEntities + regex `locação` / `aluguel` / `m²`
-- **Estimativa:** L (5+ dias) — depende de dado IPTU disponível
-- **Cidades MVP:** Caxias do Sul tem IPTU aberto? a verificar
+### 9. FiscalLocacao — `fiscal-locacao`
+- **Status:** ✅ em prod (entregue 2026-05-02)
+- **Detecta:**
+  - `locacao_sem_justificativa`: locação inexigível citada sem fundamento
+- **Base legal:** Lei 14.133/2021 Art. 74 III
+- **Pendências:**
+  - Skill `lookup_imovel_iptu` (cruzar com base IPTU) — pendente cidade publicar dado
 
-### E. FiscalDiarias — `fiscal-diarias`
-- **Detectaria:**
-  - Pagamento de diárias em finais de semana / feriados sem justificativa
-  - Diárias em destinos turísticos > limite legal
-  - Servidor com > N diárias/mês
+### 10. FiscalDiarias — `fiscal-diarias`
+- **Status:** ✅ em prod, calibrado 2026-05-02 (threshold R$ 800 + feriados nacionais via BrasilAPI)
+- **Detecta:**
+  - `diaria_irregular`: pagamento em final de semana / feriado sem justificativa
+  - Valor > limite legal (R$ 800)
 - **Base legal:** Lei 8.112/90 Art. 58 (servidores fed., aplicável análoga municipal)
-- **Skills necessárias:**
-  - Calendário de feriados nacionais + estaduais
-  - extractEntities + regex `diária` / `viagem`
-- **Estimativa:** M (2-3 dias)
-- **Volume esperado:** alto — Fiscal precisa de threshold rigoroso para evitar spam
+- **Skills:** BrasilAPI feriados nacionais com cache em memória
 
 ---
 
@@ -146,3 +106,12 @@
 
 - **CNPJ alfanumérico (Lei 14.973/2024 — jul/2026):** TODO em GOVERNANCA.md. Afeta regex CNPJ + validação BrasilAPI em todos os Fiscais que usam CNPJ.
 - **Lei 14.133/2021 reajustes anuais:** valores em `legal-constants.ts` já têm TODO de revisão anual via decreto IPCA-E.
+
+---
+
+## Próximos passos (não-Fiscais)
+
+- **Cache S3 PDFs do Querido Diário** — bucket `fiscal-digital-gazettes-cache-prod` + CloudFront `gazettes.fiscaldigital.org`. Resolve PDF inline + resiliência + reprocessamento gratuito.
+- **Idempotência de findings** — adicionar dedup no `saveMemory` para evitar duplicates em reanalyze (pattern descoberto 2026-05-02).
+- **Lookup de parentesco TSE/CPF** — desbloqueia FiscalNepotismo de heurística para evidência forte.
+- **Lookup IPTU** — desbloqueia FiscalLocacao para preço justo de mercado.
