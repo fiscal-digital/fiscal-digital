@@ -21,11 +21,7 @@ export interface City {
   uf: string
   /** Hashtag sem o `#` ("CaxiasdoSul"). */
   hashtag: string
-  /**
-   * Subreddit padrão sem o `r/`. Override por env `REDDIT_SUBREDDIT`.
-   * TODO (BLK-02): decidir entre subreddit próprio (`FiscalDigital`) ou
-   * subreddits municipais existentes (`CaxiasdoSul`).
-   */
+  /** Subreddit padrão sem o `r/`. Override por env `REDDIT_SUBREDDIT`. */
   subreddit: string
   /** Cidade está em produção ativa (Fase 1) ou planejada (Fase 2+). */
   active: boolean
@@ -38,7 +34,7 @@ export const CITIES: Record<string, City> = {
     slug: 'caxias-do-sul',
     uf: 'RS',
     hashtag: 'CaxiasdoSul',
-    subreddit: 'test',
+    subreddit: 'FiscalDigitalBR',
     active: true,
   },
   '4314902': {
@@ -47,7 +43,7 @@ export const CITIES: Record<string, City> = {
     slug: 'porto-alegre',
     uf: 'RS',
     hashtag: 'PortoAlegre',
-    subreddit: 'test',
+    subreddit: 'FiscalDigitalBR',
     active: false,
   },
   '4304606': {
@@ -56,7 +52,7 @@ export const CITIES: Record<string, City> = {
     slug: 'canoas',
     uf: 'RS',
     hashtag: 'Canoas',
-    subreddit: 'test',
+    subreddit: 'FiscalDigitalBR',
     active: false,
   },
   '4314100': {
@@ -65,7 +61,7 @@ export const CITIES: Record<string, City> = {
     slug: 'passo-fundo',
     uf: 'RS',
     hashtag: 'PassoFundo',
-    subreddit: 'test',
+    subreddit: 'FiscalDigitalBR',
     active: false,
   },
 }
@@ -90,7 +86,7 @@ export function getCityOrFallback(cityId: string): City {
     slug: cityId,
     uf: '',
     hashtag: cityId,
-    subreddit: 'test',
+    subreddit: 'FiscalDigitalBR',
     active: false,
   }
 }
