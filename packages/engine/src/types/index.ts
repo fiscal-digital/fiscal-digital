@@ -114,4 +114,15 @@ export interface CollectorMessage {
   url: string
   excerpts: string[]
   entities: ExtractedEntities
+  /**
+   * UH-22 Phase 2 — State tracking.
+   * Quando presente, o analyzer roda APENAS os Fiscais listados (ignora os demais).
+   * Quando ausente, roda todos os Fiscais ativos (comportamento padrão / cron diário).
+   *
+   * Usado por `reanalyze.mjs` para rodar só um Fiscal novo sobre histórico
+   * sem re-executar Fiscais já processados.
+   *
+   * IDs válidos: 'fiscal-licitacoes' | 'fiscal-contratos' | 'fiscal-fornecedores' | 'fiscal-pessoal'
+   */
+  enabledFiscals?: string[]
 }
