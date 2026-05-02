@@ -66,3 +66,10 @@ module "web" {
   hosted_zone_id = "Z0950975SSMZZW5DEN8A"
   api_url        = module.lambdas.api_url
 }
+
+module "gazettes_cache" {
+  source         = "./modules/gazettes-cache"
+  environment    = var.environment
+  aws_region     = var.aws_region
+  hosted_zone_id = "Z0950975SSMZZW5DEN8A"
+}

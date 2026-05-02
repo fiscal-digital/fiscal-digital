@@ -1,9 +1,18 @@
+import crypto from 'node:crypto'
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs'
+import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
+import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { queryDiario, extractAll, lookupMemory, saveMemory } from '@fiscal-digital/engine'
 import type { CollectorMessage } from '@fiscal-digital/engine'
 
 const sqs = new SQSClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
+const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' })
+const raw = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
+const ddb = DynamoDBDocumentClient.from(raw)
+
 const GAZETTES_TABLE = 'fiscal-digital-gazettes-prod'
+const GAZETTES_CACHE_BUCKET = 'fiscal-digital-gazettes-cache-prod'
 const QUEUE_URL = process.env.GAZETTES_QUEUE_URL!
 
 // Keywords that signal fiscally relevant acts
@@ -50,6 +59,9 @@ export async function runCollector(config: CollectorConfig): Promise<{ processed
       const text = gazette.excerpts.join('\n')
       const entities = extractAll(text)
 
+      // Cache PDF no S3 antes de enfileirar
+      const cachedPdfUrl = await cachePdf(gazette.territory_id, gazette.id, gazette.url)
+
       const msg: CollectorMessage = {
         gazetteId: gazette.id,
         territory_id: gazette.territory_id,
@@ -64,7 +76,7 @@ export async function runCollector(config: CollectorConfig): Promise<{ processed
         MessageBody: JSON.stringify(msg),
       }))
 
-      await markQueued(gazette.id, gazette.url, gazette.date)
+      await markQueued(gazette.id, gazette.url, gazette.date, cachedPdfUrl)
       sent++
     }
 
@@ -82,6 +94,79 @@ export async function runCollector(config: CollectorConfig): Promise<{ processed
   return { processed, sent }
 }
 
+/**
+ * Faz download do PDF da gazette e faz upload para S3.
+ * Idempotente: se o objeto já existir no S3, retorna a URL sem re-upload.
+ * Retorna a URL pública no CDN ou null em caso de falha não-crítica.
+ */
+async function cachePdf(
+  territoryId: string,
+  gazetteId: string,
+  originalUrl: string,
+): Promise<string | null> {
+  // S3 key: <territoryId>/<gazetteId>.pdf
+  // gazetteId pode conter '#' — substituir por '/' para organização por território/data
+  const safeId = gazetteId.replace(/#/g, '/')
+  const key = `${territoryId}/${safeId}.pdf`
+
+  // Checar se já existe (idempotência)
+  const alreadyCached = await s3ObjectExists(key)
+  if (alreadyCached) {
+    return `https://gazettes.fiscaldigital.org/${key}`
+  }
+
+  // Baixar o PDF
+  let pdfBuffer: ArrayBuffer
+  try {
+    const fetchedAt = new Date().toISOString()
+    const response = await fetch(originalUrl, {
+      headers: { 'User-Agent': 'FiscalDigital/1.0 (+https://fiscaldigital.org)' },
+    })
+
+    if (!response.ok) {
+      console.warn(`[collector] pdf fetch falhou url=${originalUrl} status=${response.status}`)
+      return null
+    }
+
+    const contentType = response.headers.get('content-type') ?? 'application/pdf'
+    pdfBuffer = await response.arrayBuffer()
+    const bytes = pdfBuffer.byteLength
+    const sha256 = crypto.createHash('sha256').update(Buffer.from(pdfBuffer)).digest('hex')
+
+    // Upload para S3
+    await s3.send(new PutObjectCommand({
+      Bucket: GAZETTES_CACHE_BUCKET,
+      Key: key,
+      Body: Buffer.from(pdfBuffer),
+      ContentType: contentType.startsWith('application/') ? contentType : 'application/pdf',
+      CacheControl: 'public, max-age=31536000, immutable',
+      Metadata: {
+        originalUrl,
+        sha256,
+        mimeType: contentType,
+        bytes: String(bytes),
+        fetchedAt,
+      },
+    }))
+
+    console.log(`[collector] pdf cached key=${key} bytes=${bytes}`)
+    return `https://gazettes.fiscaldigital.org/${key}`
+  } catch (err) {
+    // Falha no cache de PDF não deve interromper o fluxo principal
+    console.warn(`[collector] pdf cache error key=${key}`, err)
+    return null
+  }
+}
+
+async function s3ObjectExists(key: string): Promise<boolean> {
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: GAZETTES_CACHE_BUCKET, Key: key }))
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function getLastDate(territory_id: string): Promise<string> {
   const { data } = await lookupMemory.execute({ pk: `BACKFILL#${territory_id}`, table: GAZETTES_TABLE })
   if (data?.['lastDate']) return data['lastDate'] as string
@@ -97,10 +182,34 @@ async function isAlreadyQueued(gazetteId: string): Promise<boolean> {
   return data !== null
 }
 
-async function markQueued(gazetteId: string, url: string, date: string): Promise<void> {
-  await saveMemory.execute({
-    pk: `GAZETTE#${gazetteId}`,
-    table: GAZETTES_TABLE,
-    item: { url, date, status: 'queued', queuedAt: new Date().toISOString() },
-  })
+async function markQueued(gazetteId: string, url: string, date: string, cachedPdfUrl: string | null): Promise<void> {
+  // Usar UpdateItem para poder setar cachedPdfUrl opcionalmente sem sobrescrever campos existentes
+  const baseItem: Record<string, unknown> = { url, date, status: 'queued', queuedAt: new Date().toISOString() }
+
+  if (cachedPdfUrl != null) {
+    // UpdateItem com cachedPdfUrl
+    await ddb.send(new UpdateCommand({
+      TableName: GAZETTES_TABLE,
+      Key: { pk: `GAZETTE#${gazetteId}` },
+      UpdateExpression: 'SET #url = :url, #date = :date, #status = :status, queuedAt = :queuedAt, cachedPdfUrl = :cachedPdfUrl',
+      ExpressionAttributeNames: {
+        '#url': 'url',
+        '#date': 'date',
+        '#status': 'status',
+      },
+      ExpressionAttributeValues: {
+        ':url': url,
+        ':date': date,
+        ':status': 'queued',
+        ':queuedAt': new Date().toISOString(),
+        ':cachedPdfUrl': cachedPdfUrl,
+      },
+    }))
+  } else {
+    await saveMemory.execute({
+      pk: `GAZETTE#${gazetteId}`,
+      table: GAZETTES_TABLE,
+      item: baseItem,
+    })
+  }
 }
