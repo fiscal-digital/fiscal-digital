@@ -2,18 +2,23 @@
 # Sem retention_in_days, logs Lambda acumulam indefinidamente ($0.03/GB/mês).
 # 7 dias cobre debug pós-incidente sem custo de armazenamento relevante.
 
-locals {
-  lambda_names = [
-    "fiscal-digital-collector-prod",
-    "fiscal-digital-analyzer-prod",
-    "fiscal-digital-publisher-prod",
-    "fiscal-digital-api-prod",
-  ]
+resource "aws_cloudwatch_log_group" "collector" {
+  name              = "/aws/lambda/fiscal-digital-collector-prod"
+  retention_in_days = 7
 }
 
-resource "aws_cloudwatch_log_group" "lambdas" {
-  for_each          = toset(local.lambda_names)
-  name              = "/aws/lambda/${each.key}"
+resource "aws_cloudwatch_log_group" "analyzer" {
+  name              = "/aws/lambda/fiscal-digital-analyzer-prod"
+  retention_in_days = 7
+}
+
+resource "aws_cloudwatch_log_group" "publisher" {
+  name              = "/aws/lambda/fiscal-digital-publisher-prod"
+  retention_in_days = 7
+}
+
+resource "aws_cloudwatch_log_group" "api" {
+  name              = "/aws/lambda/fiscal-digital-api-prod"
   retention_in_days = 7
 }
 

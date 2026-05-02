@@ -129,13 +129,19 @@ resource "aws_iam_role_policy" "github_actions" {
         Sid      = "LambdaEventSourceMappings"
       },
       {
+        # DescribeLogGroups e uma operacao de listagem — Resource = "*" obrigatorio
+        Sid      = "CloudWatchLogsDescribe"
+        Effect   = "Allow"
+        Action   = ["logs:DescribeLogGroups"]
+        Resource = "*"
+      },
+      {
         # CloudWatch Logs — gerenciar log groups das Lambdas (retention policy, etc.)
         Sid    = "CloudWatchLogsManage"
         Effect = "Allow"
         Action = [
           "logs:CreateLogGroup",
           "logs:DeleteLogGroup",
-          "logs:DescribeLogGroups",
           "logs:PutRetentionPolicy",
           "logs:ListTagsLogGroup",
           "logs:ListTagsForResource",
