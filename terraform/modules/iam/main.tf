@@ -196,6 +196,26 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
       },
       {
+        # Cache de gazettes — Terraform precisa gerenciar tags, policies, lifecycle,
+        # encryption, versioning, CORS etc. do bucket (recursos do módulo gazettes-cache).
+        Sid    = "GazettesCacheS3Manage"
+        Effect = "Allow"
+        Action = [
+          "s3:PutBucketTagging", "s3:GetBucketTagging", "s3:DeleteBucketTagging",
+          "s3:PutBucketPolicy", "s3:DeleteBucketPolicy",
+          "s3:PutBucketVersioning", "s3:GetBucketVersioning",
+          "s3:PutEncryptionConfiguration", "s3:GetEncryptionConfiguration",
+          "s3:PutLifecycleConfiguration", "s3:GetLifecycleConfiguration",
+          "s3:PutBucketPublicAccessBlock", "s3:GetBucketPublicAccessBlock",
+          "s3:PutBucketOwnershipControls", "s3:GetBucketOwnershipControls",
+          "s3:PutBucketCORS", "s3:GetBucketCORS",
+          "s3:PutBucketLogging", "s3:GetBucketLogging",
+          "s3:PutBucketNotification", "s3:GetBucketNotification",
+          "s3:PutBucketAcl", "s3:GetBucketAcl",
+        ]
+        Resource = "arn:aws:s3:::fiscal-digital-gazettes-cache-prod"
+      },
+      {
         # Invalidação do CloudFront após deploy
         Sid      = "WebCloudFrontInvalidate"
         Effect   = "Allow"
