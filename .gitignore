@@ -67,6 +67,10 @@ ehthumbs.db
 *.orig
 /tmp/
 
+# ─── Smoke test artifacts ───────────────────────────────────────
+*-smoke-result.json
+*-smoke-payload.json
+
 # ─── Profiling ──────────────────────────────────────────────────
 *.cpuprofile
 *.heapsnapshot
