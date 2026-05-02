@@ -39,7 +39,7 @@ export class RedditClient {
   private readonly basicAuth: string
 
   constructor(private readonly creds: RedditCredentials) {
-    this.userAgent = `fiscal-digital/0.1 by /u/${creds.username}`
+    this.userAgent = `web:fiscal-digital:0.1.0 (by /u/${creds.username})`
     // btoa não está disponível em todos os contextos Node; usar Buffer como fallback seguro
     this.basicAuth = Buffer.from(
       `${creds.client_id}:${creds.client_secret}`,
