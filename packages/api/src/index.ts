@@ -110,7 +110,6 @@ function ok(body: string, contentType: string): APIGatewayProxyResultV2 {
     headers: {
       'Content-Type': contentType,
       'Cache-Control': 'public, max-age=300',
-      'Access-Control-Allow-Origin': '*',
     },
     body,
   }
