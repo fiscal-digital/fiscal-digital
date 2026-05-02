@@ -1,3 +1,22 @@
+# ── CloudWatch Log Groups — retenção 7 dias ──────────────────────────────────
+# Sem retention_in_days, logs Lambda acumulam indefinidamente ($0.03/GB/mês).
+# 7 dias cobre debug pós-incidente sem custo de armazenamento relevante.
+
+locals {
+  lambda_names = [
+    "fiscal-digital-collector-prod",
+    "fiscal-digital-analyzer-prod",
+    "fiscal-digital-publisher-prod",
+    "fiscal-digital-api-prod",
+  ]
+}
+
+resource "aws_cloudwatch_log_group" "lambdas" {
+  for_each          = toset(local.lambda_names)
+  name              = "/aws/lambda/${each.key}"
+  retention_in_days = 7
+}
+
 # ── CloudWatch Alarms — DLQ size ──────────────────────────────────────────────
 
 resource "aws_cloudwatch_metric_alarm" "gazettes_dlq_nonempty" {
