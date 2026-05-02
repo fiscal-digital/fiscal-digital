@@ -59,3 +59,9 @@ module "monitoring" {
   alerts_dlq_name   = module.sqs.alerts_dlq_name
   alert_email       = var.alert_email
 }
+
+module "web" {
+  source         = "./modules/web"
+  hosted_zone_id = "Z0950975SSMZZW5DEN8A"
+  api_url        = module.lambdas.api_url
+}
