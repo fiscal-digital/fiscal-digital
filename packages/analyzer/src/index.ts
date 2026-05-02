@@ -1,6 +1,6 @@
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb'
+import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import type { SQSEvent } from 'aws-lambda'
 import {
   fiscalLicitacoes,
@@ -33,6 +33,7 @@ export const docClient = DynamoDBDocumentClient.from(_rawDdb)
 // ---------------------------------------------------------------------------
 
 const ALERTS_TABLE = process.env.ALERTS_TABLE ?? 'fiscal-digital-alerts-prod'
+const GAZETTES_TABLE = process.env.GAZETTES_TABLE ?? 'fiscal-digital-gazettes-prod'
 const ALERTS_QUEUE_URL = process.env.ALERTS_QUEUE_URL!
 const PUBLISH_RISK_THRESHOLD = 60
 const PUBLISH_CONFIDENCE_THRESHOLD = 0.70
@@ -63,6 +64,51 @@ async function queryAlertsByCnpj(cnpj: string, sinceISO: string): Promise<Findin
 // ---------------------------------------------------------------------------
 // Persist a Finding to DynamoDB alerts table
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// UH-22 Phase 2 — State tracking
+// Atualiza processedBy.{fiscalId} = ISO timestamp em gazettes-prod
+// ---------------------------------------------------------------------------
+
+async function markFiscalProcessed(gazetteId: string, fiscalIds: string[]): Promise<void> {
+  if (fiscalIds.length === 0) return
+  const now = new Date().toISOString()
+  const setExpr = fiscalIds.map((_, i) => `#pb.#f${i} = :ts`).join(', ')
+  const exprNames: Record<string, string> = { '#pb': 'processedBy' }
+  fiscalIds.forEach((id, i) => { exprNames[`#f${i}`] = id })
+
+  try {
+    await docClient.send(new UpdateCommand({
+      TableName: GAZETTES_TABLE,
+      Key: { pk: `GAZETTE#${gazetteId}` },
+      UpdateExpression: `SET ${setExpr}`,
+      ExpressionAttributeNames: exprNames,
+      ExpressionAttributeValues: { ':ts': now },
+    }))
+  } catch (err) {
+    // Não-bloqueante: se gazette não existe (smoke test) ou processedBy ainda não foi inicializado,
+    // tenta com SET processedBy = if_not_exists()
+    try {
+      await docClient.send(new UpdateCommand({
+        TableName: GAZETTES_TABLE,
+        Key: { pk: `GAZETTE#${gazetteId}` },
+        UpdateExpression: `SET #pb = if_not_exists(#pb, :empty)`,
+        ExpressionAttributeNames: { '#pb': 'processedBy' },
+        ExpressionAttributeValues: { ':empty': {} },
+      }))
+      // Tentar de novo o set dos campos
+      await docClient.send(new UpdateCommand({
+        TableName: GAZETTES_TABLE,
+        Key: { pk: `GAZETTE#${gazetteId}` },
+        UpdateExpression: `SET ${setExpr}`,
+        ExpressionAttributeNames: exprNames,
+        ExpressionAttributeValues: { ':ts': now },
+      }))
+    } catch (e2) {
+      console.error('[analyzer] markFiscalProcessed falhou', { gazetteId, fiscalIds, err: (e2 as Error).message })
+    }
+  }
+}
 
 async function persistFinding(finding: Finding): Promise<void> {
   const createdAt = finding.createdAt ?? new Date().toISOString()
@@ -139,13 +185,18 @@ async function processRecord(body: string): Promise<void> {
   const cityId = msg.territory_id
   const ctx = buildContext(gazette.id)
 
-  // Run all 4 specialized Fiscais in parallel; allSettled ensures one failure never stops the others
+  // UH-22 Phase 2: state tracking. Se enabledFiscals presente, roda só esses
+  // (re-analyze de Fiscal novo sem re-executar os demais).
+  const enabled = msg.enabledFiscals
+  const shouldRun = (id: string): boolean => !enabled || enabled.includes(id)
+
+  // Run only enabled Fiscais; allSettled ensures one failure never stops the others
   const [licitacoesResult, contratosResult, fornecedoresResult, pessoalResult] =
     await Promise.allSettled([
-      fiscalLicitacoes.analisar({ gazette, cityId, context: ctx }),
-      fiscalContratos.analisar({ gazette, cityId, context: ctx }),
-      fiscalFornecedores.analisar({ gazette, cityId, context: ctx }),
-      fiscalPessoal.analisar({ gazette, cityId, context: ctx }),
+      shouldRun('fiscal-licitacoes') ? fiscalLicitacoes.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+      shouldRun('fiscal-contratos') ? fiscalContratos.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+      shouldRun('fiscal-fornecedores') ? fiscalFornecedores.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+      shouldRun('fiscal-pessoal') ? fiscalPessoal.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
     ])
 
   const specializedFindings: Finding[] = []
@@ -225,9 +276,18 @@ async function processRecord(body: string): Promise<void> {
     }),
   )
 
+  // UH-22 Phase 2: marca quais Fiscais executaram com sucesso (não-bloqueante)
+  const ranSuccessfully: string[] = []
+  if (licitacoesResult.status === 'fulfilled' && shouldRun('fiscal-licitacoes')) ranSuccessfully.push('fiscal-licitacoes')
+  if (contratosResult.status === 'fulfilled' && shouldRun('fiscal-contratos')) ranSuccessfully.push('fiscal-contratos')
+  if (fornecedoresResult.status === 'fulfilled' && shouldRun('fiscal-fornecedores')) ranSuccessfully.push('fiscal-fornecedores')
+  if (pessoalResult.status === 'fulfilled' && shouldRun('fiscal-pessoal')) ranSuccessfully.push('fiscal-pessoal')
+  await markFiscalProcessed(gazette.id, ranSuccessfully)
+
   console.log('[analyzer] gazette processada', {
     gazetteId: gazette.id,
     cityId,
+    fiscaisExecutados: ranSuccessfully,
     findingsEspecializados: specializedFindings.length,
     findingsTotal: allFindings.length,
   })
