@@ -2,6 +2,7 @@ import { saveMemory } from '../skills/save_memory'
 import { scoreRisk } from '../skills/score_risk'
 import type { Finding, RiskFactor } from '../types'
 import type { Fiscal, AnalisarInput, FiscalContext } from './types'
+import { preloadFeriadosNacionais, isFeriadoNacionalCached } from './holidays/national'
 
 const FISCAL_ID = 'fiscal-diarias'
 const ALERTS_TABLE_DEFAULT = 'fiscal-digital-alerts-prod'
@@ -225,6 +226,10 @@ export const fiscalDiarias: Fiscal = {
     const alertsTable = context.alertsTable ?? ALERTS_TABLE_DEFAULT
     const now = context.now ? context.now() : new Date()
 
+    // Pré-carrega feriados nacionais do ano da gazette via BrasilAPI (no-op se já cacheado).
+    const gazetteYear = parseInt((gazette.date ?? '').slice(0, 4), 10)
+    if (gazetteYear >= 2000) await preloadFeriadosNacionais(gazetteYear)
+
     const findings: Finding[] = []
 
     // Etapa 1 — Filtro regex (sem LLM)
@@ -238,7 +243,7 @@ export const fiscalDiarias: Fiscal = {
       const dataReferencia = datas[0] ?? gazette.date
 
       const fimDeSemana = isFimDeSemana(dataReferencia)
-      const feriado = isFeriadoNacional(dataReferencia)
+      const feriado = isFeriadoNacionalCached(dataReferencia)
       const fdsOuFeriado = fimDeSemana || feriado
       const justificada = temJustificativaExplicita(excerpt)
       const acimaLimite = valor > DIARIA_VALOR_LIMITE
