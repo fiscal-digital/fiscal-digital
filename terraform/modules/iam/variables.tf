@@ -26,6 +26,10 @@ variable "suppliers_table_arn" {
   type = string
 }
 
+variable "entities_table_arn" {
+  type = string
+}
+
 variable "gazettes_queue_arn" {
   type = string
 }
