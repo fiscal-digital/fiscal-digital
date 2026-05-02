@@ -370,20 +370,20 @@ async function persistAditivo(args: PersistAditivoArgs): Promise<void> {
     cnpj, contractNumber, secretaria, supplier, valorAditivo,
   } = args
 
+  // IMPORTANTE: omitir campos null. Atributos indexados em GSI (cnpj, secretaria)
+  // rejeitam NULL — devem estar ausentes ou ser String válida.
   const aditivoItem: Record<string, unknown> = {
     fiscalId: FISCAL_ID,
     cityId,
     actType: 'aditivo',
-    cnpj: cnpj ?? null,
-    contractNumber: contractNumber ?? null,
-    secretaria: secretaria ?? null,
-    supplier: supplier ?? null,
+    ...(cnpj && { cnpj }),
+    ...(contractNumber && { contractNumber }),
+    ...(secretaria && { secretaria }),
+    ...(supplier && { supplier }),
     valor: valorAditivo,
     gazetteUrl: gazette.url,
     gazetteDate: gazette.date,
     createdAt: now.toISOString(),
-    gsi2pk: cnpj ? `CNPJ#${cnpj}` : null,
-    gsi2sk: `DATE#${gazette.date}`,
   }
 
   const aditivoPk = `ADITIVO#${gazette.id}#${cnpj ?? 'NOCNPJ'}#${valorAditivo}`

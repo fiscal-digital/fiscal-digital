@@ -111,22 +111,21 @@ export const fiscalLicitacoes: Fiscal = {
       const legalBasisStr = `Lei 14.133/2021, Art. 75, ${inciso}`
 
       // Para histórico de fracionamento: persistir todas as dispensas (mesmo legais)
-      // com actType='dispensa', sem findingType
+      // com actType='dispensa', sem findingType.
+      // IMPORTANTE: omitir campos null. Atributos indexados em GSI (cnpj, secretaria)
+      // rejeitam NULL — devem estar ausentes ou ser String válida.
       const dispensaItem: Record<string, unknown> = {
         fiscalId: FISCAL_ID,
         cityId,
         actType: 'dispensa',
-        cnpj: cnpj ?? null,
-        secretaria: secretaria ?? null,
-        supplier: supplier ?? null,
+        ...(cnpj && { cnpj }),
+        ...(secretaria && { secretaria }),
+        ...(supplier && { supplier }),
         valor,
         inciso,
         gazetteUrl: gazette.url,
         gazetteDate: gazette.date,
         createdAt: now.toISOString(),
-        // GSI2 keys — cnpj-date pattern for fractionamento query
-        gsi2pk: cnpj ? `CNPJ#${cnpj}` : null,
-        gsi2sk: `DATE#${gazette.date}`,
       }
 
       const dispensaPk = `DISPENSA#${gazette.id}#${cnpj ?? 'NOCNPJ'}#${valor}`
