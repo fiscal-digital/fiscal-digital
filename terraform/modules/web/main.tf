@@ -63,6 +63,15 @@ resource "aws_cloudfront_origin_access_control" "web" {
 
 # ─── CloudFront distribution ─────────────────────────────────────────────────
 
+# Redirect /pt → /pt-br (BCP 47 explícito) — preserva backlinks antigos.
+resource "aws_cloudfront_function" "redirect_pt_to_pt_br" {
+  name    = "fiscal-digital-redirect-pt-to-pt-br"
+  runtime = "cloudfront-js-2.0"
+  comment = "301 /pt/* → /pt-br/* (BCP 47 explicit)"
+  publish = true
+  code    = file("${path.module}/redirect-pt-to-pt-br.js")
+}
+
 resource "aws_cloudfront_distribution" "web" {
   enabled             = true
   is_ipv6_enabled     = true
@@ -83,6 +92,11 @@ resource "aws_cloudfront_distribution" "web" {
     target_origin_id       = "s3-web"
     viewer_protocol_policy = "redirect-to-https"
     compress               = true
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.redirect_pt_to_pt_br.arn
+    }
 
     forwarded_values {
       query_string = false

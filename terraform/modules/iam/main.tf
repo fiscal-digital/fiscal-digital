@@ -288,6 +288,22 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "*"
       },
       {
+        # CloudFront Functions — usado para redirect /pt → /pt-br
+        Sid    = "CloudFrontFunctions"
+        Effect = "Allow"
+        Action = [
+          "cloudfront:CreateFunction",
+          "cloudfront:UpdateFunction",
+          "cloudfront:DeleteFunction",
+          "cloudfront:GetFunction",
+          "cloudfront:ListFunctions",
+          "cloudfront:DescribeFunction",
+          "cloudfront:PublishFunction",
+          "cloudfront:AssociateAlias",
+        ]
+        Resource = "*"
+      },
+      {
         # iam:UpdateAssumeRolePolicy — necessário para o próprio Terraform
         # atualizar a trust policy de roles fiscal-digital-* (ex: adicionar
         # mais um repo no sub do OIDC).
