@@ -3,7 +3,7 @@ import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs'
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import { queryDiario, extractAll, lookupMemory, saveMemory } from '@fiscal-digital/engine'
+import { queryDiario, extractAll, lookupMemory, saveMemory, pdfCacheS3Key, pdfCacheUrl } from '@fiscal-digital/engine'
 import type { CollectorMessage } from '@fiscal-digital/engine'
 
 const sqs = new SQSClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
@@ -98,21 +98,27 @@ export async function runCollector(config: CollectorConfig): Promise<{ processed
  * Faz download do PDF da gazette e faz upload para S3.
  * Idempotente: se o objeto já existir no S3, retorna a URL sem re-upload.
  * Retorna a URL pública no CDN ou null em caso de falha não-crítica.
+ *
+ * Convenção: chave S3 espelha o path da URL QD (sem o host) para que
+ * o site/API possam derivar a CDN URL diretamente da source URL sem
+ * lookup no DDB. Ver `pdfCacheS3Key` em engine/utils/pdf_cache.
  */
 async function cachePdf(
-  territoryId: string,
-  gazetteId: string,
+  _territoryId: string,
+  _gazetteId: string,
   originalUrl: string,
 ): Promise<string | null> {
-  // S3 key: <territoryId>/<gazetteId>.pdf
-  // gazetteId pode conter '#' — substituir por '/' para organização por território/data
-  const safeId = gazetteId.replace(/#/g, '/')
-  const key = `${territoryId}/${safeId}.pdf`
+  const key = pdfCacheS3Key(originalUrl)
+  const cdnUrl = pdfCacheUrl(originalUrl)
+  if (!key || !cdnUrl) {
+    console.warn(`[collector] url QD inválida — skip cache: ${originalUrl}`)
+    return null
+  }
 
   // Checar se já existe (idempotência)
   const alreadyCached = await s3ObjectExists(key)
   if (alreadyCached) {
-    return `https://gazettes.fiscaldigital.org/${key}`
+    return cdnUrl
   }
 
   // Baixar o PDF
@@ -150,7 +156,7 @@ async function cachePdf(
     }))
 
     console.log(`[collector] pdf cached key=${key} bytes=${bytes}`)
-    return `https://gazettes.fiscaldigital.org/${key}`
+    return cdnUrl
   } catch (err) {
     // Falha no cache de PDF não deve interromper o fluxo principal
     console.warn(`[collector] pdf cache error key=${key}`, err)
