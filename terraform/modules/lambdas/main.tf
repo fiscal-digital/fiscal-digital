@@ -116,3 +116,16 @@ resource "aws_lambda_event_source_mapping" "publisher" {
   batch_size       = 10
   enabled          = true
 }
+
+# API — Lambda Function URL (pública, CORS habilitado para site + RSS readers)
+resource "aws_lambda_function_url" "api" {
+  function_name      = aws_lambda_function.api.function_name
+  authorization_type = "NONE"
+
+  cors {
+    allow_origins = ["*"]
+    allow_methods = ["GET", "HEAD"]
+    allow_headers = ["content-type"]
+    max_age       = 86400
+  }
+}

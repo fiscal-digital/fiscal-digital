@@ -359,7 +359,7 @@ resource "aws_iam_role_policy" "api" {
     Statement = [
       {
         Effect = "Allow"
-        Action = ["dynamodb:GetItem", "dynamodb:Query"]
+        Action = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"]
         Resource = [
           var.alerts_table_arn,
           "${var.alerts_table_arn}/index/*",
