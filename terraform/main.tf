@@ -24,6 +24,7 @@ module "iam" {
   alerts_table_arn    = module.dynamodb.alerts_table_arn
   gazettes_table_arn  = module.dynamodb.gazettes_table_arn
   suppliers_table_arn = module.dynamodb.suppliers_table_arn
+  entities_table_arn  = module.dynamodb.entities_table_arn
   gazettes_queue_arn  = module.sqs.gazettes_queue_arn
   alerts_queue_arn    = module.sqs.alerts_queue_arn
   kms_key_arn         = module.kms.key_arn

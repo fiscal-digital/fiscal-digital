@@ -8,7 +8,7 @@ import {
   fiscalFornecedores,
   fiscalPessoal,
   fiscalGeral,
-  extractEntities,
+  createCachedExtractEntities,
   saveMemory,
   generateNarrative,
 } from '@fiscal-digital/engine'
@@ -111,10 +111,15 @@ function toGazette(msg: CollectorMessage): Gazette {
 // Build FiscalContext with real skills injected
 // ---------------------------------------------------------------------------
 
-function buildContext(): FiscalContext {
+function buildContext(gazetteId: string): FiscalContext {
+  // Cached extractor escopado a esta gazette: cache em memória + DynamoDB entities-prod.
+  // Eliminação de 3-5x chamadas Bedrock duplicadas dentro do mesmo Lambda invocation,
+  // e 100% cache hit em re-análises (UH-22).
+  const cachedExtractor = createCachedExtractEntities({ gazetteId })
+
   return {
     alertsTable: ALERTS_TABLE,
-    extractEntities,
+    extractEntities: cachedExtractor,
     generateNarrative: async (finding: unknown) => {
       const result = await generateNarrative.execute({ finding: finding as Finding })
       return result.data
@@ -132,7 +137,7 @@ async function processRecord(body: string): Promise<void> {
   const msg = JSON.parse(body) as CollectorMessage
   const gazette = toGazette(msg)
   const cityId = msg.territory_id
-  const ctx = buildContext()
+  const ctx = buildContext(gazette.id)
 
   // Run all 4 specialized Fiscais in parallel; allSettled ensures one failure never stops the others
   const [licitacoesResult, contratosResult, fornecedoresResult, pessoalResult] =

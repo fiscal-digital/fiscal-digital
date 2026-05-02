@@ -103,3 +103,23 @@ resource "aws_dynamodb_table" "suppliers" {
     type = "S"
   }
 }
+
+# entities-prod — Cache de extração LLM (UH-22)
+# pk: EXTRACTION#{gazetteId}#{md5(excerpt).slice(0,16)}
+# Atributos: entities (Map), confidence (N), schemaVersion (N), cachedAt (S)
+# TTL desabilitado — cache permanente, ~$0.03/mês para 200k entries
+resource "aws_dynamodb_table" "entities" {
+  name         = "fiscal-digital-entities-prod"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+}

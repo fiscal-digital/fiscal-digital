@@ -55,7 +55,11 @@ jest.mock('@fiscal-digital/engine', () => ({
   fiscalFornecedores: { id: 'fiscal-fornecedores', description: 'mock', analisar: mockAnalisarFornecedores },
   fiscalPessoal: { id: 'fiscal-pessoal', description: 'mock', analisar: mockAnalisarPessoal },
   fiscalGeral: { id: 'fiscal-geral', description: 'mock', consolidar: mockConsolidar },
-  extractEntities: { name: 'extract_entities', description: 'mock', execute: jest.fn() },
+  createCachedExtractEntities: jest.fn(() => ({
+    name: 'extract_entities_cached',
+    description: 'mock',
+    execute: jest.fn(),
+  })),
   saveMemory: { name: 'save_memory', description: 'mock', execute: mockSaveMemoryExecute },
   generateNarrative: { name: 'generate_narrative', description: 'mock', execute: mockGenerateNarrativeExecute },
 }))

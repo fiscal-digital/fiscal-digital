@@ -332,6 +332,7 @@ resource "aws_iam_role_policy" "analyzer" {
           "${var.alerts_table_arn}/index/*",
           var.gazettes_table_arn,
           var.suppliers_table_arn,
+          var.entities_table_arn,
         ]
       },
       {
@@ -436,6 +437,13 @@ resource "aws_iam_role_policy" "api" {
           "${var.alerts_table_arn}/index/*",
           var.suppliers_table_arn,
         ]
+      },
+      {
+        # Scan COUNT em gazettes-prod para /stats (totalGazettesProcessed).
+        # Sem GetItem/Query — API não precisa do conteúdo, só do count agregado.
+        Effect   = "Allow"
+        Action   = ["dynamodb:Scan"]
+        Resource = var.gazettes_table_arn
       },
       {
         Effect   = "Allow"
