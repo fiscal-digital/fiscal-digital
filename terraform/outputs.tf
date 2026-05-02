@@ -41,3 +41,15 @@ output "github_actions_role_arn" {
 output "kms_key_arn" {
   value = module.kms.key_arn
 }
+
+output "gazettes_cache_bucket" {
+  value = module.gazettes_cache.bucket_name
+}
+
+output "gazettes_cache_cdn_url" {
+  value = module.gazettes_cache.cdn_url
+}
+
+output "gazettes_cache_cloudfront_id" {
+  value = module.gazettes_cache.cloudfront_distribution_id
+}

@@ -31,6 +31,7 @@ data "aws_iam_policy_document" "github_trust" {
       values = [
         "repo:${var.github_org}/${var.github_repo}:*",
         "repo:${var.github_org}/fiscal-digital-web:*",
+        "repo:${var.github_org}/fiscal-digital-collectors:*",
       ]
     }
   }
@@ -185,6 +186,16 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
       },
       {
+        # Cache de gazettes — CI precisa de GetObject/PutObject para smoke tests e validação
+        Sid    = "GazettesCacheS3Deploy"
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetBucketLocation"]
+        Resource = [
+          "arn:aws:s3:::fiscal-digital-gazettes-cache-prod",
+          "arn:aws:s3:::fiscal-digital-gazettes-cache-prod/*",
+        ]
+      },
+      {
         # Invalidação do CloudFront após deploy
         Sid      = "WebCloudFrontInvalidate"
         Effect   = "Allow"
@@ -302,6 +313,16 @@ resource "aws_iam_role_policy" "collector" {
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
         Resource = var.kms_key_arn
+      },
+      {
+        # Cache de PDFs do Querido Diário — PutObject + HeadObject para idempotência
+        Sid    = "GazettesPdfCache"
+        Effect = "Allow"
+        Action = ["s3:PutObject", "s3:HeadObject", "s3:GetObject"]
+        Resource = [
+          "arn:aws:s3:::fiscal-digital-gazettes-cache-prod",
+          "arn:aws:s3:::fiscal-digital-gazettes-cache-prod/*",
+        ]
       },
     ]
   })
@@ -440,15 +461,25 @@ resource "aws_iam_role_policy" "api" {
       },
       {
         # Scan COUNT em gazettes-prod para /stats (totalGazettesProcessed).
-        # Sem GetItem/Query — API não precisa do conteúdo, só do count agregado.
+        # GetItem/Query também necessários para expor cachedPdfUrl na Fase 2.
         Effect   = "Allow"
-        Action   = ["dynamodb:Scan"]
-        Resource = var.gazettes_table_arn
+        Action   = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:Query"]
+        Resource = [
+          var.gazettes_table_arn,
+          "${var.gazettes_table_arn}/index/*",
+        ]
       },
       {
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
         Resource = var.kms_key_arn
+      },
+      {
+        # Leitura do cache de PDFs para servir URL pré-assinada ou redirect
+        Sid      = "GazettesCacheRead"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:HeadObject"]
+        Resource = "arn:aws:s3:::fiscal-digital-gazettes-cache-prod/*"
       },
     ]
   })
