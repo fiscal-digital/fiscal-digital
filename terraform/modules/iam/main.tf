@@ -128,6 +128,27 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:event-source-mapping:*"
         Sid      = "LambdaEventSourceMappings"
       },
+      {
+        # CloudWatch alarms para monitoring module (S-04)
+        Sid    = "CloudWatchAlarms"
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:DescribeAlarms",
+          "cloudwatch:PutMetricAlarm",
+          "cloudwatch:DeleteAlarms",
+          "cloudwatch:ListTagsForResource",
+          "cloudwatch:TagResource",
+          "cloudwatch:UntagResource",
+        ]
+        Resource = "arn:aws:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:fiscal-digital-*"
+      },
+      {
+        # AWS Budgets — Resource = "*" obrigatório (budgets não suporta resource-level em todas as ações)
+        Sid      = "BudgetsManage"
+        Effect   = "Allow"
+        Action   = ["budgets:CreateBudget", "budgets:ModifyBudget", "budgets:ViewBudget", "budgets:DeleteBudget", "budgets:DescribeBudgets", "budgets:ListTagsForResource"]
+        Resource = "*"
+      },
     ]
   })
 }
