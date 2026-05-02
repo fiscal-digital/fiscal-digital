@@ -4,7 +4,7 @@
 
 Fiscal Digital monitora diários oficiais municipais, detecta irregularidades e publica alertas verificáveis para a sociedade — sempre com a fonte citada.
 
-🌐 [fiscaldigital.org](https://fiscaldigital.org) · 🐦 [@FiscalDigital](https://x.com/FiscalDigital)
+🌐 [fiscaldigital.org](https://fiscaldigital.org) · 🐦 [@FiscalDigitalBR](https://x.com/FiscalDigitalBR) · 📰 [RSS](https://api.fiscaldigital.org/rss)
 
 ---
 
@@ -13,21 +13,29 @@ Fiscal Digital monitora diários oficiais municipais, detecta irregularidades e 
 ```
 Diário Oficial Municipal (via Querido Diário)
            ↓
-    Extração de entidades
-    (regex + Claude Haiku)
+    Camada 1 — Regex (CNPJ, valores, datas)
            ↓
-    Fiscais Autônomos
-  ┌─────────────────────┐
-  │ Fiscal Licitações   │ → detecta dispensas, fracionamentos
-  │ Fiscal Contratos    │ → detecta aditivos abusivos
-  │ Fiscal Fornecedores │ → detecta CNPJs suspeitos, concentração
-  │ Fiscal Pessoal      │ → detecta picos de nomeações
-  └─────────────────────┘
+    Camada 2 — Nova Lite via Bedrock (extração e classificação)
            ↓
-    Score de risco (0–100)
+    9 Fiscais Autônomos (paralelos)
+  ┌──────────────────────────────────┐
+  │ Licitações       — Lei 14.133/21 │
+  │ Contratos        — Lei 14.133/21 │
+  │ Fornecedores     — RFB + CGU     │
+  │ Pessoal          — Lei 9.504/97  │
+  │ Convênios        — Lei 13.019/14 │
+  │ Nepotismo        — STF SV 13     │
+  │ Publicidade      — Lei 9.504/97  │
+  │ Locação          — Lei 14.133/21 │
+  │ Diárias          — Lei 8.112/90  │
+  └──────────────────────────────────┘
            ↓
-  Alerta público com fonte
-  X · Reddit · Dashboard
+    Score de risco (0–100) + confiança (0–1)
+           ↓
+    Camada 3 — Haiku 4.5 via Bedrock (narrativa, riskScore ≥ 60)
+           ↓
+    Alerta público com fonte
+    fiscaldigital.org · RSS · (X/Reddit em DRY_RUN)
 ```
 
 Todo alerta inclui o link para o diário oficial original no [Querido Diário](https://queridodiario.ok.org.br). Nunca publicamos sem evidência verificável.
@@ -36,10 +44,18 @@ Todo alerta inclui o link para o diário oficial original no [Querido Diário](h
 
 ## Cidades monitoradas
 
-| Cidade | Estado | Cobertura |
-|---|---|---|
-| Caxias do Sul | RS | Jan/2021 → presente |
-| Porto Alegre | RS | Em breve |
+**50 cidades ativas** + 2 planejadas (cobertura depende do Querido Diário ter o município indexado).
+
+- **Origem do MVP:** Caxias do Sul (RS) — gestão Adiló Didomenico (2021–presente). Backfill completo.
+- **Top 50 por população + todas as capitais:** São Paulo, Rio de Janeiro, Salvador, Brasília, Fortaleza, Belo Horizonte, Manaus, Curitiba, Recife, Porto Alegre... (lista completa em [`packages/engine/src/cities/index.ts`](packages/engine/src/cities/index.ts))
+
+---
+
+## Tipos de alerta (18)
+
+`dispensa_irregular` · `fracionamento` · `aditivo_abusivo` · `prorrogacao_excessiva` · `cnpj_jovem` · `concentracao_fornecedor` · `pico_nomeacoes` · `rotatividade_anormal` · `inexigibilidade_sem_justificativa` · `padrao_recorrente` · `convenio_sem_chamamento` · `repasse_recorrente_osc` · `diaria_irregular` · `publicidade_eleitoral` · `locacao_sem_justificativa` · `nepotismo_indicio` · `cnpj_situacao_irregular` · `fornecedor_sancionado`
+
+Mapeamento canônico PT/EN: [`packages/engine/src/types/index.ts`](packages/engine/src/types/index.ts) (`FindingType`).
 
 ---
 
@@ -48,9 +64,9 @@ Todo alerta inclui o link para o diário oficial original no [Querido Diário](h
 | Repo | Descrição |
 |---|---|
 | **fiscal-digital** *(este)* | Engine: Fiscais, Skills, API, Terraform |
-| [fiscal-digital-web](https://github.com/vieiradiego/fiscal-digital-web) | Site e dashboards públicos |
-| [fiscal-digital-collectors](https://github.com/vieiradiego/fiscal-digital-collectors) | Coletores de fontes de dados |
-| [fiscal-digital-analytics](https://github.com/vieiradiego/fiscal-digital-analytics) | Análises e relatórios |
+| [fiscal-digital-web](https://github.com/fiscal-digital/fiscal-digital-web) | Site e dashboards públicos |
+| [fiscal-digital-collectors](https://github.com/fiscal-digital/fiscal-digital-collectors) | Coletores de fontes de dados |
+| [fiscal-digital-analytics](https://github.com/fiscal-digital/fiscal-digital-analytics) | Análises e relatórios |
 
 ---
 
@@ -67,12 +83,12 @@ Este projeto é diretamente inspirado por:
 
 Leia o [Guia de Contribuição](CONTRIBUTING.md) e o [Código de Conduta](CODE_OF_CONDUCT.md).
 
-Para adicionar uma nova cidade ou um novo Fiscal, abra uma [Issue](https://github.com/vieiradiego/fiscal-digital/issues/new/choose) primeiro — toda mudança em lógica de detecção precisa de referência legal.
+Para adicionar uma nova cidade ou um novo Fiscal, abra uma [Issue](https://github.com/fiscal-digital/fiscal-digital/issues/new/choose) primeiro — toda mudança em lógica de detecção precisa de referência legal + exemplo positivo + exemplo negativo (regra de [GOVERNANCA.md](docs/fiscais/GOVERNANCA.md)).
 
 ---
 
 ## Licença
 
-[AGPL-3.0](LICENSE) — código aberto, derivações devem permanecer abertas.
+[MIT](LICENSE) — código aberto, derivações livres.
 
 Dados gerados: [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/)
