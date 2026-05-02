@@ -100,9 +100,14 @@ resource "aws_cloudfront_response_headers_policy" "gazettes_cache" {
   }
 
   security_headers_config {
-    frame_options {
-      frame_option = "SAMEORIGIN"
-      override     = true
+    # CSP frame-ancestors permite cross-origin específico (fiscaldigital.org).
+    # X-Frame-Options NÃO foi definido aqui porque ele só aceita SAMEORIGIN
+    # ou DENY — bloquearia o iframe em fiscaldigital.org (origem diferente
+    # de gazettes.fiscaldigital.org). Browsers modernos preferem CSP quando
+    # ambos estão presentes; mas para evitar conflito, omitimos XFO.
+    content_security_policy {
+      content_security_policy = "frame-ancestors 'self' https://fiscaldigital.org https://*.fiscaldigital.org"
+      override                = true
     }
   }
 
