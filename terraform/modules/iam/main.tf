@@ -209,7 +209,37 @@ resource "aws_iam_role_policy" "github_actions" {
         # S3 bucket management para módulo web
         Sid    = "WebS3BucketManage"
         Effect = "Allow"
-        Action = ["s3:CreateBucket", "s3:DeleteBucket", "s3:GetBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteBucketPolicy", "s3:GetBucketPublicAccessBlock", "s3:PutBucketPublicAccessBlock", "s3:GetBucketVersioning", "s3:GetBucketAcl", "s3:GetBucketCORS", "s3:GetBucketWebsite", "s3:GetBucketLogging", "s3:GetBucketRequestPayment", "s3:GetEncryptionConfiguration", "s3:GetLifecycleConfiguration", "s3:GetReplicationConfiguration", "s3:GetBucketTagging", "s3:GetBucketObjectLockConfiguration", "s3:ListAllMyBuckets"]
+        Action = [
+          "s3:CreateBucket", "s3:DeleteBucket",
+          "s3:GetBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteBucketPolicy",
+          "s3:GetBucketPublicAccessBlock", "s3:PutBucketPublicAccessBlock",
+          "s3:GetBucketVersioning", "s3:GetBucketAcl",
+          "s3:GetBucketCORS", "s3:GetBucketWebsite",
+          "s3:GetBucketLogging", "s3:GetBucketRequestPayment",
+          "s3:GetEncryptionConfiguration", "s3:GetLifecycleConfiguration",
+          "s3:GetReplicationConfiguration", "s3:GetBucketTagging",
+          "s3:GetBucketObjectLockConfiguration", "s3:ListAllMyBuckets",
+          "s3:GetAccelerateConfiguration",
+        ]
+        Resource = "*"
+      },
+      {
+        # CloudFront OAC management
+        Sid    = "WebCloudFrontManage"
+        Effect = "Allow"
+        Action = [
+          "cloudfront:GetOriginAccessControl",
+          "cloudfront:CreateOriginAccessControl",
+          "cloudfront:UpdateOriginAccessControl",
+          "cloudfront:DeleteOriginAccessControl",
+          "cloudfront:ListOriginAccessControls",
+          "cloudfront:GetDistribution",
+          "cloudfront:CreateDistribution",
+          "cloudfront:UpdateDistribution",
+          "cloudfront:DeleteDistribution",
+          "cloudfront:TagResource",
+          "cloudfront:ListTagsForResource",
+        ]
         Resource = "*"
       },
     ]
