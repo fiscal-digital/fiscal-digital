@@ -26,6 +26,37 @@ interface CachedItem {
 }
 
 /**
+ * Wraps extractEntities with exponential backoff for ThrottlingException.
+ * Bedrock Nova Lite tem rate limit ~50 RPM on-demand. Burst durante backfill
+ * causou ~5k erros throttle (LRN-019, FiscalFornecedores).
+ *
+ * Strategy: 3 tentativas, delay 1s/2s/4s + jitter aleatório.
+ */
+async function callBedrockWithRetry(
+  input: ExtractEntitiesCachedInput,
+  maxAttempts = 3,
+): Promise<SkillResult<ExtractedEntities>> {
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await extractEntities.execute(input)
+    } catch (err) {
+      lastError = err as Error
+      const msg = lastError.message || ''
+      const isThrottle = msg.includes('Throttling') || msg.includes('Too many requests')
+      if (!isThrottle || attempt === maxAttempts - 1) throw err
+      const baseDelayMs = 1000 * Math.pow(2, attempt) // 1s, 2s, 4s
+      const jitterMs = Math.floor(Math.random() * 500)
+      const delayMs = baseDelayMs + jitterMs
+      console.warn('[bedrock] throttle, retrying', { attempt: attempt + 1, delayMs })
+      await new Promise(r => setTimeout(r, delayMs))
+    }
+  }
+  // Unreachable but TypeScript needs it
+  throw lastError ?? new Error('unreachable')
+}
+
+/**
  * Cria wrapper cacheado de `extractEntities` escopado a uma gazette.
  *
  * Cache em 2 níveis:
@@ -85,8 +116,9 @@ export function createCachedExtractEntities(opts: {
       }
 
       // 3. Bedrock — primeira vez para este excerpt (ou schema mudou)
+      // Retry-with-backoff para mitigar ThrottlingException (LRN-019, FiscalFornecedores throttle)
       console.log('[cache] miss', { gazetteId: opts.gazetteId, hash })
-      const result = await extractEntities.execute(input)
+      const result = await callBedrockWithRetry(input)
 
       // 4. Persistir cache (best-effort, não bloqueia o fluxo)
       try {

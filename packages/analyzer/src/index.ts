@@ -7,6 +7,11 @@ import {
   fiscalContratos,
   fiscalFornecedores,
   fiscalPessoal,
+  fiscalConvenios,
+  fiscalNepotismo,
+  fiscalPublicidade,
+  fiscalLocacao,
+  fiscalDiarias,
   fiscalGeral,
   createCachedExtractEntities,
   saveMemory,
@@ -191,13 +196,27 @@ async function processRecord(body: string): Promise<void> {
   const shouldRun = (id: string): boolean => !enabled || enabled.includes(id)
 
   // Run only enabled Fiscais; allSettled ensures one failure never stops the others
-  const [licitacoesResult, contratosResult, fornecedoresResult, pessoalResult] =
-    await Promise.allSettled([
-      shouldRun('fiscal-licitacoes') ? fiscalLicitacoes.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
-      shouldRun('fiscal-contratos') ? fiscalContratos.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
-      shouldRun('fiscal-fornecedores') ? fiscalFornecedores.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
-      shouldRun('fiscal-pessoal') ? fiscalPessoal.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
-    ])
+  const [
+    licitacoesResult,
+    contratosResult,
+    fornecedoresResult,
+    pessoalResult,
+    conveniosResult,
+    nepotismoResult,
+    publicidadeResult,
+    locacaoResult,
+    diariasResult,
+  ] = await Promise.allSettled([
+    shouldRun('fiscal-licitacoes') ? fiscalLicitacoes.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+    shouldRun('fiscal-contratos') ? fiscalContratos.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+    shouldRun('fiscal-fornecedores') ? fiscalFornecedores.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+    shouldRun('fiscal-pessoal') ? fiscalPessoal.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+    shouldRun('fiscal-convenios') ? fiscalConvenios.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+    shouldRun('fiscal-nepotismo') ? fiscalNepotismo.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+    shouldRun('fiscal-publicidade') ? fiscalPublicidade.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+    shouldRun('fiscal-locacao') ? fiscalLocacao.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+    shouldRun('fiscal-diarias') ? fiscalDiarias.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+  ])
 
   const specializedFindings: Finding[] = []
 
@@ -235,6 +254,36 @@ async function processRecord(body: string): Promise<void> {
       gazetteId: gazette.id,
       error: pessoalResult.reason,
     })
+  }
+
+  if (conveniosResult.status === 'fulfilled') {
+    specializedFindings.push(...conveniosResult.value)
+  } else {
+    console.error('[analyzer] fiscalConvenios falhou', { gazetteId: gazette.id, error: conveniosResult.reason })
+  }
+
+  if (nepotismoResult.status === 'fulfilled') {
+    specializedFindings.push(...nepotismoResult.value)
+  } else {
+    console.error('[analyzer] fiscalNepotismo falhou', { gazetteId: gazette.id, error: nepotismoResult.reason })
+  }
+
+  if (publicidadeResult.status === 'fulfilled') {
+    specializedFindings.push(...publicidadeResult.value)
+  } else {
+    console.error('[analyzer] fiscalPublicidade falhou', { gazetteId: gazette.id, error: publicidadeResult.reason })
+  }
+
+  if (locacaoResult.status === 'fulfilled') {
+    specializedFindings.push(...locacaoResult.value)
+  } else {
+    console.error('[analyzer] fiscalLocacao falhou', { gazetteId: gazette.id, error: locacaoResult.reason })
+  }
+
+  if (diariasResult.status === 'fulfilled') {
+    specializedFindings.push(...diariasResult.value)
+  } else {
+    console.error('[analyzer] fiscalDiarias falhou', { gazetteId: gazette.id, error: diariasResult.reason })
   }
 
   // FiscalGeral consolida os findings dos 4 Fiscais especializados e adiciona
@@ -282,6 +331,11 @@ async function processRecord(body: string): Promise<void> {
   if (contratosResult.status === 'fulfilled' && shouldRun('fiscal-contratos')) ranSuccessfully.push('fiscal-contratos')
   if (fornecedoresResult.status === 'fulfilled' && shouldRun('fiscal-fornecedores')) ranSuccessfully.push('fiscal-fornecedores')
   if (pessoalResult.status === 'fulfilled' && shouldRun('fiscal-pessoal')) ranSuccessfully.push('fiscal-pessoal')
+  if (conveniosResult.status === 'fulfilled' && shouldRun('fiscal-convenios')) ranSuccessfully.push('fiscal-convenios')
+  if (nepotismoResult.status === 'fulfilled' && shouldRun('fiscal-nepotismo')) ranSuccessfully.push('fiscal-nepotismo')
+  if (publicidadeResult.status === 'fulfilled' && shouldRun('fiscal-publicidade')) ranSuccessfully.push('fiscal-publicidade')
+  if (locacaoResult.status === 'fulfilled' && shouldRun('fiscal-locacao')) ranSuccessfully.push('fiscal-locacao')
+  if (diariasResult.status === 'fulfilled' && shouldRun('fiscal-diarias')) ranSuccessfully.push('fiscal-diarias')
   await markFiscalProcessed(gazette.id, ranSuccessfully)
 
   console.log('[analyzer] gazette processada', {

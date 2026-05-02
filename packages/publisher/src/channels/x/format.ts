@@ -13,6 +13,7 @@ const FINDING_LABEL: Record<string, string> = {
   concentracao_fornecedor: 'CONCENTRAÇÃO',
   dispensa_irregular: 'DISPENSA',
   inexigibilidade_sem_justificativa: 'INEXIGIBILIDADE',
+  locacao_sem_justificativa: 'LOCAÇÃO',
 }
 
 function formatBRL(value: number): string {

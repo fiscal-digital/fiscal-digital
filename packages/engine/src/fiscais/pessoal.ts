@@ -103,15 +103,20 @@ export const fiscalPessoal: Fiscal = {
       return []
     }
 
-    for (const excerpt of relevantExcerpts) {
-      // ── Padrão 1: Pico de nomeações ────────────────────────────────────────
+    // ── Padrão 1: Pico de nomeações (CALIBRAÇÃO: por gazette, não por excerpt) ──
+    // Auditoria 2026-05-02 (LRN-019): threshold por excerpt nunca disparava
+    // (excerpts são windows de 300 chars; raramente cabem 5 atos).
+    // Agora soma todos os excerpts da MESMA gazette antes de testar.
+    const totalAtos = relevantExcerpts.reduce((sum, e) => sum + contarAtos(e), 0)
+    const janela = dentroJanelaEleitoral(gazette.date)
+    const emJanela = janela !== null
 
-      const countAtos = contarAtos(excerpt)
-      const janela = dentroJanelaEleitoral(gazette.date)
-      const emJanela = janela !== null
+    {
+      const countAtos = totalAtos
+      const excerpt = relevantExcerpts.join('\n---\n') // representação da gazette inteira para evidence
 
-      // Limiares: 5+ atos em janela eleitoral, 10+ fora
-      const limiar = emJanela ? 5 : 10
+      // Limiares calibrados: 3+ atos por gazette em janela eleitoral, 7+ fora
+      const limiar = emJanela ? 3 : 7
       const dispara = countAtos >= limiar
 
       if (dispara) {
@@ -171,8 +176,11 @@ export const fiscalPessoal: Fiscal = {
         findings.push(finding)
       }
 
-      // ── Padrão 2: Rotatividade anormal de cargo comissionado ───────────────
+    }
 
+    // ── Padrão 2: Rotatividade anormal de cargo comissionado ─────────────────
+    // Mantido per-excerpt: detecta exoneração+nomeação no MESMO ato (300 chars).
+    for (const excerpt of relevantExcerpts) {
       if (detectarRotatividadeNoExcerpt(excerpt)) {
         const riskFactors: RiskFactor[] = [
           {
@@ -223,3 +231,4 @@ export const fiscalPessoal: Fiscal = {
     return findings
   },
 }
+

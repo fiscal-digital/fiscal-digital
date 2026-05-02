@@ -43,24 +43,34 @@
   - check_sanctions CGU CEIS/CNEP (skill existe; integração pendente)
 
 ### 4. FiscalPessoal — `fiscal-pessoal`
-- **Status:** ❓ desconhecido — 0 erros, 0 findings em prod
-- **Detecta (declarado):**
-  - Pico de nomeações em períodos eleitorais
-  - Rotatividade anormal em cargos comissionados
-- **Pendências:**
-  - **Etapa 1 (validação retroativa):** unit tests existem? cobertura?
-  - **Etapa 3 (smoke):** rodar contra Caxias+PA — esperar 0 ou findings calibrados
-  - Possível causa de 0 findings: threshold muito alto OU lógica não aciona
-  - Cargo comissionado: como identificar "DAS-X" vs "Diretor" vs "Coordenador"
+- **Status:** ⚠️ código OK (12 unit tests passando) mas **threshold alto demais → nunca dispara**
+- **Detecta:**
+  - Pico de nomeações: ≥ **5 atos por excerpt** em janela eleitoral, ≥ **10 fora**
+  - Rotatividade: exoneração+nomeação no mesmo excerpt
+- **Auditoria 2026-05-02:**
+  - Excerpts são windows de 300 chars — raramente cabem 5 nomeações
+  - Probabilidade de trigger ≈ 0% em prática
+  - Janela eleitoral 2024 já passou; 2026 começa jul/2026
+- **Calibração proposta (UH-23):**
+  - Mudar de "atos por excerpt" para "atos por gazette" (somar todos os excerpts)
+  - Limiar 3+ atos por gazette em janela eleitoral
+  - Cross-gazette: contar atos do mesmo cargo em N dias
+- **Bloqueio:** schema de personas em DynamoDB (não implementado) para cross-gazette
 
 ### 5. FiscalGeral — `fiscal-geral`
-- **Status:** ❓ orquestrador — funcionando mas sem validação dedicada
+- **Status:** ⚠️ design gap — funciona em isolamento mas **nunca dispara em prod**
 - **Função:**
-  - Consolida findings dos 4 Fiscais especializados
-  - Detecta `padrao_recorrente` (riskScore >= 90)
-- **Pendências:**
-  - Definir critério de "padrão recorrente" — N findings mesmo tipo + CNPJ?
-  - Smoke test dedicado
+  - Consolida findings dos 4 Fiscais especializados (mesmo gazette)
+  - Detecta `padrao_recorrente`: ≥ 3 findings mesmo CNPJ → meta-finding riskScore 90+
+- **Auditoria 2026-05-02:**
+  - **Design gap:** `consolidar()` recebe findings de UM gazette, não cross-gazette
+  - 1 gazette típica gera 0-2 findings, raramente 3+ no mesmo CNPJ
+  - Resultado: meta-finding nunca emite
+- **Fix arquitetural proposto (UH-24):**
+  - Modo histórico: `consolidar()` chama `queryAlertsByCnpj` para cada CNPJ visto
+  - Cross-gazette padrão_recorrente: ≥ 3 findings mesmo CNPJ em janela 12 meses
+  - Move parte da lógica para um Lambda periódico (não inline no analyzer)
+- **Custo computacional:** baixo (Query GSI por CNPJ é barato)
 
 ---
 

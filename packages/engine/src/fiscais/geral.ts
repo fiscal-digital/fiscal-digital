@@ -2,6 +2,9 @@ import type { Finding } from '../types'
 
 const FISCAL_ID = 'fiscal-geral'
 
+/** Janela default para histórico cross-gazette (12 meses) */
+const HISTORICO_JANELA_MESES = 12
+
 // ── Limiares ─────────────────────────────────────────────────────────────────
 
 /** Mínimo de findings apontando o mesmo CNPJ para gerar meta-finding */
@@ -15,10 +18,20 @@ const PADRAO_RECORRENTE_BONUS_POR_FINDING = 2
 
 // ── Tipos internos ────────────────────────────────────────────────────────────
 
-/** Input do Fiscal Geral: lista de findings já produzidos pelos demais Fiscais */
+/**
+ * Input do Fiscal Geral: findings da gazette atual + (opcional) função de query
+ * para histórico cross-gazette.
+ */
 export interface FiscalGeralInput {
   findings: Finding[]
   cityId: string
+  /**
+   * Função opcional para consultar findings históricos por CNPJ.
+   * Quando presente, FiscalGeral combina findings atuais + histórico para
+   * detectar padrao_recorrente cross-gazette (>= 3 findings em 12 meses).
+   * Quando ausente, fallback para detecção local (per-gazette).
+   */
+  queryAlertsByCnpj?: (cnpj: string, sinceISO: string) => Promise<Finding[]>
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -67,15 +80,81 @@ export const fiscalGeral = {
    * @returns findings originais + eventuais meta-findings padrao_recorrente
    */
   consolidar(input: FiscalGeralInput): Finding[] {
-    const { findings, cityId } = input
+    return this.consolidarSync(input)
+  },
 
-    if (findings.length === 0) return []
+  /**
+   * Versão síncrona (retrocompatível) — usa apenas findings da gazette atual.
+   * Útil para testes e código legado.
+   */
+  consolidarSync(input: FiscalGeralInput): Finding[] {
+    const { findings, cityId } = input
+    return this._build(findings, cityId)
+  },
+
+  /**
+   * Versão async — combina findings atuais + histórico cross-gazette.
+   * Use no analyzer Lambda quando `queryAlertsByCnpj` estiver disponível.
+   *
+   * Auditoria 2026-05-02: detecção local (per-gazette) nunca disparava porque
+   * 1 gazette típica gera 0-2 findings, raramente 3+ no mesmo CNPJ.
+   * Cross-gazette query expande a janela para 12 meses.
+   */
+  async consolidarAsync(input: FiscalGeralInput): Promise<Finding[]> {
+    const { findings, cityId, queryAlertsByCnpj } = input
+
+    if (!queryAlertsByCnpj) {
+      // Sem query function: fallback para versão síncrona
+      return this._build(findings, cityId)
+    }
+
+    // Coletar todos os CNPJs únicos dos findings atuais
+    const cnpjsAtuais = [...new Set(findings.map(f => f.cnpj).filter((c): c is string => !!c))]
+    if (cnpjsAtuais.length === 0) return findings
+
+    // Janela 12 meses
+    const sinceISO = new Date(Date.now() - HISTORICO_JANELA_MESES * 30 * 86400000).toISOString()
+
+    // Buscar histórico cross-gazette para cada CNPJ presente
+    const historicoPorCnpj = new Map<string, Finding[]>()
+    for (const cnpj of cnpjsAtuais) {
+      try {
+        const hist = await queryAlertsByCnpj(cnpj, sinceISO)
+        historicoPorCnpj.set(cnpj, hist ?? [])
+      } catch {
+        historicoPorCnpj.set(cnpj, [])
+      }
+    }
+
+    // Combinar atuais + histórico (deduplicar por id)
+    const combinedById = new Map<string, Finding>()
+    for (const f of findings) {
+      if (f.id) combinedById.set(f.id, f)
+    }
+    for (const lista of historicoPorCnpj.values()) {
+      for (const f of lista) {
+        if (f.id && !combinedById.has(f.id)) combinedById.set(f.id, f)
+      }
+    }
+    const combinedFindings = [...combinedById.values(), ...findings.filter(f => !f.id)]
+
+    return this._build(combinedFindings, cityId, findings)
+  },
+
+  /**
+   * Internal: constrói meta-findings padrão_recorrente.
+   * @param all findings combinados (atuais + histórico, se aplicável)
+   * @param cityId cidade
+   * @param atuais findings da gazette atual (para evidence — opcional)
+   */
+  _build(all: Finding[], cityId: string, atuais: Finding[] = all): Finding[] {
+    if (all.length === 0) return []
 
     const metaFindings: Finding[] = []
 
     // Agrupa findings por CNPJ (ignora findings sem CNPJ — são tratados individualmente)
     const porCnpj = new Map<string, Finding[]>()
-    for (const f of findings) {
+    for (const f of all) {
       if (!f.cnpj) continue
       const grupo = porCnpj.get(f.cnpj) ?? []
       grupo.push(f)
@@ -119,6 +198,7 @@ export const fiscalGeral = {
       metaFindings.push(metaFinding)
     }
 
-    return [...findings, ...metaFindings]
+    // Retorna findings da gazette atual (preserva contrato) + meta-findings novos
+    return [...atuais, ...metaFindings]
   },
 }

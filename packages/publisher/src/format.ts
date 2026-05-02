@@ -14,6 +14,8 @@ const FINDING_REASON: Record<string, string> = {
   dispensa_irregular: 'Dispensa de licitação com indícios de irregularidade',
   inexigibilidade_sem_justificativa:
     'Inexigibilidade de licitação sem justificativa identificada',
+  locacao_sem_justificativa:
+    'Locação de imóvel sem menção a laudo de avaliação ou justificativa',
 }
 
 /**

@@ -19,6 +19,7 @@ const FINDING_LABEL: Record<string, string> = {
   dispensa_irregular: 'DISPENSA',
   inexigibilidade_sem_justificativa: 'INEXIGIBILIDADE',
   padrao_recorrente: 'PADRÃO RECORRENTE',
+  locacao_sem_justificativa: 'LOCAÇÃO',
 }
 
 /**
@@ -37,6 +38,8 @@ const FINDING_HEADING: Record<string, string> = {
   inexigibilidade_sem_justificativa:
     'Identificamos inexigibilidade de licitação sem justificativa',
   padrao_recorrente: 'Identificamos padrão recorrente de irregularidade',
+  locacao_sem_justificativa:
+    'Identificamos locação de imóvel sem menção a laudo de avaliação prévia',
 }
 
 /**

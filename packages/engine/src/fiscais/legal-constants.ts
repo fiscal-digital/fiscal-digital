@@ -27,3 +27,40 @@ export const LEI_14133_ART_125_LIMITE_REFORMA = 0.50 // 50% — reforma de edif�
  * TODO(legal-constants): verificar regulamentação futura de contratos específicos (Art. 107 §1º e §2º).
  */
 export const LEI_14133_ART_107_VIGENCIA_MAXIMA_ANOS = 10 // decenal — Art. 107 caput
+
+/**
+ * Lei 13.019/2014 (MROSC) — Marco Regulatório das Organizações da Sociedade Civil.
+ * Decreto Federal 8.726/2016 regulamenta a aplicação no âmbito federal; municípios
+ * usualmente seguem analogamente via decreto local.
+ *
+ * Art. 24, caput — Chamamento público é regra geral para celebração de termo de
+ * fomento e termo de colaboração com OSC.
+ *
+ * Art. 29 — Dispensa de chamamento permitida em caso de urgência (até 180 dias),
+ * guerra, calamidade pública, programas de proteção a pessoas ameaçadas, atividades
+ * voltadas ou vinculadas a serviços de educação, saúde e assistência social.
+ *
+ * Art. 30 — Inexigibilidade quando inviável a competição por singularidade do objeto
+ * ou quando as metas só puderem ser atingidas por entidade específica (ex.: parceria
+ * com OSC credenciada por lei).
+ *
+ * Limiar de risco para alerta: convênios com valor acima deste piso, sem evidência
+ * de chamamento público, dispensa fundamentada (Art. 29) ou inexigibilidade (Art. 30).
+ *
+ * O valor referencial de R$ 600.000 é orientação prática observada em decretos
+ * municipais (RS, SP, MG) — não é teto rígido da Lei 13.019. Calibrar por município.
+ *
+ * TODO(legal-constants): municípios podem definir piso próprio em decreto local.
+ * Atualizar para `Map<cityId, threshold>` quando coletarmos decretos por cidade.
+ */
+export const LEI_13019_CONVENIO_VALOR_REFERENCIA = 600000.00 // R$ 600.000 — limiar prático
+
+/**
+ * Lei 13.019/2014, Art. 33 e Art. 35 — Repasses recorrentes ao mesmo OSC sem
+ * renovação contratual formal indicam continuidade fática de parceria fora do
+ * instrumento jurídico. Janela de observação: 12 meses.
+ *
+ * Limiar de quantidade: 3+ repasses ao mesmo CNPJ na janela sem nova celebração
+ * de termo de fomento/colaboração caracteriza padrão a investigar.
+ */
+export const LEI_13019_REPASSE_RECORRENTE_MINIMO = 3 // 3+ repasses na janela 12 meses

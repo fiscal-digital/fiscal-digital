@@ -54,6 +54,11 @@ jest.mock('@fiscal-digital/engine', () => ({
   fiscalContratos: { id: 'fiscal-contratos', description: 'mock', analisar: mockAnalisarContratos },
   fiscalFornecedores: { id: 'fiscal-fornecedores', description: 'mock', analisar: mockAnalisarFornecedores },
   fiscalPessoal: { id: 'fiscal-pessoal', description: 'mock', analisar: mockAnalisarPessoal },
+  fiscalConvenios: { id: 'fiscal-convenios', description: 'mock', analisar: jest.fn().mockResolvedValue([]) },
+  fiscalNepotismo: { id: 'fiscal-nepotismo', description: 'mock', analisar: jest.fn().mockResolvedValue([]) },
+  fiscalPublicidade: { id: 'fiscal-publicidade', description: 'mock', analisar: jest.fn().mockResolvedValue([]) },
+  fiscalLocacao: { id: 'fiscal-locacao', description: 'mock', analisar: jest.fn().mockResolvedValue([]) },
+  fiscalDiarias: { id: 'fiscal-diarias', description: 'mock', analisar: jest.fn().mockResolvedValue([]) },
   fiscalGeral: { id: 'fiscal-geral', description: 'mock', consolidar: mockConsolidar },
   createCachedExtractEntities: jest.fn(() => ({
     name: 'extract_entities_cached',

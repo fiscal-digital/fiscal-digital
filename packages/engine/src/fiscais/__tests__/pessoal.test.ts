@@ -47,7 +47,7 @@ describe('fiscalPessoal', () => {
   })
 
   // Caso 2 — Fora da janela eleitoral + 7 atos → não dispara (limiar fora = 10)
-  it('2. negativo fora janela: 7 atos em mar/2026 → nenhum pico_nomeacoes (abaixo limiar 10)', async () => {
+  it('2. positivo fora janela: 7 atos em mar/2026 → emite pico_nomeacoes (limiar calibrado 7, riskScore < 60)', async () => {
     const context = makeContext({
       now: () => new Date('2026-03-10T10:00:00.000Z'),
     })
@@ -59,7 +59,8 @@ describe('fiscalPessoal', () => {
     })
 
     const pico = findings.filter(f => f.type === 'pico_nomeacoes')
-    expect(pico).toHaveLength(0)
+    expect(pico).toHaveLength(1)
+    expect(pico[0].riskScore).toBeLessThan(60) // informativo fora janela
   })
 
   // Caso 3 — Fora da janela + 12 atos → dispara informativo (riskScore < 60)
@@ -82,7 +83,7 @@ describe('fiscalPessoal', () => {
   })
 
   // Caso 4 — Janela eleitoral + 3 atos → não dispara (abaixo do limiar 5)
-  it('4. negativo janela eleitoral: 3 atos em set/2026 → nenhum pico_nomeacoes (abaixo limiar 5)', async () => {
+  it('4. positivo janela eleitoral: 3 atos em set/2026 → emite pico_nomeacoes (limiar calibrado 3, riskScore >= 60)', async () => {
     const context = makeContext({
       now: () => new Date('2026-09-01T10:00:00.000Z'),
     })
@@ -94,7 +95,8 @@ describe('fiscalPessoal', () => {
     })
 
     const pico = findings.filter(f => f.type === 'pico_nomeacoes')
-    expect(pico).toHaveLength(0)
+    expect(pico).toHaveLength(1)
+    expect(pico[0].riskScore).toBeGreaterThanOrEqual(60) // janela eleitoral = alto risco
   })
 
   // Caso 5 — Exoneração + nomeação cargo comissionado no mesmo excerpt → dispara rotatividade_anormal

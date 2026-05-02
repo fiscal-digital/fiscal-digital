@@ -9,6 +9,12 @@ export type FindingType =
   | 'dispensa_irregular'
   | 'inexigibilidade_sem_justificativa'
   | 'padrao_recorrente'
+  | 'convenio_sem_chamamento'
+  | 'repasse_recorrente_osc'
+  | 'diaria_irregular'
+  | 'publicidade_eleitoral'
+  | 'locacao_sem_justificativa'
+  | 'nepotismo_indicio'
 
 export interface Evidence {
   source: string   // URL do Querido Diário — OBRIGATÓRIO
