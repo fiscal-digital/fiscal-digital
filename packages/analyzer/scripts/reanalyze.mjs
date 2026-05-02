@@ -27,10 +27,12 @@
  *
  * Uso:
  *   node packages/analyzer/scripts/reanalyze.mjs --fiscal=fiscal-licitacoes
- *   node packages/analyzer/scripts/reanalyze.mjs --fiscal=fiscal-contratos --poc
- *   node packages/analyzer/scripts/reanalyze.mjs --fiscal=fiscal-convenios --city=4305108
- *   node packages/analyzer/scripts/reanalyze.mjs --fiscal=fiscal-licitacoes --since=2026-01-01
- *   node packages/analyzer/scripts/reanalyze.mjs --fiscal=fiscal-licitacoes --force  # re-roda mesmo se já processedBy
+ *   node packages/analyzer/scripts/reanalyze.mjs --all                      # todos os 4
+ *   node packages/analyzer/scripts/reanalyze.mjs --fiscals=A,B,C            # vários
+ *   node packages/analyzer/scripts/reanalyze.mjs --fiscal=X --poc           # Caxias + PA
+ *   node packages/analyzer/scripts/reanalyze.mjs --all --city=4305108       # 1 cidade
+ *   node packages/analyzer/scripts/reanalyze.mjs --all --since=2025-12-01
+ *   node packages/analyzer/scripts/reanalyze.mjs --fiscal=X --force         # re-roda mesmo já processedBy
  */
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
@@ -83,9 +85,12 @@ async function* scanGazettes(filters) {
       if (filters.since && date < filters.since) continue
       if (filters.until && date > filters.until) continue
 
-      // Skip se Fiscal já processou (a menos que --force)
+      // Skip se TODOS os Fiscais alvo já processaram esta gazette
       const processedBy = item.processedBy ?? {}
-      if (!filters.force && processedBy[filters.fiscal]) continue
+      if (!filters.force) {
+        const allProcessed = filters.fiscals.every(f => processedBy[f])
+        if (allProcessed) continue
+      }
 
       yield {
         gazetteId: `${territoryId}#${date}#${edition}`,
@@ -147,6 +152,8 @@ async function sendBatch(messages) {
 async function main() {
   const args = process.argv.slice(2)
   const fiscal = args.find(a => a.startsWith('--fiscal='))?.replace('--fiscal=', '')
+  const fiscalsArg = args.find(a => a.startsWith('--fiscals='))?.replace('--fiscals=', '')
+  const all = args.includes('--all')
   const cityArg = args.find(a => a.startsWith('--city='))?.replace('--city=', '')
   const since = args.find(a => a.startsWith('--since='))?.replace('--since=', '')
   const until = args.find(a => a.startsWith('--until='))?.replace('--until=', '')
@@ -154,27 +161,35 @@ async function main() {
   const force = args.includes('--force')
   const dryRun = args.includes('--dry-run')
 
-  if (!fiscal) {
-    console.error('Uso: --fiscal=<id>  (validos: ' + VALID_FISCALS.join(', ') + ')')
+  // Resolve fiscais alvo
+  let fiscals
+  if (all) fiscals = VALID_FISCALS
+  else if (fiscalsArg) fiscals = fiscalsArg.split(',').map(s => s.trim()).filter(Boolean)
+  else if (fiscal) fiscals = [fiscal]
+  else {
+    console.error('Uso: --fiscal=<id> | --fiscals=A,B,C | --all')
+    console.error('Validos: ' + VALID_FISCALS.join(', '))
     process.exit(1)
   }
 
-  // Permitir Fiscais novos (não na lista) — apenas warning
-  if (!VALID_FISCALS.includes(fiscal)) {
-    console.warn(`[warn] Fiscal "${fiscal}" não está na lista padrão. Continuando assim mesmo (Fiscal novo?).`)
+  // Warn sobre Fiscais não-padrão (Fiscais novos)
+  for (const f of fiscals) {
+    if (!VALID_FISCALS.includes(f)) {
+      console.warn(`[warn] Fiscal "${f}" não está na lista padrão. Continuando (Fiscal novo?).`)
+    }
   }
 
   const cities = cityArg ? [cityArg] : poc ? POC_CITIES : null
 
   console.log(`\n${'='.repeat(72)}`)
   console.log(`  Fiscal Digital — UH-22 Phase 4: Re-Analyze`)
-  console.log(`  Fiscal alvo: ${fiscal}`)
+  console.log(`  Fiscais alvo: ${fiscals.join(', ')}`)
   console.log(`  Cidades: ${cities ? cities.join(', ') : 'todas'}`)
   console.log(`  Range: ${since ?? 'inicio'} → ${until ?? 'hoje'}`)
   console.log(`  Force: ${force} · DryRun: ${dryRun}`)
   console.log(`${'='.repeat(72)}\n`)
 
-  const filters = { fiscal, cities, since, until, force }
+  const filters = { fiscals, cities, since, until, force }
   let totalCandidates = 0
   let totalEnqueued = 0
   let batch = []
@@ -196,7 +211,7 @@ async function main() {
       url: g.url,
       excerpts: qdMatch.excerpts ?? [],
       entities: { cnpjs: [], values: [], dates: [], contractNumbers: [] },
-      enabledFiscals: [fiscal], // ← chave do UH-22 Phase 2
+      enabledFiscals: filters.fiscals, // ← chave do UH-22 Phase 2 (multi-fiscal)
     }
 
     batch.push(msg)
@@ -216,7 +231,7 @@ async function main() {
 
   console.log(`\n${'='.repeat(72)}`)
   console.log(`  CONCLUÍDO`)
-  console.log(`  Candidatos (gazettes sem ${fiscal}): ${totalCandidates}`)
+  console.log(`  Candidatos (gazettes sem ${fiscals.join('+')}): ${totalCandidates}`)
   console.log(`  Enfileirados: ${totalEnqueued}`)
   console.log(`  Analyzer processará via SQS event source mapping`)
   console.log(`  Cache de extração (UH-22 Phase 1) elimina custo Bedrock`)
