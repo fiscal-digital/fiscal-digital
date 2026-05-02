@@ -14,6 +14,10 @@ output "api_lambda_arn" {
   value = module.lambdas.api_arn
 }
 
+output "api_url" {
+  value = module.lambdas.api_url
+}
+
 output "gazettes_queue_url" {
   value = module.sqs.gazettes_queue_url
 }
