@@ -144,7 +144,9 @@ async function cachePdf(
       Bucket: GAZETTES_CACHE_BUCKET,
       Key: key,
       Body: Buffer.from(pdfBuffer),
-      ContentType: contentType.startsWith('application/') ? contentType : 'application/pdf',
+      ContentType: 'application/pdf',
+      // inline garante que browser exibe no iframe em vez de baixar
+      ContentDisposition: 'inline',
       CacheControl: 'public, max-age=31536000, immutable',
       Metadata: {
         originalUrl,
