@@ -109,7 +109,8 @@ function ok(body: string, contentType: string): APIGatewayProxyResultV2 {
     statusCode: 200,
     headers: {
       'Content-Type': contentType,
-      'Cache-Control': 'public, max-age=300',
+      // Dados frescos > cache. Dashboard de transparência precisa mostrar findings em tempo real.
+      'Cache-Control': 'public, max-age=30, must-revalidate',
     },
     body,
   }
