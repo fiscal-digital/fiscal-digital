@@ -18,6 +18,14 @@ output "api_url" {
   value = module.lambdas.api_url
 }
 
+output "cloudfront_distribution_id" {
+  value = module.web.cloudfront_distribution_id
+}
+
+output "web_url" {
+  value = "https://fiscaldigital.org"
+}
+
 output "gazettes_queue_url" {
   value = module.sqs.gazettes_queue_url
 }

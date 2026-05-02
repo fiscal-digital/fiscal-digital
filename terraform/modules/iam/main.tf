@@ -28,7 +28,10 @@ data "aws_iam_policy_document" "github_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_org}/${var.github_repo}:*"]
+      values   = [
+        "repo:${var.github_org}/${var.github_repo}:*",
+        "repo:${var.github_org}/fiscal-digital-web:*",
+      ]
     }
   }
 }
@@ -169,6 +172,44 @@ resource "aws_iam_role_policy" "github_actions" {
         Sid      = "BudgetsManage"
         Effect   = "Allow"
         Action   = ["budgets:CreateBudget", "budgets:ModifyBudget", "budgets:ViewBudget", "budgets:DeleteBudget", "budgets:DescribeBudgets", "budgets:ListTagsForResource"]
+        Resource = "*"
+      },
+      {
+        # Deploy do site estático fiscal-digital-web para S3
+        Sid    = "WebS3Deploy"
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetBucketLocation"]
+        Resource = [
+          "arn:aws:s3:::fiscal-digital-web-prod",
+          "arn:aws:s3:::fiscal-digital-web-prod/*",
+        ]
+      },
+      {
+        # Invalidação do CloudFront após deploy
+        Sid      = "WebCloudFrontInvalidate"
+        Effect   = "Allow"
+        Action   = ["cloudfront:CreateInvalidation", "cloudfront:GetDistribution", "cloudfront:ListDistributions"]
+        Resource = "*"
+      },
+      {
+        # ACM — criar/validar certificado SSL para fiscaldigital.org
+        Sid      = "ACMManage"
+        Effect   = "Allow"
+        Action   = ["acm:RequestCertificate", "acm:DescribeCertificate", "acm:DeleteCertificate", "acm:ListCertificates", "acm:AddTagsToCertificate", "acm:ListTagsForCertificate"]
+        Resource = "*"
+      },
+      {
+        # Route53 — criar registros A/AAAA e validação ACM
+        Sid      = "Route53Manage"
+        Effect   = "Allow"
+        Action   = ["route53:GetHostedZone", "route53:ListHostedZones", "route53:ChangeResourceRecordSets", "route53:ListResourceRecordSets", "route53:GetChange"]
+        Resource = "*"
+      },
+      {
+        # S3 bucket management para módulo web
+        Sid    = "WebS3BucketManage"
+        Effect = "Allow"
+        Action = ["s3:CreateBucket", "s3:DeleteBucket", "s3:GetBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteBucketPolicy", "s3:GetBucketPublicAccessBlock", "s3:PutBucketPublicAccessBlock", "s3:GetBucketVersioning", "s3:GetBucketAcl", "s3:GetBucketCORS", "s3:GetBucketWebsite", "s3:GetBucketLogging", "s3:GetBucketRequestPayment", "s3:GetEncryptionConfiguration", "s3:GetLifecycleConfiguration", "s3:GetReplicationConfiguration", "s3:GetBucketTagging", "s3:GetBucketObjectLockConfiguration", "s3:ListAllMyBuckets"]
         Resource = "*"
       },
     ]
