@@ -253,6 +253,29 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
         Resource = "*"
       },
+      {
+        # CloudFront Response Headers Policy — necessário para gazettes-cache
+        # (Content-Disposition: inline + X-Frame-Options + CORS)
+        Sid    = "CloudFrontResponseHeadersPolicy"
+        Effect = "Allow"
+        Action = [
+          "cloudfront:CreateResponseHeadersPolicy",
+          "cloudfront:UpdateResponseHeadersPolicy",
+          "cloudfront:DeleteResponseHeadersPolicy",
+          "cloudfront:GetResponseHeadersPolicy",
+          "cloudfront:ListResponseHeadersPolicies",
+        ]
+        Resource = "*"
+      },
+      {
+        # iam:UpdateAssumeRolePolicy — necessário para o próprio Terraform
+        # atualizar a trust policy de roles fiscal-digital-* (ex: adicionar
+        # mais um repo no sub do OIDC).
+        Sid      = "IAMUpdateAssumeRolePolicySelf"
+        Effect   = "Allow"
+        Action   = ["iam:UpdateAssumeRolePolicy"]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/fiscal-digital-*"
+      },
     ]
   })
 }
