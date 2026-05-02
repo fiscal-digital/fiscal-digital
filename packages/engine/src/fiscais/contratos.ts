@@ -22,7 +22,9 @@ const ART_107_RE = /art(?:igo)?\.?\s*107/i
 // Regex para classificação reforma (Art. 125 §1º II)
 const REFORMA_RE = /reforma|edif[íi]cio|equipamento/i
 
-function formatBRL(value: number): string {
+function formatBRL(value: number | null | undefined): string {
+  // Defensivo contra cache hit com valorOriginalContrato null/undefined (LRN-021)
+  if (value == null || isNaN(value)) return '—'
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
