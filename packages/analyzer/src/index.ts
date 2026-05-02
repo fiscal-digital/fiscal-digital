@@ -65,7 +65,11 @@ async function queryAlertsByCnpj(cnpj: string, sinceISO: string): Promise<Findin
 // ---------------------------------------------------------------------------
 
 async function persistFinding(finding: Finding): Promise<void> {
-  const pk = `FINDING#${finding.fiscalId}#${finding.cityId}#${finding.type}#${finding.createdAt ?? new Date().toISOString()}`
+  const createdAt = finding.createdAt ?? new Date().toISOString()
+  const pk = `FINDING#${finding.fiscalId}#${finding.cityId}#${finding.type}#${createdAt}`
+  // Hydrate id so publisher can use it for deduplication
+  finding.id = pk
+  finding.createdAt = createdAt
   await saveMemory.execute({
     pk,
     table: ALERTS_TABLE,
