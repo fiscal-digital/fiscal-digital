@@ -46,7 +46,17 @@ const QD_API = 'https://api.queridodiario.ok.org.br'
 const QD_RATE_DELAY_MS = 1100
 const SQS_BATCH_SIZE = 10
 
-const VALID_FISCALS = ['fiscal-licitacoes', 'fiscal-contratos', 'fiscal-fornecedores', 'fiscal-pessoal']
+const VALID_FISCALS = [
+  'fiscal-licitacoes',
+  'fiscal-contratos',
+  'fiscal-fornecedores',
+  'fiscal-pessoal',
+  'fiscal-convenios',
+  'fiscal-nepotismo',
+  'fiscal-publicidade',
+  'fiscal-locacao',
+  'fiscal-diarias',
+]
 
 const POC_CITIES = ['4305108', '4314902'] // Caxias do Sul + Porto Alegre
 
@@ -85,12 +95,13 @@ async function* scanGazettes(filters) {
       if (filters.since && date < filters.since) continue
       if (filters.until && date > filters.until) continue
 
-      // Skip se TODOS os Fiscais alvo já processaram esta gazette
+      // UH-22 Phase 2: calcular Fiscais MISSING (não em processedBy)
       const processedBy = item.processedBy ?? {}
-      if (!filters.force) {
-        const allProcessed = filters.fiscals.every(f => processedBy[f])
-        if (allProcessed) continue
-      }
+      const missingFiscals = filters.force
+        ? filters.fiscals
+        : filters.fiscals.filter(f => !processedBy[f])
+
+      if (missingFiscals.length === 0) continue
 
       yield {
         gazetteId: `${territoryId}#${date}#${edition}`,
@@ -98,6 +109,7 @@ async function* scanGazettes(filters) {
         date,
         edition,
         url: item.url,
+        missingFiscals, // ← envia apenas os faltantes para o analyzer
       }
     }
     ExclusiveStartKey = r.LastEvaluatedKey
@@ -211,7 +223,9 @@ async function main() {
       url: g.url,
       excerpts: qdMatch.excerpts ?? [],
       entities: { cnpjs: [], values: [], dates: [], contractNumbers: [] },
-      enabledFiscals: filters.fiscals, // ← chave do UH-22 Phase 2 (multi-fiscal)
+      // UH-22 Phase 2: envia apenas Fiscais que NÃO rodaram nesta gazette
+      // (state tracking elimina trabalho duplicado)
+      enabledFiscals: g.missingFiscals,
     }
 
     batch.push(msg)
