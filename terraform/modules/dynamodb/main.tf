@@ -123,3 +123,28 @@ resource "aws_dynamodb_table" "entities" {
     type = "S"
   }
 }
+
+# newsletter-prod — Inscrições da newsletter
+# pk: NEWSLETTER#{email_normalized} (lowercase + trim)
+# Atributos: email (S), createdAt (S), confirmedAt (S?), source (S?),
+#            locale (S, "pt"|"en"), unsubscribedAt (S?), ipHash (S?)
+# Sem GSI no v1.0 — list paginado por scan basta para volume baixo.
+resource "aws_dynamodb_table" "newsletter" {
+  name         = "fiscal-digital-newsletter-prod"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}

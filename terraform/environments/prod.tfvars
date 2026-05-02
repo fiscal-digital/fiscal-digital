@@ -11,8 +11,8 @@ reddit_dry_run = "true"
 
 # X (@LiFiscalDigital): DRY_RUN=true valida credenciais sem postar
 # Mudar x_dry_run para "false" após confirmar enrollment do app resolvido (LRN-006)
-x_enabled  = "true"
-x_dry_run  = "true"
+x_enabled = "true"
+x_dry_run = "true"
 
 # Secret 'fiscaldigital-anthropic-prod' é resolvido automaticamente pelo Terraform
 # via data lookup. Criar antes do primeiro apply:

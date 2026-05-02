@@ -81,3 +81,7 @@ packages/engine/src/brand/
 # ─── AI/Dev meta (não vai para o repo público) ─────────────────
 .claude/
 .learnings/
+
+# ─── Backfill / migration artifacts ─────────────────────────────
+backfill-errors.jsonl
+backfill.log
