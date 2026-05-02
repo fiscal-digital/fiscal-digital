@@ -10,7 +10,8 @@ import {
   RateLimitError as RedditRateLimitError,
   type RedditCredentials,
 } from '../../reddit'
-import { formatAlertText } from '../../format'
+import { formatRedditPost } from './format'
+import { checkRedditRateLimit } from '../../utils/reddit-throttle'
 
 const REDDIT_SECRET_ID = 'fiscaldigital-reddit-prod'
 
@@ -39,8 +40,7 @@ export class RedditChannel implements PublishChannel {
   async publish(finding: Finding): Promise<PublishResult> {
     const city = getCityOrFallback(finding.cityId)
     const subreddit = process.env.REDDIT_SUBREDDIT ?? city.subreddit
-    const title = `[${finding.type.replace(/_/g, '-').toUpperCase()}] ${city.name} — riskScore ${finding.riskScore}/100`
-    const text = formatAlertText(finding)
+    const { title, body } = formatRedditPost(finding)
 
     if (process.env.REDDIT_DRY_RUN === 'true') {
       console.log('[reddit] DRY_RUN — would post', {
@@ -48,8 +48,10 @@ export class RedditChannel implements PublishChannel {
         subreddit,
         title,
       })
-      throw new ChannelDryRunError('reddit', `${title}\n\n${text}`)
+      throw new ChannelDryRunError('reddit', `${title}\n\n${body}`)
     }
+
+    checkRedditRateLimit()
 
     const creds = await loadCreds()
     const client = new RedditClient(creds)
@@ -60,7 +62,7 @@ export class RedditChannel implements PublishChannel {
         token.access_token,
         subreddit,
         title,
-        text,
+        body,
       )
 
       console.log('[reddit] post created', {

@@ -63,9 +63,9 @@ describe('RedditClient', () => {
 
     const headers = opts.headers as Record<string, string>
 
-    // Validar User-Agent
+    // Validar User-Agent no formato exigido pela Reddit API
     expect(headers['User-Agent']).toBe(
-      `fiscal-digital/0.1 by /u/${CREDS.username}`,
+      `web:fiscal-digital:0.1.0 (by /u/${CREDS.username})`,
     )
 
     // Validar Authorization Basic (base64 de client_id:client_secret)
@@ -188,5 +188,49 @@ describe('RedditClient', () => {
       'Texto',
     )
     expect(result.json.data.id).toBe('ok1')
+  })
+
+  // -----------------------------------------------------------------------
+  // Caso 6 — User-Agent: formato exigido pela Reddit API
+  // -----------------------------------------------------------------------
+  it('User-Agent: segue o formato <platform>:<app_id>:<version> (by /u/<user>)', () => {
+    const client = new RedditClient(CREDS)
+    // Acessar via reflexão para validar sem disparar fetch
+    const ua = (client as unknown as Record<string, string>)['userAgent']
+    // Deve bater exatamente com o formato exigido pela Reddit API
+    expect(ua).toBe(`web:fiscal-digital:0.1.0 (by /u/${CREDS.username})`)
+    // Garantir que o padrão <platform>:<app_id>:<version> (...) é respeitado
+    expect(ua).toMatch(/^web:fiscal-digital:\d+\.\d+\.\d+ \(by \/u\/.+\)$/)
+  })
+
+  // -----------------------------------------------------------------------
+  // Caso 7 — User-Agent: passado no header de submitText
+  // -----------------------------------------------------------------------
+  it('User-Agent: é enviado no header de submitText', async () => {
+    const submitResp: SubmitResponse = {
+      json: {
+        data: { url: 'https://reddit.com/r/test/comments/ua1', id: 'ua1' },
+        errors: [],
+      },
+    }
+
+    ;(globalThis.fetch as jest.Mock).mockResolvedValueOnce(
+      mockResponse(submitResp, 200, {
+        'x-ratelimit-remaining': '50',
+        'x-ratelimit-reset': '600',
+      }),
+    )
+
+    const client = new RedditClient(CREDS)
+    await client.submitText('tok_abc', 'test', 'Título', 'Texto')
+
+    const [, opts] = (globalThis.fetch as jest.Mock).mock.calls[0] as [
+      string,
+      RequestInit,
+    ]
+    const headers = opts.headers as Record<string, string>
+    expect(headers['User-Agent']).toBe(
+      `web:fiscal-digital:0.1.0 (by /u/${CREDS.username})`,
+    )
   })
 })
