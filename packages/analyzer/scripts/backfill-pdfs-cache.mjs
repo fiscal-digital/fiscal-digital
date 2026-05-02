@@ -81,7 +81,9 @@ async function uploadToS3(key, body, originalUrl, contentType) {
     Bucket: BUCKET,
     Key: key,
     Body: body,
-    ContentType: contentType.startsWith('application/') ? contentType : 'application/pdf',
+    ContentType: 'application/pdf',
+    // inline garante que o browser exiba no iframe em vez de baixar
+    ContentDisposition: 'inline',
     CacheControl: 'public, max-age=31536000, immutable',
     Metadata: {
       originalUrl,

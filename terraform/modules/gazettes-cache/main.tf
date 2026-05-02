@@ -108,9 +108,11 @@ resource "aws_cloudfront_response_headers_policy" "gazettes_cache" {
 
   custom_headers_config {
     items {
-      header   = "Content-Disposition"
-      value    = "inline"
-      override = false
+      header = "Content-Disposition"
+      value  = "inline"
+      # override = true força inline mesmo em PDFs já uploadados sem
+      # ContentDisposition no objeto S3 (caso do collector pré-fix).
+      override = true
     }
   }
 }
