@@ -13,7 +13,14 @@ const ALERTS_TABLE_DEFAULT = 'fiscal-digital-alerts-prod'
 // Valor acima de R$ 1.500/dia (sem destino justificado) é tratado como indício.
 // TODO(diarias): parametrizar por cidade quando regulamentação local estiver
 // catalogada (Decretos Municipais variam — Caxias do Sul, Porto Alegre, etc.).
-export const DIARIA_VALOR_LIMITE = 1500.00
+/**
+ * Limite indiciário de valor por diária.
+ * Calibração 2026-05-02: reduzido de R$ 1.500 → R$ 800 para aumentar sensibilidade.
+ * Diárias municipais comuns ficam entre R$ 200–600 (servidor); valores acima de
+ * R$ 800/dia merecem fiscalização (cargos altos ou destinos premium).
+ * TODO: catálogo por município quando disponível.
+ */
+export const DIARIA_VALOR_LIMITE = 800.00
 
 // ─── Regex etapa 1 (filtro sem LLM) ───────────────────────────────────────────
 
