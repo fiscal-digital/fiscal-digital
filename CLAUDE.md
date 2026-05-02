@@ -150,6 +150,32 @@ Backfill Fase 1: 01/01/2021 → hoje (gestão Adiló completa).
 
 ---
 
+## Smoke Tests em Prod — sempre limpar após uso
+
+Quando enviar mensagens sintéticas para SQS / DynamoDB durante smoke tests:
+
+1. **Marcar com prefixo identificável**: `gazetteId: "smoke-test-*"`, CNPJs sintéticos
+2. **Anotar todos os timestamps `createdAt` gerados** durante o smoke test — esses viram parte do `pk` do FINDING# e NÃO contêm "smoke" para filtrar
+3. **Apagar IMEDIATAMENTE após validação** — antes de continuar com qualquer outra tarefa
+4. **Itens a apagar:**
+   - `DISPENSA#smoke-test-*` (intermediate FiscalLicitacoes records)
+   - `FINDING#fiscal-licitacoes#*#*#<timestamp do smoke>` — buscar por timestamp
+   - Mensagens nas filas SQS com `gazetteId` sintético (`aws sqs purge-queue`)
+5. **Validar limpeza via API pública**: `curl <api>/alerts` deve retornar só dados reais
+
+**Pattern confiável (bash, NÃO PowerShell):**
+```bash
+for pk in "PK1" "PK2" "PK3"; do
+  aws dynamodb delete-item --table-name fiscal-digital-alerts-prod --region us-east-1 \
+    --key "{\"pk\":{\"S\":\"$pk\"}}"
+  echo "deleted: $pk"
+done
+```
+
+PowerShell com `Out-Null` em loop pode retornar exit 252 silencioso — evitar.
+
+Razão: dados de teste em prod poluem feeds RSS, API pública, métricas. Site/leitores RSS exibem alertas reais — síntéticos confundem usuários e quebram credibilidade.
+
 ## Regras de Ouro (mandatórias)
 
 - **Arquitetura:** 100% Serverless AWS (Lambda, API Gateway, SQS, DynamoDB)
