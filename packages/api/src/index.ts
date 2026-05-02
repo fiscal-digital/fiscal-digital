@@ -50,8 +50,13 @@ async function fetchFindings(filters: {
     Limit: filters.limit ?? 200,
   }))
 
+  // Gate de publicação: CLAUDE.md exige riskScore >= 60 E confidence >= 0.70.
+  // Findings que ficam abaixo desses thresholds não vão para feed/home/RSS —
+  // ficam apenas na tabela alerts-prod para auditoria interna. Fiscais novos
+  // (locacao, convenios) foram calibrados com confidence 0.65; sobem para 0.70+
+  // depois de mais validação manual.
   return (Items as Finding[])
-    .filter(f => f.type && f.riskScore >= 60)
+    .filter(f => f.type && f.riskScore >= 60 && (f.confidence ?? 0) >= 0.70)
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
     .slice(0, 50)
 }
