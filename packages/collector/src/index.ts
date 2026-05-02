@@ -9,6 +9,11 @@ interface BackfillPayload {
 
 const CIDADES = [
   { territory_id: '4305108', name: 'Caxias do Sul' },
+  { territory_id: '4314902', name: 'Porto Alegre' },
+  { territory_id: '3550308', name: 'São Paulo' },
+  { territory_id: '3509502', name: 'Campinas' },
+  { territory_id: '4205407', name: 'Florianópolis' },
+  { territory_id: '4106902', name: 'Curitiba' },
 ]
 
 export const handler = async (
