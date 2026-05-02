@@ -13,3 +13,7 @@ output "suppliers_table_arn" {
 output "entities_table_arn" {
   value = aws_dynamodb_table.entities.arn
 }
+
+output "newsletter_table_arn" {
+  value = aws_dynamodb_table.newsletter.arn
+}

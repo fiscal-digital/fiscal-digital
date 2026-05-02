@@ -131,12 +131,12 @@ resource "aws_cloudfront_distribution" "gazettes_cache" {
   }
 
   default_cache_behavior {
-    allowed_methods                = ["GET", "HEAD"]
-    cached_methods                 = ["GET", "HEAD"]
-    target_origin_id               = "s3-gazettes-cache"
-    viewer_protocol_policy         = "redirect-to-https"
-    compress                       = true
-    response_headers_policy_id     = aws_cloudfront_response_headers_policy.gazettes_cache.id
+    allowed_methods            = ["GET", "HEAD"]
+    cached_methods             = ["GET", "HEAD"]
+    target_origin_id           = "s3-gazettes-cache"
+    viewer_protocol_policy     = "redirect-to-https"
+    compress                   = true
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.gazettes_cache.id
 
     # Cache-Control vem do S3 (public, max-age=31536000, immutable)
     # Deixar CloudFront honrar o header do objeto

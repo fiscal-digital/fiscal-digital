@@ -462,8 +462,8 @@ resource "aws_iam_role_policy" "api" {
       {
         # Scan COUNT em gazettes-prod para /stats (totalGazettesProcessed).
         # GetItem/Query também necessários para expor cachedPdfUrl na Fase 2.
-        Effect   = "Allow"
-        Action   = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:Query"]
+        Effect = "Allow"
+        Action = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:Query"]
         Resource = [
           var.gazettes_table_arn,
           "${var.gazettes_table_arn}/index/*",
@@ -480,6 +480,14 @@ resource "aws_iam_role_policy" "api" {
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:HeadObject"]
         Resource = "arn:aws:s3:::fiscal-digital-gazettes-cache-prod/*"
+      },
+      {
+        # Newsletter: PutItem para inscrição, UpdateItem para confirm/unsubscribe.
+        # GetItem para checar duplicação antes de inserir.
+        Sid      = "NewsletterReadWrite"
+        Effect   = "Allow"
+        Action   = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem"]
+        Resource = var.newsletter_table_arn
       },
     ]
   })

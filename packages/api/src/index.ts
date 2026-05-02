@@ -1,12 +1,14 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb'
+import { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb'
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda'
+import crypto from 'node:crypto'
 import { CITIES, getCityOrFallback, pdfCacheUrl } from '@fiscal-digital/engine'
 import type { Finding } from '@fiscal-digital/engine'
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' }))
 const ALERTS_TABLE = process.env.ALERTS_TABLE ?? 'fiscal-digital-alerts-prod'
 const GAZETTES_TABLE = process.env.GAZETTES_TABLE ?? 'fiscal-digital-gazettes-prod'
+const NEWSLETTER_TABLE = process.env.NEWSLETTER_TABLE ?? 'fiscal-digital-newsletter-prod'
 const SITE_URL = 'https://fiscaldigital.org'
 const API_URL = process.env.API_URL ?? 'https://api.fiscaldigital.org'
 // Build timestamp injetado no bundle pelo deploy. Fallback = boot da Lambda.
@@ -263,6 +265,74 @@ ${items}
 </rss>`
 }
 
+// ── Newsletter — POST /newsletter ────────────────────────────────────────────
+
+const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+
+function normalizeEmail(input: string): string {
+  return input.trim().toLowerCase()
+}
+
+function hashIp(ip: string | undefined): string | undefined {
+  if (!ip) return undefined
+  return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 32)
+}
+
+interface NewsletterBody {
+  email?: string
+  locale?: 'pt' | 'en'
+  source?: string
+}
+
+async function handleNewsletter(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
+  const headers = {
+    'Content-Type': 'application/json; charset=UTF-8',
+    'Cache-Control': 'no-store',
+  }
+  let body: NewsletterBody
+  try {
+    body = JSON.parse(event.body ?? '{}') as NewsletterBody
+  } catch {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'invalid_json' }) }
+  }
+
+  const emailRaw = body.email
+  if (!emailRaw || typeof emailRaw !== 'string' || !EMAIL_RE.test(emailRaw)) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'invalid_email' }) }
+  }
+  const email = normalizeEmail(emailRaw)
+  const locale = body.locale === 'en' ? 'en' : 'pt'
+  const source = (body.source ?? 'home').slice(0, 64)
+  const pk = `NEWSLETTER#${email}`
+  const now = new Date().toISOString()
+  const ipHash = hashIp(event.requestContext?.http?.sourceIp)
+
+  // Idempotente — se já existe, retorna 200 sem reset (não revela se já existia).
+  const existing = await ddb.send(new GetCommand({ TableName: NEWSLETTER_TABLE, Key: { pk } }))
+  if (existing.Item) {
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, status: 'already_subscribed' }) }
+  }
+
+  await ddb.send(new PutCommand({
+    TableName: NEWSLETTER_TABLE,
+    Item: {
+      pk,
+      email,
+      createdAt: now,
+      locale,
+      source,
+      ...(ipHash && { ipHash }),
+    },
+    // Race-safe: só insere se PK não existir
+    ConditionExpression: 'attribute_not_exists(pk)',
+  })).catch((err: { name?: string }) => {
+    if (err?.name === 'ConditionalCheckFailedException') return null
+    throw err
+  })
+
+  return { statusCode: 200, headers, body: JSON.stringify({ ok: true, status: 'subscribed' }) }
+}
+
 // ── Route handlers ──────────────────────────────────────────────────────────
 
 function ok(body: string, contentType: string, maxAge = 30): APIGatewayProxyResultV2 {
@@ -284,8 +354,17 @@ function ok(body: string, contentType: string, maxAge = 30): APIGatewayProxyResu
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
   const path = event.rawPath ?? '/'
   const qs = event.queryStringParameters ?? {}
+  const method = event.requestContext?.http?.method?.toUpperCase() ?? 'GET'
 
   try {
+    // Newsletter — POST /newsletter
+    if (path === '/newsletter' || path === '/newsletter/') {
+      if (method !== 'POST') {
+        return { statusCode: 405, body: JSON.stringify({ error: 'method_not_allowed' }), headers: { 'Content-Type': 'application/json' } }
+      }
+      return await handleNewsletter(event)
+    }
+
     const filters = {
       cityId: qs.city,
       state: qs.state,
