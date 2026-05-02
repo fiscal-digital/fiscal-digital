@@ -129,6 +129,22 @@ resource "aws_iam_role_policy" "github_actions" {
         Sid      = "LambdaEventSourceMappings"
       },
       {
+        # CloudWatch Logs — gerenciar log groups das Lambdas (retention policy, etc.)
+        Sid    = "CloudWatchLogsManage"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:DeleteLogGroup",
+          "logs:DescribeLogGroups",
+          "logs:PutRetentionPolicy",
+          "logs:ListTagsLogGroup",
+          "logs:ListTagsForResource",
+          "logs:TagResource",
+          "logs:UntagResource",
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/fiscal-digital-*"
+      },
+      {
         # CloudWatch alarms para monitoring module (S-04)
         Sid    = "CloudWatchAlarms"
         Effect = "Allow"
