@@ -1,6 +1,7 @@
 import { extractEntities as defaultExtractEntities } from '../skills/extract_entities'
 import { scoreRisk } from '../skills/score_risk'
 import { validateCNPJ as defaultValidateCNPJ } from '../skills/validate_cnpj'
+import { checkSanctions as defaultCheckSanctions } from '../skills/check_sanctions'
 import type { Finding, RiskFactor } from '../types'
 import type { Fiscal, AnalisarInput, FiscalContext } from './types'
 
@@ -8,8 +9,15 @@ const FISCAL_ID = 'fiscal-fornecedores'
 
 // ── Limiares ─────────────────────────────────────────────────────────────────
 
-/** CNPJ com menos de 6 meses de existência na data do contrato → risco de qualificação */
-const CNPJ_JOVEM_MESES = 6
+/**
+ * CNPJ com menos de 12 meses de existência na data do contrato → risco de qualificação.
+ * Calibração 2026-05-02: aumentado de 6 → 12 meses para capturar mais casos.
+ * Empresas <1 ano em contratos públicos são raras e merecem fiscalização.
+ */
+const CNPJ_JOVEM_MESES = 12
+
+/** Situações cadastrais que são consideradas IRREGULARES para contratar com o poder público */
+const SITUACOES_IRREGULARES = new Set(['suspensa', 'inapta', 'baixada', 'nula'])
 
 /**
  * Concentração heurística: >= 3 contratos do mesmo CNPJ na mesma secretaria
@@ -84,6 +92,43 @@ function narrativaConcentracao(
   )
 }
 
+function narrativaSituacaoIrregular(
+  gazetteDate: string,
+  cnpj: string,
+  situacao: string,
+  razaoSocial: string | undefined,
+  valor: number | undefined,
+): string {
+  const valorStr = valor !== undefined ? ` no valor de R$ ${formatBRL(valor)}` : ''
+  const razaoStr = razaoSocial ? ` (${razaoSocial})` : ''
+  return (
+    `Identificamos contratação publicada em ${formatDate(gazetteDate)}${valorStr} ` +
+    `com empresa CNPJ ${cnpj}${razaoStr} cuja situação cadastral na Receita Federal ` +
+    `consta como "${situacao.toUpperCase()}" na data desta consulta. ` +
+    `O documento aponta possível contratação com fornecedor em situação cadastral ` +
+    `irregular, contrariando o Art. 14 da Lei 14.133/2021 que exige regularidade ` +
+    `fiscal e trabalhista para habilitação.`
+  )
+}
+
+function narrativaSancionado(
+  gazetteDate: string,
+  cnpj: string,
+  razaoSocial: string | undefined,
+  valor: number | undefined,
+): string {
+  const valorStr = valor !== undefined ? ` no valor de R$ ${formatBRL(valor)}` : ''
+  const razaoStr = razaoSocial ? ` (${razaoSocial})` : ''
+  return (
+    `Identificamos contratação publicada em ${formatDate(gazetteDate)}${valorStr} ` +
+    `com empresa CNPJ ${cnpj}${razaoStr} listada em base nacional de sanções ` +
+    `(CEIS/CNEP — Cadastro de Empresas Inidôneas e Suspensas / Cadastro Nacional ` +
+    `de Empresas Punidas, mantidos pela CGU). ` +
+    `O documento aponta possível contratação com empresa impedida de contratar ` +
+    `com a administração pública (Lei 12.846/2013, Lei 8.666/1993 Art. 87).`
+  )
+}
+
 // ── Fiscal ────────────────────────────────────────────────────────────────────
 
 export const fiscalFornecedores: Fiscal = {
@@ -110,6 +155,7 @@ export const fiscalFornecedores: Fiscal = {
 
     const extractFn = context.extractEntities ?? defaultExtractEntities
     const validateFn = context.validateCNPJ ?? defaultValidateCNPJ.execute.bind(defaultValidateCNPJ)
+    const checkSanctionsFn = context.checkSanctions ?? defaultCheckSanctions.execute.bind(defaultCheckSanctions)
 
     for (const excerpt of relevantExcerpts) {
       // Etapa 2 — Extração de entidades via Haiku
@@ -131,11 +177,13 @@ export const fiscalFornecedores: Fiscal = {
         // Etapa 3 — Consulta BrasilAPI via validateCNPJ
         let dataAbertura: string | undefined
         let situacaoCadastral: string | undefined
+        let razaoSocial: string | undefined
 
         try {
           const cnpjResult = await validateFn({ cnpj })
           dataAbertura = cnpjResult.data.dataAbertura
           situacaoCadastral = cnpjResult.data.situacaoCadastral
+          razaoSocial = cnpjResult.data.razaoSocial
         } catch {
           // Falha de rede: skip silencioso — não bloqueia análise
           continue
@@ -145,6 +193,52 @@ export const fiscalFornecedores: Fiscal = {
         // de regularização ou houve erro de OCR no CNPJ)
         if (!dataAbertura || situacaoCadastral === 'nao_encontrado') {
           continue
+        }
+
+        // ── Detecção: Situação cadastral IRREGULAR durante contratação ──────────
+        // Empresa SUSPENSA/INAPTA/BAIXADA contratada → forte indício (Lei 14.133, Art. 14)
+        if (situacaoCadastral && SITUACOES_IRREGULARES.has(situacaoCadastral)) {
+          const findingIrreg: Finding = {
+            fiscalId: FISCAL_ID,
+            cityId,
+            type: 'cnpj_situacao_irregular',
+            riskScore: 88,
+            confidence: 0.92,
+            evidence: [{ source: gazette.url, excerpt, date: gazette.date }],
+            narrative: narrativaSituacaoIrregular(gazette.date, cnpj, situacaoCadastral, razaoSocial, valor),
+            legalBasis: 'Lei 14.133/2021, Art. 14 (regularidade fiscal e trabalhista)',
+            cnpj,
+            ...(secretaria && { secretaria }),
+            ...(valor !== undefined && { value: valor }),
+            createdAt: now.toISOString(),
+          }
+          findings.push(findingIrreg)
+        }
+
+        // ── Detecção: Empresa em CEIS/CNEP (CGU) ────────────────────────────────
+        // Sanção CGU = empresa impedida de contratar com administração pública
+        try {
+          const sanctionResult = await checkSanctionsFn({ cnpj })
+          const sanctioned = sanctionResult.data?.sanctioned === true
+          if (sanctioned) {
+            const findingSanc: Finding = {
+              fiscalId: FISCAL_ID,
+              cityId,
+              type: 'fornecedor_sancionado',
+              riskScore: 95,
+              confidence: 0.95,
+              evidence: [{ source: gazette.url, excerpt, date: gazette.date }],
+              narrative: narrativaSancionado(gazette.date, cnpj, razaoSocial, valor),
+              legalBasis: 'Lei 12.846/2013 + Lei 8.666/1993 Art. 87 (CEIS/CNEP — CGU)',
+              cnpj,
+              ...(secretaria && { secretaria }),
+              ...(valor !== undefined && { value: valor }),
+              createdAt: now.toISOString(),
+            }
+            findings.push(findingSanc)
+          }
+        } catch {
+          // CGU offline: skip silencioso, não bloqueia análise
         }
 
         // Etapa 4 — Calcular idade do CNPJ na data do ato (gazette.date)

@@ -1,6 +1,7 @@
 import type { Finding, Gazette, SupplierProfile, SkillResult } from '../types'
 import type { extractEntities as _extractEntities } from '../skills/extract_entities'
 import type { saveMemory as _saveMemory } from '../skills/save_memory'
+import type { SanctionResult } from '../skills/check_sanctions'
 
 /**
  * Contrato de injeção de dependências para todos os Fiscais.
@@ -32,6 +33,7 @@ export interface FiscalContext {
   generateNarrative?: (...args: unknown[]) => Promise<string>                            // mock em teste
   saveMemory?: typeof _saveMemory                                                         // permite mock em teste
   validateCNPJ?: (input: { cnpj: string }) => Promise<SkillResult<Partial<SupplierProfile>>>  // Fiscal de Fornecedores
+  checkSanctions?: (input: { cnpj: string }) => Promise<SkillResult<SanctionResult>>           // Fiscal de Fornecedores (CEIS/CNEP CGU)
 }
 
 export interface AnalisarInput {

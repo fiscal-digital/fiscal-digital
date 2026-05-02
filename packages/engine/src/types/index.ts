@@ -15,6 +15,8 @@ export type FindingType =
   | 'publicidade_eleitoral'
   | 'locacao_sem_justificativa'
   | 'nepotismo_indicio'
+  | 'cnpj_situacao_irregular'
+  | 'fornecedor_sancionado'
 
 export interface Evidence {
   source: string   // URL do Querido Diário — OBRIGATÓRIO
