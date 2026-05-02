@@ -15,15 +15,16 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1041.0",
     "@aws-sdk/client-dynamodb": "^3.0.0",
-    "@aws-sdk/lib-dynamodb": "^3.0.0",
-    "@aws-sdk/client-secrets-manager": "^3.0.0"
+    "@aws-sdk/client-secrets-manager": "^3.0.0",
+    "@aws-sdk/lib-dynamodb": "^3.0.0"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "typescript": "^6.0.0",
-    "jest": "^30.0.0",
     "@types/jest": "^30.0.0",
-    "ts-jest": "^29.4.0"
+    "@types/node": "^24.0.0",
+    "jest": "^30.0.0",
+    "ts-jest": "^29.4.0",
+    "typescript": "^6.0.0"
   }
 }

@@ -1,4 +1,4 @@
-import { getAnthropicClient, HAIKU_MODEL } from '../utils/anthropic'
+import { invokeModel, NARRATIVE_MODEL } from '../utils/bedrock'
 import type { Finding, Skill, SkillResult } from '../types'
 
 const SYSTEM_PROMPT = `Você é o Fiscal Digital, agente de fiscalização de gastos públicos municipais.
@@ -17,7 +17,7 @@ export interface GenerateNarrativeInput {
 
 export const generateNarrative: Skill<GenerateNarrativeInput, string> = {
   name: 'generate_narrative',
-  description: 'Gera narrativa legível do achado com Claude Haiku (somente riskScore >= 60)',
+  description: 'Gera narrativa legível do achado com Haiku 4.5 via Bedrock (somente riskScore >= 60)',
 
   async execute(input: GenerateNarrativeInput): Promise<SkillResult<string>> {
     const { finding } = input
@@ -25,8 +25,6 @@ export const generateNarrative: Skill<GenerateNarrativeInput, string> = {
     if (finding.riskScore < 60) {
       return { data: '', source: finding.evidence[0]?.source ?? '', confidence: 0 }
     }
-
-    const anthropic = await getAnthropicClient()
 
     const payload = JSON.stringify({
       type: finding.type,
@@ -40,21 +38,12 @@ export const generateNarrative: Skill<GenerateNarrativeInput, string> = {
       evidence: finding.evidence.map(e => ({ excerpt: e.excerpt, date: e.date })),
     })
 
-    const res = await anthropic.messages.create({
-      model: HAIKU_MODEL,
-      max_tokens: 256,
-      system: [
-        {
-          type: 'text',
-          text: SYSTEM_PROMPT,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      messages: [{ role: 'user', content: `Gere a narrativa para este achado:\n${payload}` }],
+    const narrative = await invokeModel({
+      modelId: NARRATIVE_MODEL,
+      systemPrompt: SYSTEM_PROMPT,
+      userMessage: `Gere a narrativa para este achado:\n${payload}`,
+      maxTokens: 256,
     })
-
-    const block = res.content[0]
-    const narrative = block.type === 'text' ? block.text.trim() : ''
 
     return {
       data: narrative,

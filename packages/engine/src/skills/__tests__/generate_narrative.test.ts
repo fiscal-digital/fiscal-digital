@@ -1,19 +1,18 @@
 import { generateNarrative } from '../generate_narrative'
 import type { Finding } from '../../types'
 
-jest.mock('../../utils/anthropic', () => ({
-  getAnthropicClient: jest.fn(),
-  HAIKU_MODEL: 'claude-haiku-4-5-20251001',
+jest.mock('../../utils/bedrock', () => ({
+  invokeModel: jest.fn(),
+  EXTRACTION_MODEL: 'amazon.nova-lite-v1:0',
+  NARRATIVE_MODEL: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
 }))
 
-import { getAnthropicClient } from '../../utils/anthropic'
+import { invokeModel, NARRATIVE_MODEL } from '../../utils/bedrock'
 
-const mockCreate = jest.fn()
-const mockClient = { messages: { create: mockCreate } }
+const mockInvokeModel = invokeModel as jest.Mock
 
 beforeEach(() => {
   jest.clearAllMocks()
-  ;(getAnthropicClient as jest.Mock).mockResolvedValue(mockClient)
 })
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
@@ -42,70 +41,57 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
 describe('generateNarrative', () => {
   it('riskScore < 60 retorna string vazia e confidence 0 SEM chamar o LLM', async () => {
     const finding = makeFinding({ riskScore: 59 })
-
     const result = await generateNarrative.execute({ finding })
 
     expect(result.data).toBe('')
     expect(result.confidence).toBe(0)
-    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockInvokeModel).not.toHaveBeenCalled()
   })
 
   it('riskScore exatamente 59 não chama LLM', async () => {
     const finding = makeFinding({ riskScore: 59 })
-
     await generateNarrative.execute({ finding })
 
-    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockInvokeModel).not.toHaveBeenCalled()
   })
 
   it('riskScore >= 60 chama LLM e retorna o texto da resposta', async () => {
-    mockCreate.mockResolvedValue({
-      content: [
-        {
-          type: 'text',
-          text: 'Identificamos dispensa de licitação no valor de R$ 80.000,00 pela Secretaria de Administração, acima do teto legal.',
-        },
-      ],
-    })
+    mockInvokeModel.mockResolvedValue(
+      'Identificamos dispensa de licitação no valor de R$ 80.000,00 pela Secretaria de Administração, acima do teto legal.'
+    )
 
     const finding = makeFinding({ riskScore: 75 })
     const result = await generateNarrative.execute({ finding })
 
-    expect(mockCreate).toHaveBeenCalledTimes(1)
+    expect(mockInvokeModel).toHaveBeenCalledTimes(1)
     expect(result.data).toContain('Identificamos')
     expect(result.confidence).toBe(0.9)
   })
 
   it('riskScore exatamente 60 chama LLM (threshold inclusivo)', async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: 'text', text: 'O documento aponta dispensa acima do limite legal.' }],
-    })
+    mockInvokeModel.mockResolvedValue('O documento aponta dispensa acima do limite legal.')
 
     const finding = makeFinding({ riskScore: 60 })
     const result = await generateNarrative.execute({ finding })
 
-    expect(mockCreate).toHaveBeenCalledTimes(1)
+    expect(mockInvokeModel).toHaveBeenCalledTimes(1)
     expect(result.data).toBe('O documento aponta dispensa acima do limite legal.')
   })
 
-  it('usa cache_control no system prompt (prompt caching)', async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: 'text', text: 'Narrativa de teste.' }],
-    })
+  it('chama invokeModel com o modelo de narrativa correto (Haiku 4.5 via Bedrock)', async () => {
+    mockInvokeModel.mockResolvedValue('Narrativa de teste.')
 
     const finding = makeFinding({ riskScore: 80 })
     await generateNarrative.execute({ finding })
 
-    const callArgs = mockCreate.mock.calls[0][0]
-    expect(Array.isArray(callArgs.system)).toBe(true)
-    const systemBlock = callArgs.system[0]
-    expect(systemBlock.cache_control).toEqual({ type: 'ephemeral' })
+    expect(mockInvokeModel).toHaveBeenCalledTimes(1)
+    const callArgs = mockInvokeModel.mock.calls[0][0]
+    expect(callArgs.modelId).toBe(NARRATIVE_MODEL)
+    expect(typeof callArgs.systemPrompt).toBe('string')
   })
 
   it('retorna source como URL do primeiro evidence', async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: 'text', text: 'Os dados indicam irregularidade.' }],
-    })
+    mockInvokeModel.mockResolvedValue('Os dados indicam irregularidade.')
 
     const finding = makeFinding({ riskScore: 70 })
     const result = await generateNarrative.execute({ finding })

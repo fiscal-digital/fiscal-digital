@@ -1,11 +1,11 @@
 import { extractEntities } from '../extract_entities'
 
-jest.mock('../../utils/anthropic', () => ({
-  getAnthropicClient: jest.fn(),
-  HAIKU_MODEL: 'claude-haiku-4-5-20251001',
+jest.mock('../../utils/bedrock', () => ({
+  invokeModel: jest.fn(),
+  EXTRACTION_MODEL: 'amazon.nova-lite-v1:0',
+  NARRATIVE_MODEL: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
 }))
 
-// Também mockar extractAll do módulo regex para isolamento
 jest.mock('../../regex', () => ({
   extractAll: jest.fn().mockReturnValue({
     cnpjs: ['12.345.678/0001-90'],
@@ -15,33 +15,26 @@ jest.mock('../../regex', () => ({
   }),
 }))
 
-import { getAnthropicClient } from '../../utils/anthropic'
+import { invokeModel, EXTRACTION_MODEL } from '../../utils/bedrock'
 
-const mockCreate = jest.fn()
-const mockClient = { messages: { create: mockCreate } }
+const mockInvokeModel = invokeModel as jest.Mock
 
 beforeEach(() => {
   jest.clearAllMocks()
-  ;(getAnthropicClient as jest.Mock).mockResolvedValue(mockClient)
 })
 
 describe('extractEntities', () => {
   it('extrai CNPJ, valor e tipo do ato retornados pelo LLM', async () => {
-    mockCreate.mockResolvedValue({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            secretaria: 'Secretaria de Obras',
-            actType: 'dispensa',
-            supplier: 'Construtora ABC LTDA',
-            legalBasis: 'Lei 14.133/2021, Art. 75, I',
-            subtype: 'obra_engenharia',
-            valorOriginalContrato: null,
-          }),
-        },
-      ],
-    })
+    mockInvokeModel.mockResolvedValue(
+      JSON.stringify({
+        secretaria: 'Secretaria de Obras',
+        actType: 'dispensa',
+        supplier: 'Construtora ABC LTDA',
+        legalBasis: 'Lei 14.133/2021, Art. 75, I',
+        subtype: 'obra_engenharia',
+        valorOriginalContrato: null,
+      })
+    )
 
     const result = await extractEntities.execute({
       text: 'Dispensa de licitação para obra de pavimentação R$ 80.000,00 CNPJ 12.345.678/0001-90',
@@ -57,21 +50,16 @@ describe('extractEntities', () => {
   })
 
   it('extrai campo subtype retornado pelo LLM (obra_engenharia/servico/compra)', async () => {
-    mockCreate.mockResolvedValue({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            secretaria: 'Secretaria de Saúde',
-            actType: 'dispensa',
-            supplier: 'Tech Solutions LTDA',
-            legalBasis: 'Lei 14.133/2021, Art. 75, II',
-            subtype: 'servico',
-            valorOriginalContrato: null,
-          }),
-        },
-      ],
-    })
+    mockInvokeModel.mockResolvedValue(
+      JSON.stringify({
+        secretaria: 'Secretaria de Saúde',
+        actType: 'dispensa',
+        supplier: 'Tech Solutions LTDA',
+        legalBasis: 'Lei 14.133/2021, Art. 75, II',
+        subtype: 'servico',
+        valorOriginalContrato: null,
+      })
+    )
 
     const result = await extractEntities.execute({
       text: 'Dispensa de licitação para serviços de consultoria R$ 50.000,00',
@@ -82,21 +70,16 @@ describe('extractEntities', () => {
   })
 
   it('extrai campo valorOriginalContrato de aditivo que cita valor original', async () => {
-    mockCreate.mockResolvedValue({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            secretaria: 'Secretaria de Infraestrutura',
-            actType: 'aditivo',
-            supplier: 'Obras Rápidas LTDA',
-            legalBasis: 'Lei 14.133/2021, Art. 125',
-            subtype: 'obra_engenharia',
-            valorOriginalContrato: 200000,
-          }),
-        },
-      ],
-    })
+    mockInvokeModel.mockResolvedValue(
+      JSON.stringify({
+        secretaria: 'Secretaria de Infraestrutura',
+        actType: 'aditivo',
+        supplier: 'Obras Rápidas LTDA',
+        legalBasis: 'Lei 14.133/2021, Art. 125',
+        subtype: 'obra_engenharia',
+        valorOriginalContrato: 200000,
+      })
+    )
 
     const result = await extractEntities.execute({
       text: 'Aditivo contratual. Valor original do contrato de R$ 200.000,00.',
@@ -108,21 +91,16 @@ describe('extractEntities', () => {
   })
 
   it('retorna subtype null quando LLM omite ou retorna null', async () => {
-    mockCreate.mockResolvedValue({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            secretaria: 'Secretaria de Educação',
-            actType: 'contrato',
-            supplier: 'Editora Municipal LTDA',
-            legalBasis: null,
-            subtype: null,
-            valorOriginalContrato: null,
-          }),
-        },
-      ],
-    })
+    mockInvokeModel.mockResolvedValue(
+      JSON.stringify({
+        secretaria: 'Secretaria de Educação',
+        actType: 'contrato',
+        supplier: 'Editora Municipal LTDA',
+        legalBasis: null,
+        subtype: null,
+        valorOriginalContrato: null,
+      })
+    )
 
     const result = await extractEntities.execute({
       text: 'Contrato para fornecimento de materiais escolares.',
@@ -133,33 +111,29 @@ describe('extractEntities', () => {
     expect(result.data.valorOriginalContrato).toBeUndefined()
   })
 
-  it('usa cache_control no system prompt ao chamar o LLM', async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: 'text', text: '{}' }],
-    })
+  it('chama invokeModel com o modelo de extração correto (Nova Lite via Bedrock)', async () => {
+    mockInvokeModel.mockResolvedValue('{}')
 
     await extractEntities.execute({
       text: 'Texto de teste',
       gazetteUrl: 'https://queridodiario.ok.org.br/gazettes/999',
     })
 
-    const callArgs = mockCreate.mock.calls[0][0]
-    expect(Array.isArray(callArgs.system)).toBe(true)
-    const systemBlock = callArgs.system[0]
-    expect(systemBlock.cache_control).toEqual({ type: 'ephemeral' })
+    expect(mockInvokeModel).toHaveBeenCalledTimes(1)
+    const callArgs = mockInvokeModel.mock.calls[0][0]
+    expect(callArgs.modelId).toBe(EXTRACTION_MODEL)
+    expect(typeof callArgs.systemPrompt).toBe('string')
+    expect(callArgs.systemPrompt.length).toBeGreaterThan(0)
   })
 
   it('continua funcional quando LLM retorna JSON malformado (fallback regex)', async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: 'text', text: 'resposta inválida não-JSON' }],
-    })
+    mockInvokeModel.mockResolvedValue('resposta inválida não-JSON')
 
     const result = await extractEntities.execute({
       text: 'Texto qualquer com CNPJ 12.345.678/0001-90',
       gazetteUrl: 'https://queridodiario.ok.org.br/gazettes/malformed',
     })
 
-    // Resultado do regex ainda deve conter os dados extraídos
     expect(result.data.cnpjs).toEqual(['12.345.678/0001-90'])
     expect(result.confidence).toBe(0.85)
   })
