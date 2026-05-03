@@ -312,6 +312,23 @@ resource "aws_iam_role_policy" "github_actions" {
         Action   = ["iam:UpdateAssumeRolePolicy"]
         Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/fiscal-digital-*"
       },
+      {
+        # SSM Parameter Store — TEC-ENG-002 (publish thresholds).
+        # Restrito ao prefixo /fiscal-digital/ — nunca toca em params de outros projetos.
+        Sid    = "SSMParameterManage"
+        Effect = "Allow"
+        Action = [
+          "ssm:PutParameter",
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:DeleteParameter",
+          "ssm:DescribeParameters",
+          "ssm:ListTagsForResource",
+          "ssm:AddTagsToResource",
+          "ssm:RemoveTagsFromResource",
+        ]
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/fiscal-digital/*"
+      },
     ]
   })
 }
