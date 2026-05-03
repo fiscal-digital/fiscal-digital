@@ -414,7 +414,11 @@ resource "aws_cloudfront_distribution" "web" {
 
     forwarded_values {
       query_string = true
-      headers      = ["Host", "Accept-Encoding"]
+      # NÃO forward "Host" para Lambda Function URL — Function URL valida que
+      # o Host header bate com seu próprio domain (lambda-url.us-east-1.on.aws);
+      # forward do Host original (fiscaldigital.org) gera 403 AccessDeniedException.
+      # Accept-Encoding mantido para compressão funcionar.
+      headers = ["Accept-Encoding"]
       cookies { forward = "none" }
     }
 
@@ -453,7 +457,7 @@ resource "aws_cloudfront_distribution" "web" {
 
     forwarded_values {
       query_string = true
-      headers      = ["Host"]
+      # NÃO forward Host (causa 403 no Lambda Function URL — ver default behavior)
       cookies { forward = "none" }
     }
 
@@ -473,7 +477,7 @@ resource "aws_cloudfront_distribution" "web" {
 
     forwarded_values {
       query_string = true
-      headers      = ["Host"]
+      # NÃO forward Host (causa 403 no Lambda Function URL — ver default behavior)
       cookies { forward = "none" }
     }
 
