@@ -36,15 +36,17 @@ resource "aws_lambda_function" "collector" {
 }
 
 resource "aws_lambda_function" "analyzer" {
-  function_name                  = "fiscal-digital-analyzer-prod"
-  role                           = var.analyzer_role_arn
-  handler                        = "index.handler"
-  runtime                        = "nodejs24.x"
-  timeout                        = 300
-  memory_size                    = 512
-  reserved_concurrent_executions = 10
-  filename                       = data.archive_file.placeholder.output_path
-  source_code_hash               = data.archive_file.placeholder.output_base64sha256
+  function_name    = "fiscal-digital-analyzer-prod"
+  role             = var.analyzer_role_arn
+  handler          = "index.handler"
+  runtime          = "nodejs24.x"
+  timeout          = 300
+  memory_size      = 512
+  # reserved_concurrent_executions: conta tem limite de 10 (padrão novo account).
+  # Ativar após solicitar aumento de cota: Service Quotas > Lambda > Concurrent executions.
+  # Valor alvo: analyzer=10, publisher=5 (BLK-IAC-001).
+  filename         = data.archive_file.placeholder.output_path
+  source_code_hash = data.archive_file.placeholder.output_base64sha256
 
   environment {
     variables = merge(local.common_env, {
@@ -58,15 +60,14 @@ resource "aws_lambda_function" "analyzer" {
 }
 
 resource "aws_lambda_function" "publisher" {
-  function_name                  = "fiscal-digital-publisher-prod"
-  role                           = var.publisher_role_arn
-  handler                        = "index.handler"
-  runtime                        = "nodejs24.x"
-  timeout                        = 120
-  memory_size                    = 256
-  reserved_concurrent_executions = 5
-  filename                       = data.archive_file.placeholder.output_path
-  source_code_hash               = data.archive_file.placeholder.output_base64sha256
+  function_name    = "fiscal-digital-publisher-prod"
+  role             = var.publisher_role_arn
+  handler          = "index.handler"
+  runtime          = "nodejs24.x"
+  timeout          = 120
+  memory_size      = 256
+  filename         = data.archive_file.placeholder.output_path
+  source_code_hash = data.archive_file.placeholder.output_base64sha256
 
   environment {
     variables = merge(local.common_env, {
