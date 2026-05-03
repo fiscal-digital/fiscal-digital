@@ -371,9 +371,14 @@ async function s3HeadExists(key: string): Promise<boolean> {
     await s3.send(new HeadObjectCommand({ Bucket: GAZETTES_CACHE_BUCKET, Key: key }))
     return true
   } catch (err) {
+    // SDK v3 retorna nomes diferentes para 404 (NotFound, NoSuchKey) e o S3
+    // com OAC pode retornar 403 para chaves inexistentes em algumas configs.
+    // Tratamos qualquer erro de cliente (4xx) como "não existe" — fluxo segue
+    // para o caminho de upload. Apenas erros 5xx propagamos.
     const e = err as { name?: string; $metadata?: { httpStatusCode?: number } }
-    if (e.name === 'NotFound' || e.$metadata?.httpStatusCode === 404) return false
-    throw err
+    const status = e.$metadata?.httpStatusCode
+    if (status && status >= 500) throw err
+    return false
   }
 }
 
