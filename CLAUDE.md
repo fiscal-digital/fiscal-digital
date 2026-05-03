@@ -516,8 +516,26 @@ bundle/deploy de Lambdas, leitura de Secrets Manager.
 
 ## Learning System (Self-Improving Agent)
 
-- **Soluções não-óbvias** → `.learnings/LEARNINGS.md`
-- **Erros de ferramentas/CI** → `.learnings/ERRORS.md`
-- **Capacidades pedidas** → `.learnings/FEATURE_REQUESTS.md`
-- **Promoção** → `/learning promote <ID>` move entries high/critical para CLAUDE.md
-- **Formato ID:** `LRN-YYYYMMDD-XXX` / `ERR-YYYYMMDD-XXX` / `FEAT-YYYYMMDD-XXX`
+### Arquivos
+
+| Arquivo | Conteúdo | Quando usar |
+|---|---|---|
+| `.learnings/LEARNINGS-INDEX.md` | **Índice compacto** de todos os LRNs — sempre carregável em contexto (< 200 linhas) | **Ler ANTES** de qualquer tarefa de infra/engine/publisher |
+| `.learnings/LEARNINGS.md` | Detalhe completo (buscar por ID) | Ao precisar do contexto completo de um LRN específico |
+| `.learnings/ERRORS.md` | Erros de prod, CI quebrado, dados corrompidos | Ao ter erro com impacto real em prod |
+| `.learnings/FEATURE_REQUESTS.md` | Capacidades pedidas | Ao identificar gap de capacidade |
+
+### Fluxo obrigatório ao encontrar problema
+
+1. **Resolver** o problema
+2. **Registrar** em `ERRORS.md` (se prod/CI) ou `LEARNINGS.md` (se insight)
+3. **Adicionar 1 linha** em `LEARNINGS-INDEX.md` na seção correta
+4. **Promover** via `/learning promote <ID>` se prioridade high/critical
+
+### IDs
+- `LRN-YYYYMMDD-XXX` — learnings e insights
+- `ERR-YYYYMMDD-XXX` — erros de produção
+- `FEAT-YYYYMMDD-XXX` — feature requests
+
+### Regra de recall
+Antes de iniciar qualquer item com área `IAC`, `ENG`, `PUB` ou `DAT`: consultar o índice (`.learnings/LEARNINGS-INDEX.md`) para verificar learnings relevantes. Evita repetir erros documentados.
