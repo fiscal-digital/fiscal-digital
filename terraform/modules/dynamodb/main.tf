@@ -70,6 +70,12 @@ resource "aws_dynamodb_table" "alerts" {
     range_key       = "riskScore"
     projection_type = "ALL"
   }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
 }
 
 resource "aws_dynamodb_table" "gazettes" {
@@ -86,6 +92,12 @@ resource "aws_dynamodb_table" "gazettes" {
     name = "pk"
     type = "S"
   }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
 }
 
 resource "aws_dynamodb_table" "suppliers" {
@@ -102,6 +114,12 @@ resource "aws_dynamodb_table" "suppliers" {
     name = "pk"
     type = "S"
   }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
 }
 
 # entities-prod — Cache de extração LLM (UH-22)
@@ -122,6 +140,12 @@ resource "aws_dynamodb_table" "entities" {
     name = "pk"
     type = "S"
   }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
 }
 
 # newsletter-prod — Inscrições da newsletter

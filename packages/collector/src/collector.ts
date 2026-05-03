@@ -3,7 +3,7 @@ import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs'
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import { queryDiario, extractAll, lookupMemory, saveMemory, pdfCacheS3Key, pdfCacheUrl } from '@fiscal-digital/engine'
+import { queryDiario, extractAll, lookupMemory, saveMemory, pdfCacheS3Key, pdfCacheUrl, requireEnv } from '@fiscal-digital/engine'
 import type { CollectorMessage } from '@fiscal-digital/engine'
 
 const sqs = new SQSClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
@@ -13,7 +13,7 @@ const ddb = DynamoDBDocumentClient.from(raw)
 
 const GAZETTES_TABLE = 'fiscal-digital-gazettes-prod'
 const GAZETTES_CACHE_BUCKET = 'fiscal-digital-gazettes-cache-prod'
-const QUEUE_URL = process.env.GAZETTES_QUEUE_URL!
+const QUEUE_URL = requireEnv('GAZETTES_QUEUE_URL')
 
 // Keywords that signal fiscally relevant acts
 const KEYWORDS = [

@@ -64,4 +64,21 @@ jobs:
               --function-name fiscal-digital-${pkg}-prod \
               --zip-file fileb://packages/${pkg}/dist/function.zip \
               --no-cli-pager
+            aws lambda wait function-updated \
+              --function-name fiscal-digital-${pkg}-prod \
+              --no-cli-pager
+            VERSION=$(aws lambda publish-version \
+              --function-name fiscal-digital-${pkg}-prod \
+              --no-cli-pager \
+              --query Version --output text)
+            aws lambda update-alias \
+              --function-name fiscal-digital-${pkg}-prod \
+              --name prod \
+              --function-version "$VERSION" \
+              --no-cli-pager 2>/dev/null || \
+            aws lambda create-alias \
+              --function-name fiscal-digital-${pkg}-prod \
+              --name prod \
+              --function-version "$VERSION" \
+              --no-cli-pager
           done

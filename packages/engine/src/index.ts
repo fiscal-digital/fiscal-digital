@@ -38,3 +38,6 @@ export type { FiscalGeralInput } from './fiscais/geral'
 
 export { validateNarrative } from './brand-gate'
 export type { NarrativeValidationResult } from './brand-gate'
+
+export { requireEnv } from './env'
+export { createLogger } from './logger'

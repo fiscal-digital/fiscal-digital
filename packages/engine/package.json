@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.0",
+    "@aws-lambda-powertools/logger": "^2.33.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1041.0",
     "@aws-sdk/client-dynamodb": "^3.0.0",
     "@aws-sdk/client-secrets-manager": "^3.0.0",

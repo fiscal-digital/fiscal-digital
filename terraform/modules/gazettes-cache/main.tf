@@ -14,9 +14,28 @@ resource "aws_s3_bucket_public_access_block" "gazettes_cache" {
   restrict_public_buckets = true
 }
 
-# Lifecycle: S3 Standard → Glacier IR após 180 dias
+resource "aws_s3_bucket_versioning" "gazettes_cache" {
+  bucket = aws_s3_bucket.gazettes_cache.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# Lifecycle: versões antigas expiram após 90 dias; objetos correntes vão para Glacier IR após 181 dias
 resource "aws_s3_bucket_lifecycle_configuration" "gazettes_cache" {
   bucket = aws_s3_bucket.gazettes_cache.id
+
+  depends_on = [aws_s3_bucket_versioning.gazettes_cache]
+
+  rule {
+    id     = "expire-old-versions"
+    status = "Enabled"
+
+    noncurrent_version_expiration {
+      noncurrent_days = 90
+    }
+  }
 
   rule {
     id     = "archive-to-glacier-ir"

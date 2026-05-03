@@ -37,7 +37,7 @@ export interface SkillResult<TData = unknown> {
 }
 
 export interface Finding {
-  id?: string
+  id?: string  // set by analyzer after persist; required before publishing (validated at enqueue)
   fiscalId: string
   cityId: string
   type: FindingType
