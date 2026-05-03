@@ -218,6 +218,67 @@ function buildCities(findings: Finding[]): CityResponse[] {
   })
 }
 
+// ── City stats (UH-API-001) ─────────────────────────────────────────────────
+//
+// Retorna métricas por cidade: gazettes processadas + findings publicáveis +
+// período coberto. Habilita o 5º KPI "Diários processados" na página de
+// cidade no `fiscal-digital-web`.
+//
+// Conta gazettes via Scan filtrado por prefixo `GAZETTE#${cityId}#` em
+// `gazettes-prod`. Para escala atual (~50k gazettes total, ~2k por cidade
+// no máximo) o custo de Scan filtrado é aceitável; cache HTTP de 5min
+// absorve a maior parte das requisições. Migrar para GSI/cursor se ficar
+// pesado depois de 100k+ gazettes.
+interface CityStatsResponse {
+  cityId: string
+  totalGazettesProcessed: number
+  totalFindings: number
+  lastFindingAt: string | null
+  periodCovered: { from: string; to: string } | null
+}
+
+async function buildCityStats(cityId: string): Promise<CityStatsResponse> {
+  let gazettesCount = 0
+  let firstDate: string | null = null
+  let lastDate: string | null = null
+  let exclusiveStartKey: Record<string, unknown> | undefined
+
+  do {
+    const out: { Items?: unknown[]; LastEvaluatedKey?: Record<string, unknown> } = await ddb.send(new ScanCommand({
+      TableName: GAZETTES_TABLE,
+      FilterExpression: 'begins_with(pk, :prefix)',
+      ExpressionAttributeValues: { ':prefix': `GAZETTE#${cityId}#` },
+      ExclusiveStartKey: exclusiveStartKey,
+      // Só precisamos de pk + date para essa agregação.
+      ProjectionExpression: 'pk, #d',
+      ExpressionAttributeNames: { '#d': 'date' },
+    }))
+    for (const item of (out.Items ?? []) as { pk?: string; date?: string }[]) {
+      gazettesCount += 1
+      // Schema: GAZETTE#{territory_id}#{date}#{edition} — fallback para
+      // extrair date do pk caso o atributo `date` esteja ausente.
+      const date = item.date ?? (item.pk?.match(/^GAZETTE#\d+#(\d{4}-\d{2}-\d{2})/)?.[1])
+      if (date) {
+        if (!firstDate || date < firstDate) firstDate = date
+        if (!lastDate || date > lastDate) lastDate = date
+      }
+    }
+    exclusiveStartKey = out.LastEvaluatedKey
+  } while (exclusiveStartKey)
+
+  // Findings já passam pelo gate de publicação dentro de fetchFindings.
+  const findings = await fetchFindings({ cityId })
+  const lastFindingAt = findings[0]?.createdAt ?? null
+
+  return {
+    cityId,
+    totalGazettesProcessed: gazettesCount,
+    totalFindings: findings.length,
+    lastFindingAt,
+    periodCovered: firstDate && lastDate ? { from: firstDate, to: lastDate } : null,
+  }
+}
+
 // ── RSS builder ──────────────────────────────────────────────────────────────
 
 function toRssDate(iso?: string): string {
@@ -597,12 +658,37 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       return ok(JSON.stringify(cities, null, 2), 'application/json; charset=UTF-8', 300)
     }
 
+    // /cities/{cityId}/stats — UH-API-001 (Sprint 6)
+    const cityStatsMatch = path.match(/^\/cities\/(\d+)\/stats\/?$/)
+    if (cityStatsMatch) {
+      const cityId = cityStatsMatch[1]
+      if (!CITIES[cityId]) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({ error: 'city_not_found' }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      }
+      const stats = await buildCityStats(cityId)
+      return ok(JSON.stringify(stats, null, 2), 'application/json; charset=UTF-8', 300)
+    }
+
     if (path === '/' || path === '/health') {
       return ok(JSON.stringify({
         status: 'ok',
         version: '1.0.0',
         cities: Object.values(CITIES).filter(c => c.active).length,
         lastDeployedAt: BUILD_TIME,
+        endpoints: [
+          'GET /alerts',
+          'GET /cities',
+          'GET /cities/{cityId}/stats',
+          'GET /stats',
+          'GET /rss',
+          'GET /pdf?source=...',
+          'POST /newsletter',
+          'GET /health',
+        ],
       }), 'application/json')
     }
 

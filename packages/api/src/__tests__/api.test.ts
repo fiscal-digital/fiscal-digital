@@ -191,8 +191,9 @@ describe('GET /stats', () => {
     expect(body.findingsByCity[0]).toEqual({ cityId: '4305108', name: 'Caxias do Sul', count: 2 })
     expect(body.findingsByCity[1]).toEqual({ cityId: '3550308', name: 'São Paulo', count: 1 })
 
-    // Custo: 8400 * 0.000047 + 3 * 0.00077 = 0.3948 + 0.00231 = 0.39711 → 0.3971
-    expect(body.estimatedCostUsd).toBeCloseTo(0.3971, 4)
+    // Custo BRL: 8400 * 0.0002538 + 3 * 0.004158 = 2.13192 + 0.012474 = 2.144394 → 2.14
+    // Constantes em packages/api/src/index.ts (já em BRL, USD * 5.4 BCB).
+    expect(body.estimatedCostBrl).toBeCloseTo(2.14, 2)
 
     // lastFindingAt populado
     expect(body.lastFindingAt).toBe('2026-04-15T00:00:00.000Z')
@@ -216,7 +217,7 @@ describe('GET /stats', () => {
     expect(body.findingsByFiscal).toEqual({})
     expect(body.findingsByCity).toEqual([])
     expect(body.findingsByType).toEqual({})
-    expect(body.estimatedCostUsd).toBe(0)
+    expect(body.estimatedCostBrl).toBe(0)
     expect(body.lastFindingAt).toBeNull()
     expect(body.uptimeDays).toBe(0)
   })
@@ -231,8 +232,9 @@ describe('GET /stats', () => {
     const body = JSON.parse(res.body)
     expect(body.totalFindings).toBe(1)
     expect(body.totalGazettesProcessed).toBeNull()
-    // Custo: gazettesCount tratado como 0 + 1 * 0.00077 = 0.00077 → 0.0008
-    expect(body.estimatedCostUsd).toBeCloseTo(0.0008, 4)
+    // Custo BRL: gazettesCount tratado como 0 + 1 * 0.004158 = 0.004158 → 0.00.
+    // Arredondado a 2 casas em buildStats (toFixed(2)).
+    expect(body.estimatedCostBrl).toBeCloseTo(0.00, 2)
   })
 })
 
@@ -272,6 +274,89 @@ describe('GET /cities', () => {
 
     // Cache 300s
     expect(res.headers['Cache-Control']).toContain('max-age=300')
+  })
+})
+
+describe('GET /cities/{cityId}/stats', () => {
+  it('retorna stats agregadas para cidade conhecida — gazettes + findings + período', async () => {
+    // 1ª chamada: scan gazettes filtrado por GAZETTE#4305108#
+    // 2ª chamada: fetchFindings (scan alerts filtrado pela cidade)
+    mockDdbSend
+      .mockResolvedValueOnce({
+        Items: [
+          { pk: 'GAZETTE#4305108#2026-01-15#1', date: '2026-01-15' },
+          { pk: 'GAZETTE#4305108#2026-03-20#1', date: '2026-03-20' },
+          { pk: 'GAZETTE#4305108#2026-04-10#1', date: '2026-04-10' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        Items: [
+          makeFinding({ cityId: '4305108', createdAt: '2026-04-10T12:00:00.000Z' }),
+          makeFinding({ cityId: '4305108', createdAt: '2026-04-09T08:00:00.000Z' }),
+        ],
+      })
+
+    const res = asResult(await handler(makeEvent('/cities/4305108/stats')))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+
+    expect(body.cityId).toBe('4305108')
+    expect(body.totalGazettesProcessed).toBe(3)
+    expect(body.totalFindings).toBe(2)
+    expect(body.lastFindingAt).toBe('2026-04-10T12:00:00.000Z')
+    expect(body.periodCovered).toEqual({ from: '2026-01-15', to: '2026-04-10' })
+
+    // Cache 300s
+    expect(res.headers['Cache-Control']).toContain('max-age=300')
+  })
+
+  it('retorna 404 para cityId desconhecido (não está em CITIES)', async () => {
+    const res = asResult(await handler(makeEvent('/cities/9999999/stats')))
+    expect(res.statusCode).toBe(404)
+    const body = JSON.parse(res.body)
+    expect(body.error).toBe('city_not_found')
+    // Não chama o DynamoDB se cidade desconhecida
+    expect(mockDdbSend).not.toHaveBeenCalled()
+  })
+
+  it('extrai date do pk como fallback quando atributo date está ausente', async () => {
+    mockDdbSend
+      .mockResolvedValueOnce({
+        Items: [
+          { pk: 'GAZETTE#4305108#2025-06-10#1' },
+          { pk: 'GAZETTE#4305108#2026-02-28#3' },
+        ],
+      })
+      .mockResolvedValueOnce({ Items: [] })
+
+    const res = asResult(await handler(makeEvent('/cities/4305108/stats')))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.totalGazettesProcessed).toBe(2)
+    expect(body.periodCovered).toEqual({ from: '2025-06-10', to: '2026-02-28' })
+    expect(body.totalFindings).toBe(0)
+    expect(body.lastFindingAt).toBeNull()
+  })
+
+  it('periodCovered é null quando não há gazettes processadas para a cidade', async () => {
+    mockDdbSend
+      .mockResolvedValueOnce({ Items: [] })
+      .mockResolvedValueOnce({ Items: [] })
+
+    const res = asResult(await handler(makeEvent('/cities/4305108/stats')))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.totalGazettesProcessed).toBe(0)
+    expect(body.periodCovered).toBeNull()
+  })
+})
+
+describe('GET /health endpoints array', () => {
+  it('expõe novo endpoint /cities/{cityId}/stats no array', async () => {
+    const res = asResult(await handler(makeEvent('/health')))
+    const body = JSON.parse(res.body)
+    expect(Array.isArray(body.endpoints)).toBe(true)
+    expect(body.endpoints).toContain('GET /cities/{cityId}/stats')
   })
 })
 
