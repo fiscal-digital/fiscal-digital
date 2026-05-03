@@ -175,13 +175,20 @@ async function persistFinding(finding: Finding): Promise<void> {
 // Send a qualifying Finding to the publish queue
 // ---------------------------------------------------------------------------
 
-async function enqueueForPublish(finding: Finding): Promise<void> {
+// OPS-OPS-004: gazetteId propagado collector → analyzer → publisher.
+// MessageAttributes.gazetteId carrega o ID da GAZETTE original (não o
+// FINDING#... pk), permitindo correlacionar logs das 3 Lambdas com uma
+// única query no CloudWatch Insights:
+//   fields @timestamp, service, message
+//   | filter gazetteId = "4305108#2026-04-15#1"
+//   | sort @timestamp asc
+async function enqueueForPublish(finding: Finding, gazetteId: string): Promise<void> {
   await sqsClient.send(
     new SendMessageCommand({
       QueueUrl: ALERTS_QUEUE_URL,
       MessageBody: JSON.stringify(finding),
       MessageAttributes: {
-        gazetteId: { DataType: 'String', StringValue: finding.id ?? 'unknown' },
+        gazetteId: { DataType: 'String', StringValue: gazetteId },
       },
     }),
   )
@@ -348,7 +355,7 @@ async function processRecord(body: string): Promise<void> {
 
       if (shouldPublish) {
         try {
-          await enqueueForPublish(finding)
+          await enqueueForPublish(finding, gazette.id)
           logger.info('finding enfileirado para publicação', {
             type: finding.type,
             riskScore: finding.riskScore,
