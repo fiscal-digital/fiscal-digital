@@ -76,6 +76,9 @@ export async function runCollector(config: CollectorConfig): Promise<{ processed
       await sqs.send(new SendMessageCommand({
         QueueUrl: QUEUE_URL,
         MessageBody: JSON.stringify(msg),
+        MessageAttributes: {
+          gazetteId: { DataType: 'String', StringValue: gazette.id },
+        },
       }))
 
       await markQueued(gazette.id, gazette.url, gazette.date, cachedPdfUrl)

@@ -144,6 +144,9 @@ async function enqueueForPublish(finding: Finding): Promise<void> {
     new SendMessageCommand({
       QueueUrl: ALERTS_QUEUE_URL,
       MessageBody: JSON.stringify(finding),
+      MessageAttributes: {
+        gazetteId: { DataType: 'String', StringValue: finding.id ?? 'unknown' },
+      },
     }),
   )
 }
@@ -359,6 +362,8 @@ export const handler = async (event: SQSEvent): Promise<void> => {
   logger.info('iniciando', { records: event.Records.length })
 
   for (const record of event.Records) {
+    const gazetteId = record.messageAttributes?.['gazetteId']?.stringValue ?? 'unknown'
+    logger.appendKeys({ gazetteId })
     try {
       await processRecord(record.body)
     } catch (err) {
@@ -366,6 +371,8 @@ export const handler = async (event: SQSEvent): Promise<void> => {
         messageId: record.messageId,
         err,
       })
+    } finally {
+      logger.removeKeys(['gazetteId'])
     }
   }
 }
