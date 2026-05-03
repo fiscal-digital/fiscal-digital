@@ -30,6 +30,10 @@ const COST_HAIKU_PER_CALL = 0.00077
 
 // ── Fetch findings from DynamoDB ────────────────────────────────────────────
 
+// Scan paginado completo aplicando os filtros do request. Sem Limit fixo —
+// pega todos os itens que casam (DynamoDB retorna em chunks de 1MB) e
+// agrega no servidor. Para ~5k findings é OK; depois disso, migrar para
+// GSI cursor.
 async function fetchFindings(filters: {
   cityId?: string
   state?: string
@@ -40,31 +44,36 @@ async function fetchFindings(filters: {
     ? Object.values(CITIES).filter(c => c.uf === (filters.state ?? '').toUpperCase()).map(c => c.cityId)
     : filters.cityId ? [filters.cityId] : null
 
-  const { Items = [] } = await ddb.send(new ScanCommand({
-    TableName: ALERTS_TABLE,
-    FilterExpression: cityIds
-      ? 'begins_with(pk, :prefix) AND cityId IN (' + cityIds.map((_, i) => `:cid${i}`).join(', ') + ')'
-      : filters.type
-        ? 'begins_with(pk, :prefix) AND #type = :type'
-        : 'begins_with(pk, :prefix)',
-    ExpressionAttributeNames: filters.type && !cityIds ? { '#type': 'type' } : undefined,
-    ExpressionAttributeValues: {
-      ':prefix': 'FINDING#',
-      ...(cityIds && Object.fromEntries(cityIds.map((id, i) => [`:cid${i}`, id]))),
-      ...(filters.type && !cityIds ? { ':type': filters.type } : {}),
-    },
-    Limit: filters.limit ?? 200,
-  }))
+  const all: Finding[] = []
+  let exclusiveStartKey: Record<string, unknown> | undefined
+  do {
+    const out: { Items?: unknown[]; LastEvaluatedKey?: Record<string, unknown> } = await ddb.send(new ScanCommand({
+      TableName: ALERTS_TABLE,
+      FilterExpression: cityIds
+        ? 'begins_with(pk, :prefix) AND cityId IN (' + cityIds.map((_, i) => `:cid${i}`).join(', ') + ')'
+        : filters.type
+          ? 'begins_with(pk, :prefix) AND #type = :type'
+          : 'begins_with(pk, :prefix)',
+      ExpressionAttributeNames: filters.type && !cityIds ? { '#type': 'type' } : undefined,
+      ExpressionAttributeValues: {
+        ':prefix': 'FINDING#',
+        ...(cityIds && Object.fromEntries(cityIds.map((id, i) => [`:cid${i}`, id]))),
+        ...(filters.type && !cityIds ? { ':type': filters.type } : {}),
+      },
+      ExclusiveStartKey: exclusiveStartKey,
+    }))
+    all.push(...((out.Items ?? []) as Finding[]))
+    exclusiveStartKey = out.LastEvaluatedKey
+  } while (exclusiveStartKey)
 
   // Gate de publicação: CLAUDE.md exige riskScore >= 60 E confidence >= 0.70.
   // Findings que ficam abaixo desses thresholds não vão para feed/home/RSS —
   // ficam apenas na tabela alerts-prod para auditoria interna. Fiscais novos
   // (locacao, convenios) foram calibrados com confidence 0.65; sobem para 0.70+
   // depois de mais validação manual.
-  return (Items as Finding[])
+  return all
     .filter(f => f.type && f.riskScore >= 60 && (f.confidence ?? 0) >= 0.70)
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
-    .slice(0, 50)
 }
 
 // Scan completo de findings — usado por /stats. Sem filter de riskScore para
@@ -500,10 +509,28 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
 
     if (path === '/alerts' || path === '/alerts/') {
       const findings = await fetchFindings(filters)
+      // pageInfo é GLOBAL (sobre o conjunto inteiro filtrado), itens são paginados.
+      // Permite que o frontend mostre KPIs corretos ("X alertas em Y cidades")
+      // mesmo quando a lista visível é só uma fatia.
+      const pageSize = Math.min(parseInt(qs.size ?? '50', 10) || 50, 200)
+      const page = Math.max(parseInt(qs.page ?? '1', 10) || 1, 1)
+      const offset = (page - 1) * pageSize
+      const visible = findings.slice(offset, offset + pageSize)
+      const totalValue = findings.reduce((s, f) => s + (typeof f.value === 'number' ? f.value : 0), 0)
+      const citiesCount = new Set(findings.map(f => f.cityId).filter(Boolean)).size
+      const pageInfo = {
+        total: findings.length,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(findings.length / pageSize)),
+        totalValue,
+        citiesCount,
+      }
       return ok(JSON.stringify({
         total: findings.length,
         filters,
-        items: findings.map(f => {
+        pageInfo,
+        items: visible.map(f => {
           const source = f.evidence?.[0]?.source
           return {
             id: f.id,
