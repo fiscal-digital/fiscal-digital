@@ -380,10 +380,14 @@ resource "aws_cloudfront_distribution" "web" {
   comment     = "fiscal-digital-web-prod"
 
   # Origin 1 — S3 assets estáticos (hashed, immutable)
+  # CI sync de open-next coloca assets em s3://bucket/_next-static/_next/static/...
+  # mas o Next gera HTML pedindo /_next/static/... (sem prefix).
+  # origin_path = "/_next-static" mapeia request /_next/static/X → S3 _next-static/_next/static/X.
   origin {
     domain_name              = aws_s3_bucket.web.bucket_regional_domain_name
     origin_id                = "s3-assets"
     origin_access_control_id = aws_cloudfront_origin_access_control.web.id
+    origin_path              = "/_next-static"
   }
 
   # Origin 2 — Lambda ISR (custom origin via Function URL)
