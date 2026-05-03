@@ -16,6 +16,7 @@ import {
   createCachedExtractEntities,
   saveMemory,
   generateNarrative,
+  requireEnv,
 } from '@fiscal-digital/engine'
 import type {
   CollectorMessage,
@@ -39,7 +40,7 @@ export const docClient = DynamoDBDocumentClient.from(_rawDdb)
 
 const ALERTS_TABLE = process.env.ALERTS_TABLE ?? 'fiscal-digital-alerts-prod'
 const GAZETTES_TABLE = process.env.GAZETTES_TABLE ?? 'fiscal-digital-gazettes-prod'
-const ALERTS_QUEUE_URL = process.env.ALERTS_QUEUE_URL!
+const ALERTS_QUEUE_URL = requireEnv('ALERTS_QUEUE_URL')
 const PUBLISH_RISK_THRESHOLD = 60
 const PUBLISH_CONFIDENCE_THRESHOLD = 0.70
 
