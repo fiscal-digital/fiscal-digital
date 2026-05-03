@@ -67,6 +67,24 @@ jest.mock('@fiscal-digital/engine', () => ({
   })),
   saveMemory: { name: 'save_memory', description: 'mock', execute: mockSaveMemoryExecute },
   generateNarrative: { name: 'generate_narrative', description: 'mock', execute: mockGenerateNarrativeExecute },
+  // requireEnv — adicionado em hardening Sprint 6 (TEC-ENG-001). Como ele é
+  // chamado em module-load (linha 46 do index.ts) ANTES de beforeEach rodar,
+  // retornamos um valor válido como default. beforeEach reescreve
+  // process.env.ALERTS_QUEUE_URL — irrelevante porque o módulo já cacheou.
+  requireEnv: jest.fn(
+    (_name: string) => 'https://sqs.us-east-1.amazonaws.com/123456789012/fiscal-digital-queue-prod',
+  ),
+  // createLogger — Lambda Powertools wrapper introduzido em OPS-OPS-003.
+  // No teste basta um stub silencioso com a interface usada (info/warn/error
+  // + appendKeys/removeKeys para correlation OPS-OPS-004).
+  createLogger: jest.fn(() => ({
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+    appendKeys: jest.fn(),
+    removeKeys: jest.fn(),
+  })),
 }))
 
 // ---------------------------------------------------------------------------
@@ -226,6 +244,29 @@ test('finding com riskScore >= 60 e confidence >= 0.70 é enfileirado para publi
   const sent = JSON.parse((sendCommand as { MessageBody: string }).MessageBody) as Finding
   expect(sent.riskScore).toBe(75)
   expect(sent.type).toBe('dispensa_irregular')
+})
+
+// ---------------------------------------------------------------------------
+// OPS-OPS-004: gazetteId propagado collector → analyzer → publisher
+// ---------------------------------------------------------------------------
+
+test('SQS message para publisher carrega gazetteId original (não finding.id) em MessageAttributes', async () => {
+  const publishableFinding = makeFinding({ riskScore: 75, confidence: 0.85 })
+  mockAnalisarLicitacoes.mockResolvedValue([publishableFinding])
+
+  const msg = makeCollectorMessage({ gazetteId: '4305108#2026-04-15#1' })
+  const event = makeSQSEvent([makeSQSRecord(msg)])
+
+  await handler(event)
+
+  expect(mockSqsSend).toHaveBeenCalledTimes(1)
+  const [sendCommand] = mockSqsSend.mock.calls[0]
+  const attrs = (sendCommand as { MessageAttributes?: Record<string, { StringValue?: string }> }).MessageAttributes
+  // Antes do OPS-OPS-004, o MessageAttribute tinha finding.id (FINDING#...);
+  // agora carrega o gazetteId original — habilita query única no CloudWatch
+  // Insights mostrando colector + analyzer + publisher para o mesmo diário.
+  expect(attrs?.gazetteId?.StringValue).toBe('4305108#2026-04-15#1')
+  expect(attrs?.gazetteId?.StringValue).not.toMatch(/^FINDING#/)
 })
 
 // ---------------------------------------------------------------------------
