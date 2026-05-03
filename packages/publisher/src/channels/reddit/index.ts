@@ -1,3 +1,6 @@
+﻿import { createLogger } from '@fiscal-digital/engine'
+
+const logger = createLogger('reddit')
 import {
   SecretsManagerClient,
   GetSecretValueCommand,
@@ -43,7 +46,7 @@ export class RedditChannel implements PublishChannel {
     const { title, body } = formatRedditPost(finding)
 
     if (process.env.REDDIT_DRY_RUN === 'true') {
-      console.log('[reddit] DRY_RUN — would post', {
+      logger.info('DRY_RUN — would post', {
         findingId: finding.id,
         subreddit,
         title,
@@ -65,7 +68,7 @@ export class RedditChannel implements PublishChannel {
         body,
       )
 
-      console.log('[reddit] post created', {
+      logger.info('post created', {
         findingId: finding.id,
         url: result.json.data.url,
         id: result.json.data.id,

@@ -1,4 +1,4 @@
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs'
+﻿import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import type { SQSEvent } from 'aws-lambda'
@@ -17,6 +17,7 @@ import {
   saveMemory,
   generateNarrative,
   requireEnv,
+  createLogger,
 } from '@fiscal-digital/engine'
 import type {
   CollectorMessage,
@@ -43,6 +44,8 @@ const GAZETTES_TABLE = process.env.GAZETTES_TABLE ?? 'fiscal-digital-gazettes-pr
 const ALERTS_QUEUE_URL = requireEnv('ALERTS_QUEUE_URL')
 const PUBLISH_RISK_THRESHOLD = 60
 const PUBLISH_CONFIDENCE_THRESHOLD = 0.70
+
+const logger = createLogger('analyzer')
 
 // ---------------------------------------------------------------------------
 // queryAlertsByCnpj — usa GSI2-cnpj-date em fiscal-digital-alerts-prod
@@ -111,7 +114,7 @@ async function markFiscalProcessed(gazetteId: string, fiscalIds: string[]): Prom
         ExpressionAttributeValues: { ':ts': now },
       }))
     } catch (e2) {
-      console.error('[analyzer] markFiscalProcessed falhou', { gazetteId, fiscalIds, err: (e2 as Error).message })
+      logger.error('markFiscalProcessed falhou', { gazetteId, fiscalIds, err: (e2 as Error).message })
     }
   }
 }
@@ -224,7 +227,7 @@ async function processRecord(body: string): Promise<void> {
   if (licitacoesResult.status === 'fulfilled') {
     specializedFindings.push(...licitacoesResult.value)
   } else {
-    console.error('[analyzer] fiscalLicitacoes falhou', {
+    logger.error('fiscalLicitacoes falhou', {
       gazetteId: gazette.id,
       error: licitacoesResult.reason,
     })
@@ -233,7 +236,7 @@ async function processRecord(body: string): Promise<void> {
   if (contratosResult.status === 'fulfilled') {
     specializedFindings.push(...contratosResult.value)
   } else {
-    console.error('[analyzer] fiscalContratos falhou', {
+    logger.error('fiscalContratos falhou', {
       gazetteId: gazette.id,
       error: contratosResult.reason,
     })
@@ -242,7 +245,7 @@ async function processRecord(body: string): Promise<void> {
   if (fornecedoresResult.status === 'fulfilled') {
     specializedFindings.push(...fornecedoresResult.value)
   } else {
-    console.error('[analyzer] fiscalFornecedores falhou', {
+    logger.error('fiscalFornecedores falhou', {
       gazetteId: gazette.id,
       error: fornecedoresResult.reason,
     })
@@ -251,7 +254,7 @@ async function processRecord(body: string): Promise<void> {
   if (pessoalResult.status === 'fulfilled') {
     specializedFindings.push(...pessoalResult.value)
   } else {
-    console.error('[analyzer] fiscalPessoal falhou', {
+    logger.error('fiscalPessoal falhou', {
       gazetteId: gazette.id,
       error: pessoalResult.reason,
     })
@@ -260,31 +263,31 @@ async function processRecord(body: string): Promise<void> {
   if (conveniosResult.status === 'fulfilled') {
     specializedFindings.push(...conveniosResult.value)
   } else {
-    console.error('[analyzer] fiscalConvenios falhou', { gazetteId: gazette.id, error: conveniosResult.reason })
+    logger.error('fiscalConvenios falhou', { gazetteId: gazette.id, error: conveniosResult.reason })
   }
 
   if (nepotismoResult.status === 'fulfilled') {
     specializedFindings.push(...nepotismoResult.value)
   } else {
-    console.error('[analyzer] fiscalNepotismo falhou', { gazetteId: gazette.id, error: nepotismoResult.reason })
+    logger.error('fiscalNepotismo falhou', { gazetteId: gazette.id, error: nepotismoResult.reason })
   }
 
   if (publicidadeResult.status === 'fulfilled') {
     specializedFindings.push(...publicidadeResult.value)
   } else {
-    console.error('[analyzer] fiscalPublicidade falhou', { gazetteId: gazette.id, error: publicidadeResult.reason })
+    logger.error('fiscalPublicidade falhou', { gazetteId: gazette.id, error: publicidadeResult.reason })
   }
 
   if (locacaoResult.status === 'fulfilled') {
     specializedFindings.push(...locacaoResult.value)
   } else {
-    console.error('[analyzer] fiscalLocacao falhou', { gazetteId: gazette.id, error: locacaoResult.reason })
+    logger.error('fiscalLocacao falhou', { gazetteId: gazette.id, error: locacaoResult.reason })
   }
 
   if (diariasResult.status === 'fulfilled') {
     specializedFindings.push(...diariasResult.value)
   } else {
-    console.error('[analyzer] fiscalDiarias falhou', { gazetteId: gazette.id, error: diariasResult.reason })
+    logger.error('fiscalDiarias falhou', { gazetteId: gazette.id, error: diariasResult.reason })
   }
 
   // FiscalGeral consolida os findings dos 4 Fiscais especializados e adiciona
@@ -297,7 +300,7 @@ async function processRecord(body: string): Promise<void> {
       try {
         await persistFinding(finding)
       } catch (err) {
-        console.error('[analyzer] falha ao persistir finding', { type: finding.type, err })
+        logger.error('falha ao persistir finding', { type: finding.type, err })
       }
 
       const shouldPublish =
@@ -307,17 +310,17 @@ async function processRecord(body: string): Promise<void> {
       if (shouldPublish) {
         try {
           await enqueueForPublish(finding)
-          console.log('[analyzer] finding enfileirado para publicação', {
+          logger.info('finding enfileirado para publicação', {
             type: finding.type,
             riskScore: finding.riskScore,
             confidence: finding.confidence,
             cityId: finding.cityId,
           })
         } catch (err) {
-          console.error('[analyzer] falha ao enfileirar finding', { type: finding.type, err })
+          logger.error('falha ao enfileirar finding', { type: finding.type, err })
         }
       } else {
-        console.log('[analyzer] finding descartado (abaixo do limiar)', {
+        logger.info('finding descartado (abaixo do limiar)', {
           type: finding.type,
           riskScore: finding.riskScore,
           confidence: finding.confidence,
@@ -339,7 +342,7 @@ async function processRecord(body: string): Promise<void> {
   if (diariasResult.status === 'fulfilled' && shouldRun('fiscal-diarias')) ranSuccessfully.push('fiscal-diarias')
   await markFiscalProcessed(gazette.id, ranSuccessfully)
 
-  console.log('[analyzer] gazette processada', {
+  logger.info('gazette processada', {
     gazetteId: gazette.id,
     cityId,
     fiscaisExecutados: ranSuccessfully,
@@ -353,13 +356,13 @@ async function processRecord(body: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export const handler = async (event: SQSEvent): Promise<void> => {
-  console.log('[analyzer] iniciando', { records: event.Records.length })
+  logger.info('iniciando', { records: event.Records.length })
 
   for (const record of event.Records) {
     try {
       await processRecord(record.body)
     } catch (err) {
-      console.error('[analyzer] falha ao processar record — continuando próximo', {
+      logger.error('falha ao processar record — continuando próximo', {
         messageId: record.messageId,
         err,
       })

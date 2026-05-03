@@ -1,9 +1,9 @@
-import crypto from 'node:crypto'
+﻿import crypto from 'node:crypto'
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs'
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import { queryDiario, extractAll, lookupMemory, saveMemory, pdfCacheS3Key, pdfCacheUrl, requireEnv } from '@fiscal-digital/engine'
+import { queryDiario, extractAll, lookupMemory, saveMemory, pdfCacheS3Key, pdfCacheUrl, requireEnv, createLogger } from '@fiscal-digital/engine'
 import type { CollectorMessage } from '@fiscal-digital/engine'
 
 const sqs = new SQSClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
@@ -14,6 +14,8 @@ const ddb = DynamoDBDocumentClient.from(raw)
 const GAZETTES_TABLE = 'fiscal-digital-gazettes-prod'
 const GAZETTES_CACHE_BUCKET = 'fiscal-digital-gazettes-cache-prod'
 const QUEUE_URL = requireEnv('GAZETTES_QUEUE_URL')
+
+const logger = createLogger('collector')
 
 // Keywords that signal fiscally relevant acts
 const KEYWORDS = [
@@ -39,7 +41,7 @@ export async function runCollector(config: CollectorConfig): Promise<{ processed
   const since = config.since ?? await getLastDate(territory_id)
   const until = new Date().toISOString().split('T')[0]
 
-  console.log(`[collector] ${territory_id} since=${since} until=${until}`)
+  logger.info('coletando', { territory_id, since, until })
 
   let offset = 0
   let processed = 0
@@ -111,7 +113,7 @@ async function cachePdf(
   const key = pdfCacheS3Key(originalUrl)
   const cdnUrl = pdfCacheUrl(originalUrl)
   if (!key || !cdnUrl) {
-    console.warn(`[collector] url QD inválida — skip cache: ${originalUrl}`)
+    logger.warn('url QD inválida — skip cache', { originalUrl })
     return null
   }
 
@@ -130,7 +132,7 @@ async function cachePdf(
     })
 
     if (!response.ok) {
-      console.warn(`[collector] pdf fetch falhou url=${originalUrl} status=${response.status}`)
+      logger.warn('pdf fetch falhou', { originalUrl, status: response.status })
       return null
     }
 
@@ -157,11 +159,11 @@ async function cachePdf(
       },
     }))
 
-    console.log(`[collector] pdf cached key=${key} bytes=${bytes}`)
+    logger.info('pdf cached', { key, bytes })
     return cdnUrl
   } catch (err) {
     // Falha no cache de PDF não deve interromper o fluxo principal
-    console.warn(`[collector] pdf cache error key=${key}`, err)
+    logger.warn('pdf cache error', { key, err })
     return null
   }
 }

@@ -1,3 +1,5 @@
+﻿import { createLogger } from '../logger'
+const logger = createLogger('engine')
 import { createHash } from 'crypto'
 import { extractEntities } from './extract_entities'
 import { lookupMemory } from './lookup_memory'
@@ -49,7 +51,7 @@ async function callBedrockWithRetry(
       const baseDelayMs = 1000 * Math.pow(2, attempt) // 1s, 2s, 4s
       const jitterMs = Math.floor(Math.random() * 500)
       const delayMs = baseDelayMs + jitterMs
-      console.warn('[bedrock] throttle, retrying', { attempt: attempt + 1, delayMs })
+      logger.warn('bedrock throttle, retrying', { attempt: attempt + 1, delayMs })
       await new Promise(r => setTimeout(r, delayMs))
     }
   }
@@ -66,8 +68,7 @@ async function callBedrockWithRetry(
  *
  * Schema versioning: cache hit invalidado se `cached.schemaVersion < EXTRACTION_SCHEMA_VERSION`.
  *
- * Métricas exportadas via console.log com prefixo `[cache]` — facil parsear de CloudWatch
- * para calcular hit rate posteriormente.
+ * Métricas exportadas via logger estruturado — consultável no CloudWatch Insights por gazetteId/hash.
  *
  * Quando um novo Fiscal é adicionado e re-roda análise sobre o histórico:
  *   - Cache hit em 100% (excerpts não mudam)
@@ -91,7 +92,7 @@ export function createCachedExtractEntities(opts: {
       // 1. Memória — duplicate calls dentro do mesmo Lambda
       const memHit = memCache.get(hash)
       if (memHit) {
-        console.log('[cache] hit=memory', { gazetteId: opts.gazetteId, hash })
+        logger.info('cache hit=memory', { gazetteId: opts.gazetteId, hash })
         return memHit
       }
 
@@ -113,16 +114,16 @@ export function createCachedExtractEntities(opts: {
             confidence: cached.confidence ?? 0.85,
           }
           memCache.set(hash, result)
-          console.log('[cache] hit=ddb', { gazetteId: opts.gazetteId, hash })
+          logger.info('cache hit=ddb', { gazetteId: opts.gazetteId, hash })
           return result
         }
       } catch (err) {
-        console.error('[cache] lookup failed', { hash, err: (err as Error).message })
+        logger.error('cache lookup failed', { hash, err: (err as Error).message })
       }
 
       // 3. Bedrock — primeira vez para este excerpt (ou schema mudou)
       // Retry-with-backoff para mitigar ThrottlingException (LRN-019, FiscalFornecedores throttle)
-      console.log('[cache] miss', { gazetteId: opts.gazetteId, hash })
+      logger.info('cache miss', { gazetteId: opts.gazetteId, hash })
       const result = await callBedrockWithRetry(input)
 
       // 4. Persistir cache (best-effort, não bloqueia o fluxo)
@@ -138,7 +139,7 @@ export function createCachedExtractEntities(opts: {
           },
         })
       } catch (err) {
-        console.error('[cache] save failed', { hash, err: (err as Error).message })
+        logger.error('cache save failed', { hash, err: (err as Error).message })
       }
 
       memCache.set(hash, result)

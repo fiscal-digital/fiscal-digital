@@ -1,3 +1,6 @@
+﻿import { createLogger } from '@fiscal-digital/engine'
+
+const logger = createLogger('x')
 import {
   SecretsManagerClient,
   GetSecretValueCommand,
@@ -45,7 +48,7 @@ export class XChannel implements PublishChannel {
       const client = await loadClient()
       const me = await client.verifyCredentials()
       const matches = me.username === X_USERNAME
-      console.log('[x] DRY_RUN — credentials OK', {
+      logger.info('DRY_RUN — credentials OK', {
         asUser: me.username,
         expected: X_USERNAME,
         matches,
@@ -55,7 +58,7 @@ export class XChannel implements PublishChannel {
           `[x] DRY_RUN abort — token autoriza @${me.username} mas esperávamos @${X_USERNAME}. Regerar Access Token logado como @${X_USERNAME}.`,
         )
       }
-      console.log('[x] DRY_RUN — would tweet', {
+      logger.info('DRY_RUN — would tweet', {
         findingId: finding.id,
         length,
         preview: text,
@@ -66,7 +69,7 @@ export class XChannel implements PublishChannel {
     const client = await loadClient()
     const posted = await client.tweet(text)
 
-    console.log('[x] tweet posted', {
+    logger.info('tweet posted', {
       findingId: finding.id,
       tweetId: posted.id,
       url: posted.url,
