@@ -564,10 +564,11 @@ resource "aws_iam_role_policy" "api" {
         Resource = var.kms_key_arn
       },
       {
-        # Leitura do cache de PDFs para servir URL pré-assinada ou redirect
-        Sid      = "GazettesCacheRead"
+        # Lazy cache de PDFs — endpoint /pdf?source=...
+        # API faz HEAD; se 404, baixa do QD e PutObject; sempre 302 para CDN.
+        Sid      = "GazettesCacheLazy"
         Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:HeadObject"]
+        Action   = ["s3:GetObject", "s3:HeadObject", "s3:PutObject"]
         Resource = "arn:aws:s3:::fiscal-digital-gazettes-cache-prod/*"
       },
       {
