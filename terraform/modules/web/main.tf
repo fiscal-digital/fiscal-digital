@@ -312,9 +312,12 @@ resource "aws_lambda_function_url" "web_isr" {
   cors {
     allow_credentials = false
     allow_origins     = ["*"]
-    allow_methods     = ["GET", "HEAD", "OPTIONS"]
-    allow_headers     = ["*"]
-    max_age           = 3600
+    # AWS API rejeita "OPTIONS" (7 chars > 6 chars constraint). Usar "*" cobre
+    # tudo (GET, HEAD, OPTIONS, POST, etc.) sem hit nessa constraint mal
+    # documentada do CreateFunctionUrlConfig.
+    allow_methods = ["*"]
+    allow_headers = ["*"]
+    max_age       = 3600
   }
 }
 

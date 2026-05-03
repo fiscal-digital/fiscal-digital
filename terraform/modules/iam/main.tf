@@ -126,6 +126,8 @@ resource "aws_iam_role_policy" "github_actions" {
           "lambda:GetEventSourceMapping",
           "lambda:ListEventSourceMappings",
           "lambda:ListTags",
+          "lambda:TagResource",
+          "lambda:UntagResource",
           "lambda:UpdateEventSourceMapping",
         ]
         Effect   = "Allow"
