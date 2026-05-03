@@ -3,6 +3,7 @@ import { saveMemory } from '../skills/save_memory'
 import { generateNarrative as defaultGenerateNarrative } from '../skills/generate_narrative'
 import { scoreRisk } from '../skills/score_risk'
 import type { Finding, RiskFactor } from '../types'
+import { gazetteKey } from '../utils/pdf_cache'
 import type { Fiscal, AnalisarInput, FiscalContext } from './types'
 
 const FISCAL_ID = 'fiscal-locacao'
@@ -174,7 +175,7 @@ export const fiscalLocacao: Fiscal = {
         createdAt: now.toISOString(),
       }
 
-      const locacaoPk = `LOCACAO#${gazette.id}#${cnpj ?? 'NOCNPJ'}#${valor ?? 'NOVAL'}`
+      const locacaoPk = `LOCACAO#${gazetteKey(gazette.url) ?? gazette.id}#${cnpj ?? 'NOCNPJ'}#${valor ?? 'NOVAL'}`
 
       const saveMemoryFn = context.saveMemory ?? saveMemory
       await saveMemoryFn.execute({

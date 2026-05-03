@@ -3,6 +3,7 @@ import { saveMemory } from '../skills/save_memory'
 import { generateNarrative as defaultGenerateNarrative } from '../skills/generate_narrative'
 import { scoreRisk } from '../skills/score_risk'
 import type { Finding, RiskFactor } from '../types'
+import { gazetteKey } from '../utils/pdf_cache'
 import {
   LEI_14133_ART_125_LIMITE_GERAL,
   LEI_14133_ART_125_LIMITE_REFORMA,
@@ -388,7 +389,7 @@ async function persistAditivo(args: PersistAditivoArgs): Promise<void> {
     createdAt: now.toISOString(),
   }
 
-  const aditivoPk = `ADITIVO#${gazette.id}#${cnpj ?? 'NOCNPJ'}#${valorAditivo}`
+  const aditivoPk = `ADITIVO#${gazetteKey(gazette.url) ?? gazette.id}#${cnpj ?? 'NOCNPJ'}#${valorAditivo}`
 
   const saveMemoryFn = context.saveMemory ?? saveMemory
   await saveMemoryFn.execute({

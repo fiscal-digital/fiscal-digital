@@ -3,6 +3,7 @@ import { saveMemory } from '../skills/save_memory'
 import { generateNarrative as defaultGenerateNarrative } from '../skills/generate_narrative'
 import { scoreRisk } from '../skills/score_risk'
 import type { Finding, RiskFactor } from '../types'
+import { gazetteKey } from '../utils/pdf_cache'
 import {
   LEI_13019_CONVENIO_VALOR_REFERENCIA,
   LEI_13019_REPASSE_RECORRENTE_MINIMO,
@@ -175,7 +176,7 @@ export const fiscalConvenios: Fiscal = {
           createdAt: now.toISOString(),
         }
 
-        const convenioPk = `CONVENIO#${gazette.id}#${cnpj ?? 'NOCNPJ'}#${valor}`
+        const convenioPk = `CONVENIO#${gazetteKey(gazette.url) ?? gazette.id}#${cnpj ?? 'NOCNPJ'}#${valor}`
 
         const saveMemoryFn = context.saveMemory ?? saveMemory
         await saveMemoryFn.execute({

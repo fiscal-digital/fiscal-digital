@@ -67,6 +67,10 @@ jest.mock('@fiscal-digital/engine', () => ({
   })),
   saveMemory: { name: 'save_memory', description: 'mock', execute: mockSaveMemoryExecute },
   generateNarrative: { name: 'generate_narrative', description: 'mock', execute: mockGenerateNarrativeExecute },
+  // gazetteKey — helper para pk determinístico de FINDING (LRN-20260503-022).
+  // Stub retorna null => fallback para createdAt no pk (preserva comportamento
+  // antigo do teste sem precisar reescrever expectations).
+  gazetteKey: jest.fn(() => null),
   // requireEnv — adicionado em hardening Sprint 6 (TEC-ENG-001). Como ele é
   // chamado em module-load (linha 46 do index.ts) ANTES de beforeEach rodar,
   // retornamos um valor válido como default. beforeEach reescreve

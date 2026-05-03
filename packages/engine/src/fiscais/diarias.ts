@@ -1,6 +1,7 @@
 import { saveMemory } from '../skills/save_memory'
 import { scoreRisk } from '../skills/score_risk'
 import type { Finding, RiskFactor } from '../types'
+import { gazetteKey } from '../utils/pdf_cache'
 import type { Fiscal, AnalisarInput, FiscalContext } from './types'
 import { preloadFeriadosNacionais, isFeriadoNacionalCached } from './holidays/national'
 
@@ -268,7 +269,7 @@ export const fiscalDiarias: Fiscal = {
         createdAt: now.toISOString(),
       }
 
-      const diariaPk = `DIARIA#${gazette.id}#${dataReferencia}#${valor || 'NOVAL'}`
+      const diariaPk = `DIARIA#${gazetteKey(gazette.url) ?? gazette.id}#${dataReferencia}#${valor || 'NOVAL'}`
 
       const saveMemoryFn = context.saveMemory ?? saveMemory
       await saveMemoryFn.execute({
