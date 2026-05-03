@@ -23,10 +23,12 @@ const BUILD_TIME = process.env.BUILD_TIME ?? new Date().toISOString()
 // ── Bedrock cost constants ──────────────────────────────────────────────────
 //
 // Custos médios por chamada validados no LRN-20260502-009 (eval Bedrock).
-// Nova Lite ≈ $0.047 / 1k gazettes (extração) → $0.000047 / call
-// Haiku 4.5 ≈ $0.77  / 1k narrativas (riskScore >= 60) → $0.00077 / call
-const COST_NOVA_LITE_PER_CALL = 0.000047
-const COST_HAIKU_PER_CALL = 0.00077
+// Bedrock fatura em USD; convertemos UMA vez aqui (USD * 5.4 BRL/USD, BCB
+// PTAX próximo de 2026-05-02). API expõe APENAS BRL — moeda única do site.
+//   Nova Lite: $0.000047/call × 5.4 = R$ 0.0002538
+//   Haiku 4.5: $0.000770/call × 5.4 = R$ 0.004158
+const COST_NOVA_LITE_PER_CALL_BRL = 0.0002538
+const COST_HAIKU_PER_CALL_BRL = 0.004158
 
 // ── Fetch findings from DynamoDB ────────────────────────────────────────────
 
@@ -126,7 +128,8 @@ interface StatsResponse {
   findingsByFiscal: Record<string, number>
   findingsByCity: Array<{ cityId: string; name: string; count: number }>
   findingsByType: Record<string, number>
-  estimatedCostUsd: number
+  /** Custo total estimado em BRL — moeda única do projeto. */
+  estimatedCostBrl: number
   lastFindingAt: string | null
   uptimeDays: number
 }
@@ -152,8 +155,9 @@ function buildStats(findings: Finding[], gazettesCount: number | null): StatsRes
   const totalFindings = findings.length
   const totalGazettes = gazettesCount ?? 0
   // Custo: 1 chamada Nova Lite por gazette + 1 chamada Haiku por finding (narrativa).
-  const estimatedCostUsd = Number(
-    (totalGazettes * COST_NOVA_LITE_PER_CALL + totalFindings * COST_HAIKU_PER_CALL).toFixed(4)
+  // Custo direto em BRL — fonte de verdade do projeto.
+  const estimatedCostBrl = Number(
+    (totalGazettes * COST_NOVA_LITE_PER_CALL_BRL + totalFindings * COST_HAIKU_PER_CALL_BRL).toFixed(2)
   )
 
   const uptimeDays = earliest
@@ -171,7 +175,7 @@ function buildStats(findings: Finding[], gazettesCount: number | null): StatsRes
     findingsByFiscal: byFiscal,
     findingsByCity,
     findingsByType: byType,
-    estimatedCostUsd,
+    estimatedCostBrl,
     lastFindingAt: latest,
     uptimeDays,
   }
