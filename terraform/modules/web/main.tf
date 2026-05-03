@@ -108,17 +108,20 @@ resource "aws_cloudfront_distribution" "web" {
     max_ttl     = 3600
   }
 
-  # Next.js static export: SPA-style 404 → index.html (locale redirect)
+  # Next.js static export gera 404.html — servir ele em vez da home.
+  # Antes: 404 → /index.html caía na home, mascarava bugs (ex: /pt-br/alertas/
+  # sem index.html servia HOME). Agora a CloudFront Function reescreve dirs
+  # para /index.html e 404 real cai em 404.html.
   custom_error_response {
     error_code         = 403
-    response_code      = 200
-    response_page_path = "/index.html"
+    response_code      = 404
+    response_page_path = "/404.html"
   }
 
   custom_error_response {
     error_code         = 404
-    response_code      = 200
-    response_page_path = "/index.html"
+    response_code      = 404
+    response_page_path = "/404.html"
   }
 
   restrictions {
