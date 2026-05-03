@@ -572,16 +572,27 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     if (path === '/stats' || path === '/stats/') {
-      const [findings, gazettesCount] = await Promise.all([
+      const [allFindings, gazettesCount] = await Promise.all([
         scanAllFindings(),
         countGazettes(),
       ])
+      // Aplicar gate de publicação para consistência com /alerts e /cities.
+      // KPIs do site (Hero, StatsCounter) devem mostrar findings publicáveis,
+      // não TODOS findings na tabela (que inclui rascunhos < gate).
+      const findings = allFindings.filter(
+        f => f.type && f.riskScore >= 60 && (f.confidence ?? 0) >= 0.70,
+      )
       const stats = buildStats(findings, gazettesCount)
       return ok(JSON.stringify(stats, null, 2), 'application/json; charset=UTF-8', 60)
     }
 
     if (path === '/cities' || path === '/cities/') {
-      const findings = await scanAllFindings()
+      // Aplicar o mesmo gate de publicação que /alerts usa, para consistência.
+      // Antes: /cities mostrava TODOS findings (incluindo os abaixo do gate),
+      // dando números maiores que /alerts. Caxias mostrava 311 aqui mas só
+      // 192 passavam o gate — confundia usuário.
+      const findings = (await scanAllFindings())
+        .filter(f => f.type && f.riskScore >= 60 && (f.confidence ?? 0) >= 0.70)
       const cities = buildCities(findings)
       return ok(JSON.stringify(cities, null, 2), 'application/json; charset=UTF-8', 300)
     }
