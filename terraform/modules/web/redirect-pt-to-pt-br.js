@@ -1,10 +1,11 @@
-// CloudFront viewer-request function — duas responsabilidades:
+// CloudFront viewer-request function — responsabilidade única (pós-ISR):
 //
 // 1. Redirect 301 /pt/* → /pt-br/* (BCP 47 explícito; preserva backlinks).
-// 2. Reescrever URI de diretório → index.html (Next.js static export +
-//    trailingSlash:true gera /alertas/index.html, mas CloudFront com
-//    default_root_object só funciona na raiz; subdirs caem em 404 e o
-//    custom_error_response servia a HOME por engano).
+//
+// Passo (2) foi REMOVIDO em INF-WEB-001 (2026-05-03).
+// Antes: reescrevia URI de diretório → index.html para static export S3.
+// Agora: Lambda ISR (via @opennextjs/aws) resolve trailing-slash e subdir
+// internamente — reescrever aqui causaria double-rewrite e 404s na Lambda.
 function handler(event) {
   var request = event.request;
   var uri = request.uri;
@@ -37,16 +38,6 @@ function handler(event) {
         'cache-control': { value: 'public, max-age=3600' },
       },
     };
-  }
-
-  // (2) Diretório → index.html
-  // - Termina em '/' → append index.html
-  // - Sem extensão e não termina em '/' → append /index.html
-  // - Com extensão (.html, .pdf, .ico, .xml, .json, etc.) → não toca
-  if (uri.endsWith('/')) {
-    request.uri = uri + 'index.html';
-  } else if (!/\.[a-zA-Z0-9]+$/.test(uri)) {
-    request.uri = uri + '/index.html';
   }
 
   return request;
