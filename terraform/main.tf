@@ -74,3 +74,26 @@ module "gazettes_cache" {
   aws_region     = var.aws_region
   hosted_zone_id = "Z0950975SSMZZW5DEN8A"
 }
+
+# ─── SSM Parameters — publish thresholds (TEC-ENG-002) ───────────────────────
+# Alterar thresholds sem redeploy: aws ssm put-parameter --overwrite --name X --value Y
+
+resource "aws_ssm_parameter" "publish_risk_threshold" {
+  name  = "/fiscal-digital/prod/publish-risk-threshold"
+  type  = "String"
+  value = "60"
+
+  lifecycle {
+    ignore_changes = [value] # alterações via CLI não são revertidas pelo Terraform
+  }
+}
+
+resource "aws_ssm_parameter" "publish_confidence_threshold" {
+  name  = "/fiscal-digital/prod/publish-confidence-threshold"
+  type  = "String"
+  value = "0.70"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}

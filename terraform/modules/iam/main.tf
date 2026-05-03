@@ -442,6 +442,12 @@ resource "aws_iam_role_policy" "analyzer" {
         Action   = ["bedrock:InvokeModel"]
         Resource = "*"
       },
+      {
+        Sid      = "SSMReadThresholds"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter", "ssm:GetParameters"]
+        Resource = "arn:aws:ssm:us-east-1:*:parameter/fiscal-digital/prod/*"
+      },
     ]
   })
 }
