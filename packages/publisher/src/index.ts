@@ -1,5 +1,7 @@
-import type { SQSEvent } from 'aws-lambda'
-import { validateNarrative, type Finding } from '@fiscal-digital/engine'
+﻿import type { SQSEvent } from 'aws-lambda'
+import { validateNarrative, createLogger, type Finding } from '@fiscal-digital/engine'
+
+const logger = createLogger('publisher')
 import type { PublishChannel } from './channels/types'
 import {
   AlreadyPublishedError,
@@ -31,7 +33,7 @@ async function publishOnChannel(
 }
 
 export const handler = async (event: SQSEvent): Promise<void> => {
-  console.log('[publisher] processando', {
+  logger.info('processando', {
     records: event.Records.length,
     channels: channels.map((c) => c.name),
   })
@@ -41,7 +43,7 @@ export const handler = async (event: SQSEvent): Promise<void> => {
     try {
       finding = JSON.parse(record.body) as Finding
     } catch (err) {
-      console.error('[publisher] body inválido — ignorando record', {
+      logger.error('body inválido — ignorando record', {
         messageId: record.messageId,
         err,
       })
@@ -50,7 +52,7 @@ export const handler = async (event: SQSEvent): Promise<void> => {
 
     const check = validateNarrative(finding.narrative)
     if (!check.valid) {
-      console.error('[publisher] narrativa rejeitada por brand gate', {
+      logger.error('narrativa rejeitada por brand gate', {
         findingId: finding.id, hits: check.hits,
       })
       // Throw → record vai para DLQ. TODO: regenerar via Haiku no analyzer.
@@ -59,7 +61,7 @@ export const handler = async (event: SQSEvent): Promise<void> => {
 
     const targets = channels.filter((c) => c.enabled(finding))
     if (targets.length === 0) {
-      console.warn('[publisher] nenhum canal habilitado para finding', {
+      logger.warn('nenhum canal habilitado para finding', {
         findingId: finding.id,
         type: finding.type,
         riskScore: finding.riskScore,
@@ -79,7 +81,7 @@ export const handler = async (event: SQSEvent): Promise<void> => {
 
       const err = r.reason
       if (err instanceof RateLimitError) {
-        console.warn('[publisher] rate limit', {
+        logger.warn('rate limit', {
           channel: channelName,
           retryAfterSeconds: err.retryAfterSeconds,
           findingId: finding.id,
@@ -87,21 +89,21 @@ export const handler = async (event: SQSEvent): Promise<void> => {
         continue
       }
       if (err instanceof AlreadyPublishedError) {
-        console.info('[publisher] já publicado — skip idempotente', {
+        logger.info('já publicado — skip idempotente', {
           channel: channelName,
           findingId: finding.id,
         })
         continue
       }
       if (err instanceof ChannelDryRunError) {
-        console.info('[publisher] dry-run — sem persistência', {
+        logger.info('dry-run — sem persistência', {
           channel: channelName,
           findingId: finding.id,
         })
         continue
       }
       // Erro fatal — registra mas continua processando outros canais
-      console.error('[publisher] erro fatal no canal', {
+      logger.error('erro fatal no canal', {
         channel: channelName,
         findingId: finding.id,
         err,

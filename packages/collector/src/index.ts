@@ -1,5 +1,5 @@
-import type { EventBridgeEvent } from 'aws-lambda'
-import { activeCities } from '@fiscal-digital/engine'
+﻿import type { EventBridgeEvent } from 'aws-lambda'
+import { activeCities, createLogger } from '@fiscal-digital/engine'
 import { runCollector } from './collector'
 
 interface BackfillPayload {
@@ -10,6 +10,8 @@ interface BackfillPayload {
 
 const CIDADES = activeCities().map(c => ({ territory_id: c.cityId, name: c.name }))
 
+const logger = createLogger('collector')
+
 export const handler = async (
   event: EventBridgeEvent<'Scheduled Event', BackfillPayload>,
 ): Promise<void> => {
@@ -17,9 +19,9 @@ export const handler = async (
 
   // Manual backfill: single city with explicit since date
   if (detail.backfill && detail.territory_id) {
-    console.log(`[collector] backfill ${detail.territory_id} since=${detail.since}`)
+    logger.info('backfill', { territory_id: detail.territory_id, since: detail.since })
     const result = await runCollector({ territory_id: detail.territory_id, since: detail.since })
-    console.log(`[collector] done processed=${result.processed} sent=${result.sent}`)
+    logger.info('backfill done', { processed: result.processed, sent: result.sent })
     return
   }
 
@@ -30,9 +32,9 @@ export const handler = async (
 
   for (const r of results) {
     if (r.status === 'fulfilled') {
-      console.log(`[collector] ${r.value.name} processed=${r.value.processed} sent=${r.value.sent}`)
+      logger.info('cidade processada', { name: r.value.name, processed: r.value.processed, sent: r.value.sent })
     } else {
-      console.error('[collector] error', r.reason)
+      logger.error('cidade falhou', { reason: r.reason })
     }
   }
 }

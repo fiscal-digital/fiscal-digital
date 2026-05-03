@@ -2,8 +2,10 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb'
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda'
 import crypto from 'node:crypto'
-import { CITIES, getCityOrFallback, pdfCacheUrl } from '@fiscal-digital/engine'
+import { CITIES, getCityOrFallback, pdfCacheUrl, createLogger } from '@fiscal-digital/engine'
 import type { Finding } from '@fiscal-digital/engine'
+
+const logger = createLogger('api')
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' }))
 const ALERTS_TABLE = process.env.ALERTS_TABLE ?? 'fiscal-digital-alerts-prod'
@@ -98,7 +100,7 @@ async function countGazettes(): Promise<number | null> {
     } while (exclusiveStartKey)
     return count
   } catch (err) {
-    console.error('[api] gazettes scan failed (degraded /stats)', err)
+    logger.error('gazettes scan failed (degraded /stats)', { err })
     return null
   }
 }
@@ -450,7 +452,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
 
     return { statusCode: 404, body: JSON.stringify({ error: 'Not found' }), headers: { 'Content-Type': 'application/json' } }
   } catch (err) {
-    console.error('[api] error', err)
+    logger.error('unhandled error', { err })
     return { statusCode: 500, body: JSON.stringify({ error: 'Internal server error' }), headers: { 'Content-Type': 'application/json' } }
   }
 }

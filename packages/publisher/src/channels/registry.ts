@@ -1,3 +1,6 @@
+﻿import { createLogger } from '@fiscal-digital/engine'
+
+const logger = createLogger('publisher')
 import type { PublishChannel } from './types'
 import { XChannel } from './x'
 import { RedditChannel } from './reddit'
@@ -20,7 +23,7 @@ export function loadEnabledChannels(): PublishChannel[] {
   if (process.env.REDDIT_ENABLED === 'true') channels.push(new RedditChannel())
 
   if (channels.length === 0) {
-    console.warn(
+    logger.warn(
       '[registry] nenhum canal habilitado — publisher vai consumir SQS sem publicar (defina X_ENABLED/REDDIT_ENABLED=true)',
     )
   }
