@@ -224,6 +224,18 @@ Razão: dados de teste em prod poluem feeds RSS, API pública, métricas. Site/l
 - **Alertas:** confidence >= 0.70 + riskScore >= 60 para publicar
 - **Linguagem dos alertas:** factual — "identificamos", "o documento aponta" — nunca acusatório
 
+### Regras de engenharia aprendidas em produção (LRN promoted)
+
+- **DynamoDB GSI keys — nunca `?? null`:** campos que são `hash_key` ou `range_key` de GSI devem ser omitidos quando ausentes, nunca setados para `null`. Usar `...(value && { field: value })`. `null` causa `ValidationException` em prod que passa silenciosamente em unit tests. *(LRN-20260502-019)*
+
+- **AWS quotas — verificar ANTES de propor infra:** antes de qualquer `reserved_concurrent_executions`, throughput DynamoDB ou throttle de API, rodar o check real: `aws lambda get-account-settings`, `aws dynamodb describe-limits`, etc. Contas novas podem ter `ConcurrentExecutions = 10` em vez de 1.000. Propor sem verificar = CI quebra em prod. *(LRN-20260503-020)*
+
+- **Cache engine — LLM-derived vs local-derived:** cache armazena apenas campos derivados de LLM (caros). Campos derivados de regex/parsing local (grátis, determinísticos) são **sempre recomputados** no cache hit — nunca cacheados. Omitir o merge causa `undefined` em campos obrigatórios silenciosamente em prod. Pattern correto: `data: { ...extractAll(text), ...cached.llmEntities }`. *(LRN-20260502-021)*
+
+- **`node -e` com backticks em bash — proibido:** bash interpreta backticks dentro de strings como substituição de comando, corrompendo o output silenciosamente (exit 0 falso positivo). Para scripts Node.js com conteúdo TypeScript/JS: usar `Write` para arquivo temp + `node arquivo.js`, ou PowerShell here-string `@'...'@`. *(LRN-20260503-021)*
+
+- **Lambda env vars — fail-fast obrigatório:** usar `requireEnv(key)` (em `packages/engine/src/env.ts`) em vez de `process.env.KEY!`. O `!` causa crash em runtime sem mensagem clara; `requireEnv` lança na inicialização com nome da variável faltante. *(Sprint 6 / TEC-ENG-001)*
+
 ## Convenção de Nomenclatura AWS
 
 `kebab-case` minúsculas em todos os recursos.
