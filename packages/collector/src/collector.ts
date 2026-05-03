@@ -2,7 +2,7 @@
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs'
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb'
+import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { queryDiario, extractAll, lookupMemory, saveMemory, pdfCacheS3Key, pdfCacheUrl, gazetteKey, requireEnv, createLogger } from '@fiscal-digital/engine'
 import type { CollectorMessage } from '@fiscal-digital/engine'
 
@@ -230,11 +230,26 @@ async function markQueued(
       Item: item,
       ConditionExpression: 'attribute_not_exists(pk)',
     }))
-    return true
   } catch (err) {
     if ((err as { name?: string })?.name === 'ConditionalCheckFailedException') {
       return false
     }
     throw err
   }
+  // WIN-API-003: incrementa counter agregado para `/stats.totalGazettesProcessed`
+  // (substitui scan de 23 MB na API). UpdateItem ADD é atômico em DDB; failure
+  // aqui não desfaz o Put — counter pode defasar mas auto-corrige na próxima
+  // execução do migration script.
+  try {
+    await ddb.send(new UpdateCommand({
+      TableName: GAZETTES_TABLE,
+      Key: { pk: 'AGG#GAZETTE_COUNT' },
+      UpdateExpression: 'ADD #t :one SET updatedAt = :ts',
+      ExpressionAttributeNames: { '#t': 'total' },
+      ExpressionAttributeValues: { ':one': 1, ':ts': new Date().toISOString() },
+    }))
+  } catch (err) {
+    logger.warn('counter increment failed', { err: (err as Error).message })
+  }
+  return true
 }
