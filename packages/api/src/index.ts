@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb'
+import { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
 import { S3Client, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda'
 import crypto from 'node:crypto'
@@ -36,6 +36,36 @@ const COST_HAIKU_PER_CALL_BRL = 0.004158
 // pega todos os itens que casam (DynamoDB retorna em chunks de 1MB) e
 // agrega no servidor. Para ~5k findings é OK; depois disso, migrar para
 // GSI cursor.
+// WIN-API-001: Query GSI1-city-date quando filtro tem city/state.
+// Substitui scan da tabela inteira (3,5 MB) por leitura proporcional ao
+// tamanho da cidade. Caxias 194 items × ~1 KB = ~200 KB lidos em vez de
+// 3,5 MB. GSI1 tem projection ALL — não precisa fetch extra. Itens são
+// retornados em ordem DESC por createdAt naturalmente (ScanIndexForward=false).
+async function queryFindingsByCity(cityId: string, type?: string): Promise<Finding[]> {
+  const all: Finding[] = []
+  let exclusiveStartKey: Record<string, unknown> | undefined
+  do {
+    const out: { Items?: unknown[]; LastEvaluatedKey?: Record<string, unknown> } = await ddb.send(new QueryCommand({
+      TableName: ALERTS_TABLE,
+      IndexName: 'GSI1-city-date',
+      KeyConditionExpression: 'cityId = :cid',
+      ...(type && {
+        FilterExpression: '#type = :type',
+        ExpressionAttributeNames: { '#type': 'type' },
+      }),
+      ExpressionAttributeValues: {
+        ':cid': cityId,
+        ...(type && { ':type': type }),
+      },
+      ScanIndexForward: false,
+      ExclusiveStartKey: exclusiveStartKey,
+    }))
+    all.push(...((out.Items ?? []) as Finding[]))
+    exclusiveStartKey = out.LastEvaluatedKey
+  } while (exclusiveStartKey)
+  return all
+}
+
 async function fetchFindings(filters: {
   cityId?: string
   state?: string
@@ -46,27 +76,31 @@ async function fetchFindings(filters: {
     ? Object.values(CITIES).filter(c => c.uf === (filters.state ?? '').toUpperCase()).map(c => c.cityId)
     : filters.cityId ? [filters.cityId] : null
 
-  const all: Finding[] = []
-  let exclusiveStartKey: Record<string, unknown> | undefined
-  do {
-    const out: { Items?: unknown[]; LastEvaluatedKey?: Record<string, unknown> } = await ddb.send(new ScanCommand({
-      TableName: ALERTS_TABLE,
-      FilterExpression: cityIds
-        ? 'begins_with(pk, :prefix) AND cityId IN (' + cityIds.map((_, i) => `:cid${i}`).join(', ') + ')'
-        : filters.type
+  let all: Finding[] = []
+  if (cityIds && cityIds.length > 0) {
+    // WIN-API-001 path: 1+ Queries em GSI1-city-date.
+    const groups = await Promise.all(cityIds.map(id => queryFindingsByCity(id, filters.type)))
+    all = groups.flat()
+  } else {
+    // Fallback: sem filtro de cidade → scan (cobre /alerts global e /alerts?type=X).
+    let exclusiveStartKey: Record<string, unknown> | undefined
+    do {
+      const out: { Items?: unknown[]; LastEvaluatedKey?: Record<string, unknown> } = await ddb.send(new ScanCommand({
+        TableName: ALERTS_TABLE,
+        FilterExpression: filters.type
           ? 'begins_with(pk, :prefix) AND #type = :type'
           : 'begins_with(pk, :prefix)',
-      ExpressionAttributeNames: filters.type && !cityIds ? { '#type': 'type' } : undefined,
-      ExpressionAttributeValues: {
-        ':prefix': 'FINDING#',
-        ...(cityIds && Object.fromEntries(cityIds.map((id, i) => [`:cid${i}`, id]))),
-        ...(filters.type && !cityIds ? { ':type': filters.type } : {}),
-      },
-      ExclusiveStartKey: exclusiveStartKey,
-    }))
-    all.push(...((out.Items ?? []) as Finding[]))
-    exclusiveStartKey = out.LastEvaluatedKey
-  } while (exclusiveStartKey)
+        ExpressionAttributeNames: filters.type ? { '#type': 'type' } : undefined,
+        ExpressionAttributeValues: {
+          ':prefix': 'FINDING#',
+          ...(filters.type ? { ':type': filters.type } : {}),
+        },
+        ExclusiveStartKey: exclusiveStartKey,
+      }))
+      all.push(...((out.Items ?? []) as Finding[]))
+      exclusiveStartKey = out.LastEvaluatedKey
+    } while (exclusiveStartKey)
+  }
 
   // Gate de publicação: CLAUDE.md exige riskScore >= 60 E confidence >= 0.70.
   // Findings que ficam abaixo desses thresholds não vão para feed/home/RSS —
