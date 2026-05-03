@@ -3,6 +3,7 @@ import { saveMemory } from '../skills/save_memory'
 import { generateNarrative as defaultGenerateNarrative } from '../skills/generate_narrative'
 import { scoreRisk } from '../skills/score_risk'
 import type { Finding, RiskFactor } from '../types'
+import { gazetteKey } from '../utils/pdf_cache'
 import { LEI_14133_ART_75_I_LIMITE, LEI_14133_ART_75_II_LIMITE } from './legal-constants'
 import type { Fiscal, AnalisarInput, FiscalContext } from './types'
 
@@ -128,7 +129,7 @@ export const fiscalLicitacoes: Fiscal = {
         createdAt: now.toISOString(),
       }
 
-      const dispensaPk = `DISPENSA#${gazette.id}#${cnpj ?? 'NOCNPJ'}#${valor}`
+      const dispensaPk = `DISPENSA#${gazetteKey(gazette.url) ?? gazette.id}#${cnpj ?? 'NOCNPJ'}#${valor}`
 
       const saveMemoryFn = context.saveMemory ?? saveMemory
       await saveMemoryFn.execute({

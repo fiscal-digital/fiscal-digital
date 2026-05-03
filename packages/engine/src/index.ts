@@ -11,7 +11,7 @@ export { validateCNPJ } from './skills/validate_cnpj'
 export { checkSanctions } from './skills/check_sanctions'
 export { scoreRisk } from './skills/score_risk'
 export { generateNarrative } from './skills/generate_narrative'
-export { pdfCacheUrl, pdfCacheS3Key, GAZETTES_CDN_HOST } from './utils/pdf_cache'
+export { pdfCacheUrl, pdfCacheS3Key, gazetteKey, GAZETTES_CDN_HOST } from './utils/pdf_cache'
 
 export type { QueryDiarioInput } from './skills/query_diario'
 export type { ExtractEntitiesInput } from './skills/extract_entities'

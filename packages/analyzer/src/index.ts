@@ -17,6 +17,7 @@ import {
   createCachedExtractEntities,
   saveMemory,
   generateNarrative,
+  gazetteKey,
   requireEnv,
   createLogger,
 } from '@fiscal-digital/engine'
@@ -157,7 +158,12 @@ async function markFiscalProcessed(gazetteId: string, fiscalIds: string[]): Prom
 
 async function persistFinding(finding: Finding): Promise<void> {
   const createdAt = finding.createdAt ?? new Date().toISOString()
-  const pk = `FINDING#${finding.fiscalId}#${finding.cityId}#${finding.type}#${createdAt}`
+  // Idempotência: pk derivado da gazette de origem (não do timestamp).
+  // Reprocessamento da mesma gazette sobrescreve o finding em vez de criar
+  // duplicata. Fallback para createdAt se evidence ausente (LRN-20260503-022).
+  const sourceUrl = finding.evidence?.[0]?.source
+  const stableKey = sourceUrl ? gazetteKey(sourceUrl) : null
+  const pk = `FINDING#${finding.fiscalId}#${finding.cityId}#${finding.type}#${stableKey ?? createdAt}`
   // Hydrate id so publisher can use it for deduplication
   finding.id = pk
   finding.createdAt = createdAt

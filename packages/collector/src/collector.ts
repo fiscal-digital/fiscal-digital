@@ -2,8 +2,8 @@
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs'
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import { queryDiario, extractAll, lookupMemory, saveMemory, pdfCacheS3Key, pdfCacheUrl, requireEnv, createLogger } from '@fiscal-digital/engine'
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb'
+import { queryDiario, extractAll, lookupMemory, saveMemory, pdfCacheS3Key, pdfCacheUrl, gazetteKey, requireEnv, createLogger } from '@fiscal-digital/engine'
 import type { CollectorMessage } from '@fiscal-digital/engine'
 
 const sqs = new SQSClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
@@ -56,7 +56,15 @@ export async function runCollector(config: CollectorConfig): Promise<{ processed
 
     for (const gazette of gazettes) {
       processed++
-      if (await isAlreadyQueued(gazette.id)) continue
+      // Idempotência por URL canônica, NÃO por `gazette.id` do QD.
+      // O QD pode retornar a mesma URL com `gazette.id` distintos em queries
+      // diferentes — usar o id como chave gerava reprocessamento (LRN-20260503-022).
+      const key = gazetteKey(gazette.url)
+      if (!key) {
+        logger.warn('url inválida — skip', { url: gazette.url, id: gazette.id })
+        continue
+      }
+      if (await isAlreadyQueued(key)) continue
 
       const text = gazette.excerpts.join('\n')
       const entities = extractAll(text)
@@ -81,8 +89,9 @@ export async function runCollector(config: CollectorConfig): Promise<{ processed
         },
       }))
 
-      await markQueued(gazette.id, gazette.url, gazette.date, cachedPdfUrl)
-      sent++
+      const queued = await markQueued(key, gazette.url, gazette.date, cachedPdfUrl, gazette.id)
+      if (queued) sent++
+      else processed-- // já existia (race) — não conta como processado novo
     }
 
     offset += pageSize
@@ -190,39 +199,42 @@ async function getLastDate(territory_id: string): Promise<string> {
   return d.toISOString().split('T')[0]
 }
 
-async function isAlreadyQueued(gazetteId: string): Promise<boolean> {
-  const { data } = await lookupMemory.execute({ pk: `GAZETTE#${gazetteId}`, table: GAZETTES_TABLE })
+async function isAlreadyQueued(key: string): Promise<boolean> {
+  const { data } = await lookupMemory.execute({ pk: `GAZETTE#${key}`, table: GAZETTES_TABLE })
   return data !== null
 }
 
-async function markQueued(gazetteId: string, url: string, date: string, cachedPdfUrl: string | null): Promise<void> {
-  // Usar UpdateItem para poder setar cachedPdfUrl opcionalmente sem sobrescrever campos existentes
-  const baseItem: Record<string, unknown> = { url, date, status: 'queued', queuedAt: new Date().toISOString() }
+// Race-safe: usa ConditionExpression `attribute_not_exists(pk)` para evitar
+// que duas Lambdas concorrentes escrevam a mesma gazette. Retorna `true` se
+// a entry foi criada nesta chamada; `false` se já existia.
+async function markQueued(
+  key: string,
+  url: string,
+  date: string,
+  cachedPdfUrl: string | null,
+  gazetteId: string,
+): Promise<boolean> {
+  const item: Record<string, unknown> = {
+    pk: `GAZETTE#${key}`,
+    url,
+    date,
+    gazetteId, // mantém o id original do QD como atributo (auditoria/debug)
+    status: 'queued',
+    queuedAt: new Date().toISOString(),
+    ...(cachedPdfUrl != null && { cachedPdfUrl }),
+  }
 
-  if (cachedPdfUrl != null) {
-    // UpdateItem com cachedPdfUrl
-    await ddb.send(new UpdateCommand({
+  try {
+    await ddb.send(new PutCommand({
       TableName: GAZETTES_TABLE,
-      Key: { pk: `GAZETTE#${gazetteId}` },
-      UpdateExpression: 'SET #url = :url, #date = :date, #status = :status, queuedAt = :queuedAt, cachedPdfUrl = :cachedPdfUrl',
-      ExpressionAttributeNames: {
-        '#url': 'url',
-        '#date': 'date',
-        '#status': 'status',
-      },
-      ExpressionAttributeValues: {
-        ':url': url,
-        ':date': date,
-        ':status': 'queued',
-        ':queuedAt': new Date().toISOString(),
-        ':cachedPdfUrl': cachedPdfUrl,
-      },
+      Item: item,
+      ConditionExpression: 'attribute_not_exists(pk)',
     }))
-  } else {
-    await saveMemory.execute({
-      pk: `GAZETTE#${gazetteId}`,
-      table: GAZETTES_TABLE,
-      item: baseItem,
-    })
+    return true
+  } catch (err) {
+    if ((err as { name?: string })?.name === 'ConditionalCheckFailedException') {
+      return false
+    }
+    throw err
   }
 }
