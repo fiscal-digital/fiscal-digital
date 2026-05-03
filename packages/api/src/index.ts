@@ -249,6 +249,59 @@ function buildCities(findings: Finding[]): CityResponse[] {
   })
 }
 
+// WIN-API-002: 1 Query por cidade em GSI1-city-date com projeção mínima.
+// Substitui scan da tabela inteira (3,5 MB) por leituras proporcionais a cada
+// cidade. Lê apenas os campos necessários para o gate (riskScore, confidence,
+// type) + agregação (createdAt). Total < 200 KB para o conjunto das 50 cidades.
+async function countFindingsByCity(cityId: string): Promise<{ count: number; last: string | null }> {
+  let count = 0
+  let last: string | null = null
+  let exclusiveStartKey: Record<string, unknown> | undefined
+  do {
+    const out: { Items?: unknown[]; LastEvaluatedKey?: Record<string, unknown> } = await ddb.send(new QueryCommand({
+      TableName: ALERTS_TABLE,
+      IndexName: 'GSI1-city-date',
+      KeyConditionExpression: 'cityId = :cid',
+      // Aplicar gate na própria Query (FilterExpression) — items abaixo do gate
+      // não retornam, mas WCU é cobrado como se tivessem retornado. Aceito —
+      // ainda 70× menos dados que scan.
+      FilterExpression: '#type <> :empty AND riskScore >= :r AND confidence >= :c',
+      ExpressionAttributeNames: { '#type': 'type' },
+      ExpressionAttributeValues: {
+        ':cid': cityId,
+        ':empty': '',
+        ':r': 60,
+        ':c': 0.70,
+      },
+      ProjectionExpression: 'createdAt',
+      ScanIndexForward: false,
+      ExclusiveStartKey: exclusiveStartKey,
+    }))
+    const items = (out.Items ?? []) as Array<{ createdAt?: string }>
+    count += items.length
+    for (const it of items) {
+      const ts = it.createdAt
+      if (ts && (!last || ts.localeCompare(last) > 0)) last = ts
+    }
+    exclusiveStartKey = out.LastEvaluatedKey
+  } while (exclusiveStartKey)
+  return { count, last }
+}
+
+async function buildCitiesFromQueries(): Promise<CityResponse[]> {
+  const cities = Object.values(CITIES)
+  const stats = await Promise.all(cities.map(c => countFindingsByCity(c.cityId)))
+  return cities.map((c, i) => ({
+    cityId: c.cityId,
+    name: c.name,
+    slug: c.slug,
+    uf: c.uf,
+    active: c.active,
+    findingsCount: stats[i].count,
+    lastFindingAt: stats[i].last,
+  }))
+}
+
 // ── City stats (UH-API-001) ─────────────────────────────────────────────────
 //
 // Retorna métricas por cidade: gazettes processadas + findings publicáveis +
@@ -679,13 +732,11 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     if (path === '/cities' || path === '/cities/') {
-      // Aplicar o mesmo gate de publicação que /alerts usa, para consistência.
-      // Antes: /cities mostrava TODOS findings (incluindo os abaixo do gate),
-      // dando números maiores que /alerts. Caxias mostrava 311 aqui mas só
-      // 192 passavam o gate — confundia usuário.
-      const findings = (await scanAllFindings())
-        .filter(f => f.type && f.riskScore >= 60 && (f.confidence ?? 0) >= 0.70)
-      const cities = buildCities(findings)
+      // WIN-API-002: 50 Queries paralelas em GSI1-city-date com projeção
+      // mínima e gate na própria Query. Substitui scan completo da tabela
+      // (3,5 MB → ~150 KB total). Mantém consistência com /alerts (mesmo
+      // gate de publicação).
+      const cities = await buildCitiesFromQueries()
       return ok(JSON.stringify(cities, null, 2), 'application/json; charset=UTF-8', 300)
     }
 
