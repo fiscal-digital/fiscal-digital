@@ -96,26 +96,23 @@ async function scanAllFindings(): Promise<Finding[]> {
   return all
 }
 
-// Scan COUNT em gazettes-prod — apenas Count, sem trazer items (econômico).
-// Se a Lambda não tiver permissão, retorna null e /stats degrada graciosamente.
+// WIN-API-003: counter agregado em `gazettes-prod#AGG#GAZETTE_COUNT`.
+// Substitui scan paginado de 23 MB (46k items × ~500 B). O collector incrementa
+// atomicamente via `UpdateItem ADD` em cada `markQueued` bem-sucedido.
+// Fallback para `null` se item não existir — `/stats` mostra `null` em vez de
+// crashar (compatível com tipo atual `totalGazettesProcessed: number | null`).
 async function countGazettes(): Promise<number | null> {
   try {
-    let count = 0
-    let exclusiveStartKey: Record<string, unknown> | undefined
-    do {
-      const out: { Count?: number; LastEvaluatedKey?: Record<string, unknown> } = await ddb.send(new ScanCommand({
-        TableName: GAZETTES_TABLE,
-        Select: 'COUNT',
-        FilterExpression: 'begins_with(pk, :prefix)',
-        ExpressionAttributeValues: { ':prefix': 'GAZETTE#' },
-        ExclusiveStartKey: exclusiveStartKey,
-      }))
-      count += out.Count ?? 0
-      exclusiveStartKey = out.LastEvaluatedKey
-    } while (exclusiveStartKey)
-    return count
+    const out = await ddb.send(new GetCommand({
+      TableName: GAZETTES_TABLE,
+      Key: { pk: 'AGG#GAZETTE_COUNT' },
+      ProjectionExpression: '#t',
+      ExpressionAttributeNames: { '#t': 'total' },
+    }))
+    const total = (out.Item as { total?: number } | undefined)?.total
+    return typeof total === 'number' ? total : null
   } catch (err) {
-    logger.error('gazettes scan failed (degraded /stats)', { err })
+    logger.error('gazettes counter read failed (degraded /stats)', { err })
     return null
   }
 }
