@@ -1,5 +1,11 @@
 data "aws_caller_identity" "current" {}
 
+# ─── KMS key (data lookup — alias criado pelo módulo kms) ───────────────────
+
+data "aws_kms_key" "main" {
+  key_id = "alias/fiscal-digital-kms-prod"
+}
+
 # ─── ACM Certificate (must be us-east-1 for CloudFront) ─────────────────────
 
 resource "aws_acm_certificate" "web" {
@@ -38,7 +44,7 @@ resource "aws_acm_certificate_validation" "web" {
   }
 }
 
-# ─── S3 bucket (origem privada para CloudFront) ──────────────────────────────
+# ─── S3 bucket (assets estáticos + ISR cache) ────────────────────────────────
 
 resource "aws_s3_bucket" "web" {
   bucket = "fiscal-digital-web-prod"
@@ -61,35 +67,340 @@ resource "aws_cloudfront_origin_access_control" "web" {
   signing_protocol                  = "sigv4"
 }
 
-# ─── CloudFront distribution ─────────────────────────────────────────────────
+# ─── IAM Role — Lambda ISR ───────────────────────────────────────────────────
 
-# Redirect /pt → /pt-br (BCP 47 explícito) — preserva backlinks antigos.
+data "aws_iam_policy_document" "web_isr_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "web_isr" {
+  name               = "fiscal-digital-web-isr-prod-role"
+  assume_role_policy = data.aws_iam_policy_document.web_isr_assume.json
+}
+
+data "aws_iam_policy_document" "web_isr_policy" {
+  # CloudWatch Logs
+  statement {
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = ["arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/fiscal-digital-web-isr*"]
+  }
+
+  # S3 — bucket de assets/cache (read + write para ISR)
+  statement {
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:ListBucket",
+    ]
+    resources = [
+      aws_s3_bucket.web.arn,
+      "${aws_s3_bucket.web.arn}/*",
+    ]
+  }
+
+  # SQS — enfileirar revalidações
+  statement {
+    actions = [
+      "sqs:SendMessage",
+      "sqs:GetQueueAttributes",
+    ]
+    resources = [aws_sqs_queue.web_isr_revalidate.arn]
+  }
+
+  # DynamoDB — tag table ISR
+  statement {
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+    ]
+    resources = [
+      aws_dynamodb_table.web_isr_tags.arn,
+      "${aws_dynamodb_table.web_isr_tags.arn}/index/*",
+    ]
+  }
+
+  # KMS — decrypt/encrypt para S3 SSE
+  statement {
+    actions = [
+      "kms:GenerateDataKey",
+      "kms:Decrypt",
+    ]
+    resources = [data.aws_kms_key.main.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "web_isr" {
+  name   = "fiscal-digital-web-isr-prod-policy"
+  role   = aws_iam_role.web_isr.id
+  policy = data.aws_iam_policy_document.web_isr_policy.json
+}
+
+# IAM role para revalidation worker (consome SQS + acessa DDB + S3)
+resource "aws_iam_role" "web_isr_revalidate" {
+  name               = "fiscal-digital-web-isr-revalidate-prod-role"
+  assume_role_policy = data.aws_iam_policy_document.web_isr_assume.json
+}
+
+data "aws_iam_policy_document" "web_isr_revalidate_policy" {
+  # CloudWatch Logs
+  statement {
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = ["arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/fiscal-digital-web-isr*"]
+  }
+
+  # SQS — consumir fila de revalidação
+  statement {
+    actions = [
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes",
+    ]
+    resources = [aws_sqs_queue.web_isr_revalidate.arn]
+  }
+
+  # S3 — escrever cache invalidado
+  statement {
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:ListBucket",
+    ]
+    resources = [
+      aws_s3_bucket.web.arn,
+      "${aws_s3_bucket.web.arn}/*",
+    ]
+  }
+
+  # DynamoDB — tag table ISR
+  statement {
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+    ]
+    resources = [
+      aws_dynamodb_table.web_isr_tags.arn,
+      "${aws_dynamodb_table.web_isr_tags.arn}/index/*",
+    ]
+  }
+
+  # KMS
+  statement {
+    actions = [
+      "kms:GenerateDataKey",
+      "kms:Decrypt",
+    ]
+    resources = [data.aws_kms_key.main.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "web_isr_revalidate" {
+  name   = "fiscal-digital-web-isr-revalidate-prod-policy"
+  role   = aws_iam_role.web_isr_revalidate.id
+  policy = data.aws_iam_policy_document.web_isr_revalidate_policy.json
+}
+
+# ─── SQS — Revalidation queue + DLQ ─────────────────────────────────────────
+
+resource "aws_sqs_queue" "web_isr_revalidate_dlq" {
+  name                       = "fiscal-digital-web-isr-revalidate-dlq-prod"
+  visibility_timeout_seconds = 60
+  kms_master_key_id          = data.aws_kms_key.main.arn
+}
+
+resource "aws_sqs_queue" "web_isr_revalidate" {
+  name                       = "fiscal-digital-web-isr-revalidate-prod"
+  visibility_timeout_seconds = 35 # >= Lambda timeout (30s) + 5s buffer
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.web_isr_revalidate_dlq.arn
+    maxReceiveCount     = 3
+  })
+
+  kms_master_key_id = data.aws_kms_key.main.arn
+}
+
+# ─── DynamoDB — ISR tag table ────────────────────────────────────────────────
+
+resource "aws_dynamodb_table" "web_isr_tags" {
+  name         = "fiscal-digital-web-isr-tags-prod"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "tag"
+  range_key    = "path"
+
+  attribute {
+    name = "tag"
+    type = "S"
+  }
+
+  attribute {
+    name = "path"
+    type = "S"
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = data.aws_kms_key.main.arn
+  }
+}
+
+# ─── Lambda placeholder zip (substituído pelo CI via update-function-code) ───
+
+data "archive_file" "web_isr_placeholder" {
+  type        = "zip"
+  output_path = "${path.module}/web-isr-placeholder.zip"
+  source {
+    content  = "exports.handler = async () => ({ statusCode: 200, body: 'placeholder - deploy pending' })"
+    filename = "index.js"
+  }
+}
+
+# ─── Lambda ISR — servidor Next.js ───────────────────────────────────────────
+
+resource "aws_lambda_function" "web_isr" {
+  function_name    = "fiscal-digital-web-isr-prod"
+  role             = aws_iam_role.web_isr.arn
+  handler          = "index.handler"
+  runtime          = "nodejs24.x"
+  timeout          = 30
+  memory_size      = 1024
+  filename         = var.lambda_isr_zip_path != "" ? var.lambda_isr_zip_path : data.archive_file.web_isr_placeholder.output_path
+  source_code_hash = var.lambda_isr_zip_path != "" ? filebase64sha256(var.lambda_isr_zip_path) : data.archive_file.web_isr_placeholder.output_base64sha256
+
+  environment {
+    variables = {
+      AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
+      NODE_OPTIONS                        = "--enable-source-maps"
+      NEXT_API_URL                        = var.api_url
+      CACHE_BUCKET_NAME                   = aws_s3_bucket.web.bucket
+      REVALIDATION_QUEUE_URL              = aws_sqs_queue.web_isr_revalidate.url
+      ISR_TAG_TABLE_NAME                  = aws_dynamodb_table.web_isr_tags.name
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
+  }
+}
+
+resource "aws_lambda_function_url" "web_isr" {
+  function_name      = aws_lambda_function.web_isr.function_name
+  authorization_type = "NONE"
+  invoke_mode        = "BUFFERED"
+
+  cors {
+    allow_credentials = false
+    allow_origins     = ["*"]
+    allow_methods     = ["GET", "HEAD", "OPTIONS"]
+    allow_headers     = ["*"]
+    max_age           = 3600
+  }
+}
+
+# ─── Lambda revalidation worker ──────────────────────────────────────────────
+
+resource "aws_lambda_function" "web_isr_revalidate" {
+  function_name    = "fiscal-digital-web-isr-revalidate-prod"
+  role             = aws_iam_role.web_isr_revalidate.arn
+  handler          = "index.handler"
+  runtime          = "nodejs24.x"
+  timeout          = 30
+  memory_size      = 256
+  filename         = var.lambda_revalidate_zip_path != "" ? var.lambda_revalidate_zip_path : data.archive_file.web_isr_placeholder.output_path
+  source_code_hash = var.lambda_revalidate_zip_path != "" ? filebase64sha256(var.lambda_revalidate_zip_path) : data.archive_file.web_isr_placeholder.output_base64sha256
+
+  environment {
+    variables = {
+      AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
+      NODE_OPTIONS                        = "--enable-source-maps"
+      CACHE_BUCKET_NAME                   = aws_s3_bucket.web.bucket
+      ISR_TAG_TABLE_NAME                  = aws_dynamodb_table.web_isr_tags.name
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
+  }
+}
+
+resource "aws_lambda_event_source_mapping" "web_isr_revalidate_sqs" {
+  event_source_arn = aws_sqs_queue.web_isr_revalidate.arn
+  function_name    = aws_lambda_function.web_isr_revalidate.arn
+  batch_size       = 5
+}
+
+# ─── CloudFront Function — redirect /pt → /pt-br ────────────────────────────
+
+# Passo (2) foi removido: Lambda ISR resolve subdir/trailing-slash internamente.
 resource "aws_cloudfront_function" "redirect_pt_to_pt_br" {
   name    = "fiscal-digital-redirect-pt-to-pt-br"
   runtime = "cloudfront-js-2.0"
-  comment = "301 /pt/* → /pt-br/* (BCP 47 explicit)"
+  comment = "301 /pt/* → /pt-br/* (BCP 47 explicit) — step 2 removed: Lambda ISR resolves subdirs"
   publish = true
   code    = file("${path.module}/redirect-pt-to-pt-br.js")
 }
 
-resource "aws_cloudfront_distribution" "web" {
-  enabled             = true
-  is_ipv6_enabled     = true
-  default_root_object = "index.html"
-  aliases             = ["fiscaldigital.org", "www.fiscaldigital.org"]
-  price_class         = "PriceClass_100"
-  comment             = "fiscal-digital-web-prod"
+# ─── CloudFront distribution ─────────────────────────────────────────────────
 
+locals {
+  # Extrai apenas o hostname da Function URL (sem https:// e sem trailing slash)
+  lambda_isr_domain = replace(replace(aws_lambda_function_url.web_isr.function_url, "https://", ""), "/", "")
+}
+
+resource "aws_cloudfront_distribution" "web" {
+  enabled         = true
+  is_ipv6_enabled = true
+  # Sem default_root_object — Lambda ISR serve "/" diretamente
+  aliases     = ["fiscaldigital.org", "www.fiscaldigital.org"]
+  price_class = "PriceClass_100"
+  comment     = "fiscal-digital-web-prod"
+
+  # Origin 1 — S3 assets estáticos (hashed, immutable)
   origin {
     domain_name              = aws_s3_bucket.web.bucket_regional_domain_name
-    origin_id                = "s3-web"
+    origin_id                = "s3-assets"
     origin_access_control_id = aws_cloudfront_origin_access_control.web.id
   }
 
+  # Origin 2 — Lambda ISR (custom origin via Function URL)
+  origin {
+    domain_name = local.lambda_isr_domain
+    origin_id   = "lambda-isr"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  # Behavior padrão — Lambda ISR (respeita Cache-Control da Lambda)
   default_cache_behavior {
-    allowed_methods        = ["GET", "HEAD"]
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "s3-web"
+    target_origin_id       = "lambda-isr"
     viewer_protocol_policy = "redirect-to-https"
     compress               = true
 
@@ -99,29 +410,81 @@ resource "aws_cloudfront_distribution" "web" {
     }
 
     forwarded_values {
-      query_string = false
+      query_string = true
+      headers      = ["Host", "Accept-Encoding"]
       cookies { forward = "none" }
     }
 
     min_ttl     = 0
-    default_ttl = 300
-    max_ttl     = 3600
+    default_ttl = 0 # Lambda ISR controla via Cache-Control
+    max_ttl     = 86400
   }
 
-  # Next.js static export gera 404.html — servir ele em vez da home.
-  # Antes: 404 → /index.html caía na home, mascarava bugs (ex: /pt-br/alertas/
-  # sem index.html servia HOME). Agora a CloudFront Function reescreve dirs
-  # para /index.html e 404 real cai em 404.html.
+  # Behavior /_next/static/* — S3, TTL 1 ano (immutable hashed assets)
+  ordered_cache_behavior {
+    path_pattern           = "/_next/static/*"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "s3-assets"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
+    forwarded_values {
+      query_string = false
+      cookies { forward = "none" }
+    }
+
+    min_ttl     = 31536000
+    default_ttl = 31536000
+    max_ttl     = 31536000
+  }
+
+  # Behavior /_next/data/* — Lambda ISR (JSON data routes do Next.js)
+  ordered_cache_behavior {
+    path_pattern           = "/_next/data/*"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "lambda-isr"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Host"]
+      cookies { forward = "none" }
+    }
+
+    min_ttl     = 0
+    default_ttl = 0
+    max_ttl     = 86400
+  }
+
+  # Behavior /_next/image* — Lambda ISR (unoptimized:true, mas roteia certo)
+  ordered_cache_behavior {
+    path_pattern           = "/_next/image*"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "lambda-isr"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Host"]
+      cookies { forward = "none" }
+    }
+
+    min_ttl     = 0
+    default_ttl = 3600
+    max_ttl     = 86400
+  }
+
+  # 404 real da Lambda ISR → sem custom_error_response (Lambda gera a página)
+  # Mantido apenas 403 do S3 (acesso negado a objeto não-existente no behavior s3-assets)
   custom_error_response {
     error_code         = 403
     response_code      = 404
-    response_page_path = "/404.html"
-  }
-
-  custom_error_response {
-    error_code         = 404
-    response_code      = 404
-    response_page_path = "/404.html"
+    response_page_path = "/404"
   }
 
   restrictions {
