@@ -39,6 +39,8 @@ export const handler = async (event: SQSEvent): Promise<void> => {
   })
 
   for (const record of event.Records) {
+    const gazetteId = record.messageAttributes?.['gazetteId']?.stringValue ?? 'unknown'
+    logger.appendKeys({ gazetteId })
     let finding: Finding
     try {
       finding = JSON.parse(record.body) as Finding
@@ -47,6 +49,7 @@ export const handler = async (event: SQSEvent): Promise<void> => {
         messageId: record.messageId,
         err,
       })
+      logger.removeKeys(['gazetteId'])
       continue
     }
 
