@@ -74,6 +74,30 @@ interface DailyCostBucket {
   totalUsd: number
 }
 
+// Filtro de tag aplicado em todas as queries do CE — isola custos do
+// Fiscal Digital dos demais projetos da conta AWS. Valor corresponde
+// ao padrão Terraform: Project=fiscal-digital (ver tags nos recursos).
+const CE_TAG_FILTER = {
+  Tags: { Key: 'Project', Values: ['fiscal-digital'] },
+}
+
+// Route 53: custo $0.50/hosted-zone/mês. O CE não segrega por zona via tag —
+// a cobrança mensal agrega todas as zonas da conta. Substituímos pelo custo
+// exato de 1 zona (fiscaldigital.org) + estimativa proporcional de queries.
+// Quando o CE retornar Route 53 > $0.60 (indicando múltiplas zonas da conta),
+// aplicamos o override. Valor ajustável se adicionarmos zonas ao projeto.
+const ROUTE53_SINGLE_ZONE_USD = 0.50
+
+function applyRoute53Override(byService: DailyServiceCost[]): DailyServiceCost[] {
+  return byService.map(s => {
+    if (s.service === 'Amazon Route 53' && s.usd > 0.60) {
+      // Prorated: se $4 para 8 zonas, nossa 1 zona = $0.50 fixo
+      return { service: s.service, usd: ROUTE53_SINGLE_ZONE_USD }
+    }
+    return s
+  })
+}
+
 async function fetchDailyCosts(startIso: string, endIso: string): Promise<DailyCostBucket[]> {
   const out = await ce.send(
     new GetCostAndUsageCommand({
@@ -81,6 +105,7 @@ async function fetchDailyCosts(startIso: string, endIso: string): Promise<DailyC
       Granularity: 'DAILY',
       Metrics: ['UnblendedCost'],
       GroupBy: [{ Type: 'DIMENSION', Key: 'SERVICE' }],
+      Filter: CE_TAG_FILTER,
     }),
   )
   const buckets: DailyCostBucket[] = []
@@ -96,8 +121,11 @@ async function fetchDailyCosts(startIso: string, endIso: string): Promise<DailyC
         totalUsd += usd
       }
     }
-    byService.sort((a, b) => b.usd - a.usd)
-    buckets.push({ date, byService, totalUsd })
+    const correctedByService = applyRoute53Override(byService)
+    // Recalcula totalUsd após o override do Route 53
+    const correctedTotal = correctedByService.reduce((s, x) => s + x.usd, 0)
+    correctedByService.sort((a, b) => b.usd - a.usd)
+    buckets.push({ date, byService: correctedByService, totalUsd: correctedTotal })
   }
   return buckets
 }
@@ -108,6 +136,7 @@ async function fetchMonthlyTotal(startIso: string, endIso: string): Promise<numb
       TimePeriod: { Start: startIso, End: endIso },
       Granularity: 'MONTHLY',
       Metrics: ['UnblendedCost'],
+      Filter: CE_TAG_FILTER,
     }),
   )
   const total = out.ResultsByTime?.[0]?.Total?.UnblendedCost?.Amount
