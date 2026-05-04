@@ -158,8 +158,15 @@ async function fetchMonthlyTotal(startIso: string, endIso: string): Promise<numb
       Filter: CE_TAG_FILTER,
     }),
   )
-  const total = out.ResultsByTime?.[0]?.Total?.UnblendedCost?.Amount
-  return total ? Number.parseFloat(total) : 0
+  // CE devolve uma entrada por mês dentro do intervalo. Para janelas
+  // multi-mês (ex: lifetime de 2026-01 até hoje) é preciso somar TODAS
+  // as entradas — pegar só ResultsByTime[0] subnotificava o lifetime.
+  let total = 0
+  for (const result of out.ResultsByTime ?? []) {
+    const amount = result.Total?.UnblendedCost?.Amount
+    if (amount) total += Number.parseFloat(amount)
+  }
+  return total
 }
 
 // ---------------------------------------------------------------------------
