@@ -375,6 +375,18 @@ resource "aws_lambda_event_source_mapping" "web_isr_revalidate_sqs" {
   batch_size       = 5
 }
 
+# ─── CloudFront Function — DEPRECATED ────────────────────────────────────────
+# Mantida apenas para permitir destroy em 2 fases (CloudFront não deixa
+# deletar função associada). Próximo terraform apply (após esta propagação
+# do remove de association) vai destruir o resource. NÃO associar a behaviors.
+resource "aws_cloudfront_function" "redirect_pt_br_to_pt" {
+  name    = "fiscal-digital-redirect-pt-br-to-pt"
+  runtime = "cloudfront-js-2.0"
+  comment = "DEPRECATED — pending destroy after CloudFront propagates removal of association"
+  publish = true
+  code    = file("${path.module}/redirect-pt-br-to-pt.js")
+}
+
 # ─── CloudFront distribution ─────────────────────────────────────────────────
 
 locals {
