@@ -355,6 +355,26 @@ Detecta: pagamento em final de semana / feriado sem justificativa, valor > limit
 Fonte: BrasilAPI feriados nacionais (com cache em memória)
 Base legal: Lei 8.112/90 Art. 58
 
+### Agentes operacionais (não fiscalizam município — fiscalizam o projeto)
+
+Categoria distinta dos 10 Fiscais. Estes agentes existem para sustentar o
+princípio de **verificabilidade pública aplicada também ao próprio Fiscal
+Digital** — não para detectar irregularidade municipal.
+
+**FiscalCustos** (entregue 2026-05-03 — UH-OPS-001)
+Lambda agendada (`fiscal-digital-costs-prod`, `cron(0 6 * * ? *)` UTC = 03:00 BRT)
+consulta `ce:GetCostAndUsage` com granularidade diária por serviço, converte
+USD→BRL via PTAX BCB SGS série 1 e persiste em `fiscal-digital-costs-prod`
+(DDB single-key — `COST#DAILY#{date}` / `COST#MONTHLY#{month}` / `COST#FX#{date}`).
+Endpoint público `GET /transparencia/costs?days=30` lê do DDB (não chama CE no
+request path — CE cobra US$ 0.01/call). Site expõe em `/transparencia/custos`
+com mtd, projeção linear, breakdown por serviço (donut SVG inline) e variação
+diária (sparkline SVG inline). Sinaliza variação amber se mês corrente
+desviar > 20% do anterior.
+
+Princípio: o mesmo padrão de verificabilidade que aplicamos a contratos
+públicos aplicamos aos nossos próprios custos.
+
 ---
 
 ## LLM — Extração e Análise
