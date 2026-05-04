@@ -262,6 +262,27 @@ async function persistMonthly(
   return item
 }
 
+// Calcula custos acumulados de domínio (GoDaddy fiscaldigital.org).
+// Comprado em 27/04/2026: R$ 64,99 (primeiro ano)
+// Renovação anual 27/04: +R$ 129,99
+function calculateDomainCostBrl(upToDate: Date): number {
+  const DOMAIN_PURCHASE_DATE = new Date(Date.UTC(2026, 3, 27)) // 27/04/2026
+  const FIRST_YEAR_COST = 64.99
+  const RENEWAL_COST = 129.99
+
+  if (upToDate < DOMAIN_PURCHASE_DATE) return 0
+
+  let total = FIRST_YEAR_COST
+  let nextRenewal = new Date(Date.UTC(2027, 3, 27)) // 27/04/2027
+
+  while (nextRenewal <= upToDate) {
+    total += RENEWAL_COST
+    nextRenewal = new Date(nextRenewal.getUTCFullYear() + 1, nextRenewal.getUTCMonth(), nextRenewal.getUTCDate())
+  }
+
+  return round(total, 2)
+}
+
 // Calcula e persiste total vitalício (lifetime).
 // Idempotente — atualiza o snapshot a cada execução diária.
 async function persistLifetimeTotal(ptaxBrl: number): Promise<LifetimeTotalSnapshot> {
@@ -271,7 +292,11 @@ async function persistLifetimeTotal(ptaxBrl: number): Promise<LifetimeTotalSnaps
   const now = new Date()
   const to = isoDate(addDays(now, 1)) // CE end é exclusivo
   const lifetimeUsd = await fetchMonthlyTotal(from, to)
-  const lifetimeBrl = round(lifetimeUsd * ptaxBrl, 4)
+  const awsCostsBrl = round(lifetimeUsd * ptaxBrl, 4)
+
+  // Somar custos externos (domínio).
+  const domainCostBrl = calculateDomainCostBrl(now)
+  const lifetimeBrl = round(awsCostsBrl + domainCostBrl, 2)
 
   const now_iso = new Date().toISOString()
   const now_month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
