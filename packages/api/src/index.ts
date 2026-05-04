@@ -809,6 +809,60 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       return ok(buildRss(findings, label, selfUrl), 'application/rss+xml; charset=UTF-8')
     }
 
+    // GET /alerts/{slug} — single finding por id base64url-encoded.
+    // Substitui o padrão antigo "fetch all + find" do site (que limitava a busca
+    // aos primeiros N resultados). GetItem O(1) por pk; gate de publicação aplicado.
+    if (path.startsWith('/alerts/') && path !== '/alerts/') {
+      // path: /alerts/{slug} ou /alerts/{slug}/
+      const slug = path.slice('/alerts/'.length).replace(/\/$/, '')
+      if (!slug) {
+        return { statusCode: 404, body: JSON.stringify({ error: 'missing_slug' }), headers: { 'Content-Type': 'application/json' } }
+      }
+      // Slug é base64url do `pk` (FINDING#fiscal#cityId#type#timestamp).
+      // Decode com tolerância — fallback `--` → `#` se não for base64.
+      let pk: string
+      try {
+        const padding = '=='.slice((slug.length + 2) % 4)
+        const b64 = slug.replace(/-/g, '+').replace(/_/g, '/') + padding
+        pk = Buffer.from(b64, 'base64').toString('utf-8')
+      } catch {
+        pk = slug.replace(/--/g, '#')
+      }
+      if (!pk.startsWith('FINDING#')) {
+        return { statusCode: 404, body: JSON.stringify({ error: 'invalid_finding_slug' }), headers: { 'Content-Type': 'application/json' } }
+      }
+      const out = await ddb.send(new GetCommand({
+        TableName: ALERTS_TABLE,
+        Key: { pk },
+      }))
+      const f = out.Item as Finding | undefined
+      // Gate de publicação — não expor findings abaixo do threshold via URL pública.
+      if (!f || !f.type || (f.riskScore ?? 0) < 60 || (f.confidence ?? 0) < 0.70) {
+        return { statusCode: 404, body: JSON.stringify({ error: 'finding_not_found' }), headers: { 'Content-Type': 'application/json' } }
+      }
+      const source = f.evidence?.[0]?.source
+      return ok(JSON.stringify({
+        id: f.id,
+        fiscalId: f.fiscalId,
+        type: f.type,
+        cityId: f.cityId,
+        city: getCityOrFallback(f.cityId).name,
+        state: getCityOrFallback(f.cityId).uf,
+        riskScore: f.riskScore,
+        confidence: f.confidence,
+        value: f.value,
+        cnpj: f.cnpj,
+        contractNumber: f.contractNumber,
+        secretaria: f.secretaria,
+        legalBasis: f.legalBasis,
+        narrative: f.narrative,
+        source,
+        cachedPdfUrl: pdfCacheUrl(source),
+        evidence: f.evidence,
+        createdAt: f.createdAt,
+      }), 'application/json; charset=UTF-8', 60)
+    }
+
     if (path === '/alerts' || path === '/alerts/') {
       const findings = await fetchFindings(filters)
       // pageInfo é GLOBAL (sobre o conjunto inteiro filtrado), itens são paginados.
@@ -942,6 +996,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         lastDeployedAt: BUILD_TIME,
         endpoints: [
           'GET /alerts',
+          'GET /alerts/{slug}',
           'GET /cities',
           'GET /cities/{cityId}/stats',
           'GET /stats',
