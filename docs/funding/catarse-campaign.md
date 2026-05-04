@@ -1,6 +1,6 @@
 # Campanha Catarse Recorrente — Fiscal Digital
 
-> Texto pronto para colar no formulário de submissão do Catarse.
+> **Link ativo:** https://www.catarse.me/fiscaldigitalbr
 > Modelo: campanha recorrente (mensalidade), não de meta única.
 > Inspiração: [catarse.me/queridodiario-okbr](https://www.catarse.me/queridodiario-okbr)
 

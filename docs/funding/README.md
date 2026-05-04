@@ -6,7 +6,7 @@ Dossiê de captação. Materiais bilíngues prontos para campanhas, grants, warm
 
 | Programa | Janela | Status | Próximo ciclo esperado |
 |---|---|---|---|
-| **Catarse Recorrente** | Sempre aberta | 🟢 aplicar agora | — |
+| **Catarse Recorrente** | Sempre aberta | ✅ [fiscaldigitalbr](https://www.catarse.me/fiscaldigitalbr) ao vivo | — |
 | **Apoia.se** | Sempre aberta | 🟢 aplicar agora (backup do Catarse) | — |
 | **GitHub Sponsors** | Sempre aberta | 🟡 FUNDING.yml commitado; Diego enrola via [github.com/sponsors/fiscal-digital](https://github.com/sponsors/fiscal-digital) | — |
 | **Open Collective (OSC)** | Sempre aberta | 🟢 elegível como projeto OSS | — |
@@ -87,6 +87,6 @@ Dossiê de captação. Materiais bilíngues prontos para campanhas, grants, warm
 | 2026-05-02 | Issue de apresentação OKFN Brasil QD [#1451](https://github.com/okfn-brasil/querido-diario/issues/1451) | ✅ aberta |
 | 2026-05-02 | `.github/FUNDING.yml` commitado | ✅ feito |
 | 2026-05-02 | Draft Mozilla 2027 criado + agente agendado (2027-03-01) | ✅ feito |
-| 2026-05-02 | Campanha Catarse draft criado | ⏳ Diego submete |
+| 2026-05-02 | Campanha Catarse draft criado | ✅ ao vivo em [fiscaldigitalbr](https://www.catarse.me/fiscaldigitalbr) |
 | 2026-05-02 | GitHub Sponsors enrollment | ⏳ Diego faz via web |
 | 2026-05-02 | Apoia.se perfil | ⏳ Diego cria |
