@@ -16,10 +16,10 @@ const REVALIDATE_TIMEOUT_MS = 5_000
  * - Timeout 5s — não bloqueia processamento de SQS
  *
  * Paths revalidados (PT + EN):
- * - /pt-br             (Home — métricas atualizam)
- * - /pt-br/alertas     (feed global)
- * - /pt-br/alertas/<id>  (página do finding)
- * - /pt-br/cidades/<slug>  (painel da cidade)
+ * - /pt             (Home — métricas atualizam)
+ * - /pt/alertas     (feed global)
+ * - /pt/alertas/<id>  (página do finding)
+ * - /pt/cidades/<slug>  (painel da cidade)
  * - /en + counterparts em EN
  */
 export async function notifyWebRevalidate(finding: Finding): Promise<void> {
@@ -38,8 +38,8 @@ export async function notifyWebRevalidate(finding: Finding): Promise<void> {
   const city = getCity(finding.cityId)
   const citySlug = city?.slug
 
-  const paths = ['/pt-br', '/pt-br/alertas', `/pt-br/alertas/${findingId}`]
-  if (citySlug) paths.push(`/pt-br/cidades/${citySlug}`)
+  const paths = ['/pt', '/pt/alertas', `/pt/alertas/${findingId}`]
+  if (citySlug) paths.push(`/pt/cidades/${citySlug}`)
   paths.push('/en', '/en/alertas', `/en/alertas/${findingId}`)
   if (citySlug) paths.push(`/en/cidades/${citySlug}`)
 

@@ -378,12 +378,12 @@ resource "aws_lambda_event_source_mapping" "web_isr_revalidate_sqs" {
 # ─── CloudFront Function — redirect /pt → /pt-br ────────────────────────────
 
 # Passo (2) foi removido: Lambda ISR resolve subdir/trailing-slash internamente.
-resource "aws_cloudfront_function" "redirect_pt_to_pt_br" {
-  name    = "fiscal-digital-redirect-pt-to-pt-br"
+resource "aws_cloudfront_function" "redirect_pt_br_to_pt" {
+  name    = "fiscal-digital-redirect-pt-br-to-pt"
   runtime = "cloudfront-js-2.0"
-  comment = "301 /pt/* → /pt-br/* (BCP 47 explicit) — step 2 removed: Lambda ISR resolves subdirs"
+  comment = "301 /pt-br/* → /pt/* — preserva backlinks Reddit/X pré-cutover PT-prefix"
   publish = true
-  code    = file("${path.module}/redirect-pt-to-pt-br.js")
+  code    = file("${path.module}/redirect-pt-br-to-pt.js")
 }
 
 # ─── CloudFront distribution ─────────────────────────────────────────────────
@@ -401,14 +401,15 @@ resource "aws_cloudfront_distribution" "web" {
   price_class = "PriceClass_100"
   comment     = "fiscal-digital-web-prod"
 
-  # Origin 1 — S3 assets estáticos
-  # Workflow CI sincroniza .open-next/assets/ para bucket root (mirror direto):
-  # /_next/static/...  /brand/...  /favicon.ico  etc — paths que o Next gera no HTML.
-  # Sem origin_path: behaviors mapeiam 1:1 do request URI pra S3 key.
+  # Origin 1 — S3 assets estáticos (LRN-20260503-029)
+  # CI workflow syncs .open-next/assets para s3://bucket/_next-static/.
+  # HTML do Next pede /_next/static/X → CloudFront mapeia (via origin_path) para
+  # s3://bucket/_next-static/_next/static/X. Sem origin_path: 404 em CSS/JS.
   origin {
     domain_name              = aws_s3_bucket.web.bucket_regional_domain_name
     origin_id                = "s3-assets"
     origin_access_control_id = aws_cloudfront_origin_access_control.web.id
+    origin_path              = "/_next-static"
   }
 
   # Origin 2 — Lambda ISR (custom origin via Function URL)
@@ -434,7 +435,7 @@ resource "aws_cloudfront_distribution" "web" {
 
     function_association {
       event_type   = "viewer-request"
-      function_arn = aws_cloudfront_function.redirect_pt_to_pt_br.arn
+      function_arn = aws_cloudfront_function.redirect_pt_br_to_pt.arn
     }
 
     forwarded_values {
