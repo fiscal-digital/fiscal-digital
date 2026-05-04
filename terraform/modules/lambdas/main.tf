@@ -131,7 +131,10 @@ resource "aws_lambda_function_url" "api" {
 
   cors {
     allow_origins = ["*"]
-    allow_methods = ["GET", "HEAD"]
+    # Wildcard "*" pelo limite de 6 chars/elemento (LRN-20260503-027).
+    # POST necessario para /newsletter; restricao anterior a ["GET","HEAD"]
+    # bloqueava navegador no preflight, impedindo coleta de e-mails.
+    allow_methods = ["*"]
     allow_headers = ["content-type"]
     max_age       = 86400
   }
