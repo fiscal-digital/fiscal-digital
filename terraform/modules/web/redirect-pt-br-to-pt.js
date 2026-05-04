@@ -1,20 +1,21 @@
-// CloudFront viewer-request function — responsabilidade única (pós-ISR):
+// CloudFront viewer-request function — responsabilidade única (pós-PT-prefix removal):
 //
-// 1. Redirect 301 /pt/* → /pt-br/* (BCP 47 explícito; preserva backlinks).
+// Redirect 301 /pt-br/* → /pt/* (preserva backlinks Reddit/X anteriores ao cutover).
 //
-// Passo (2) foi REMOVIDO em INF-WEB-001 (2026-05-03).
-// Antes: reescrevia URI de diretório → index.html para static export S3.
-// Agora: Lambda ISR (via @opennextjs/aws) resolve trailing-slash e subdir
-// internamente — reescrever aqui causaria double-rewrite e 404s na Lambda.
+// Histórico:
+// - INF-WEB-001 (2026-05-03): step 2 (rewrite de diretório → index.html) removido.
+//   Lambda ISR resolve trailing-slash internamente.
+// - PT-prefix removal (2026-05-04): direção do redirect INVERTIDA.
+//   Antes: /pt → /pt-br (BCP-47 explícito como locale)
+//   Agora: /pt-br → /pt (locale simplificado, alinhado com next-intl 4)
 function handler(event) {
   var request = event.request;
   var uri = request.uri;
 
-  // (1) Redirect /pt → /pt-br
-  var match = uri.match(/^\/pt(\/.*)?$/);
+  var match = uri.match(/^\/pt-br(\/.*)?$/);
   if (match) {
     var rest = match[1] || '';
-    var newUri = '/pt-br' + rest;
+    var newUri = '/pt' + rest;
     var qs = '';
     if (request.querystring && Object.keys(request.querystring).length > 0) {
       var parts = [];
