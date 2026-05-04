@@ -9,3 +9,7 @@ variable "collector_lambda_arn" {
 variable "collector_role_arn" {
   type = string
 }
+
+variable "costs_lambda_arn" {
+  type = string
+}

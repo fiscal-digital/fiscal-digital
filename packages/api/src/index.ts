@@ -15,6 +15,7 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env
 const ALERTS_TABLE = process.env.ALERTS_TABLE ?? 'fiscal-digital-alerts-prod'
 const GAZETTES_TABLE = process.env.GAZETTES_TABLE ?? 'fiscal-digital-gazettes-prod'
 const NEWSLETTER_TABLE = process.env.NEWSLETTER_TABLE ?? 'fiscal-digital-newsletter-prod'
+const COSTS_TABLE = process.env.COSTS_TABLE ?? 'fiscal-digital-costs-prod'
 const SITE_URL = 'https://fiscaldigital.org'
 const API_URL = process.env.API_URL ?? 'https://api.fiscaldigital.org'
 // Build timestamp injetado no bundle pelo deploy. Fallback = boot da Lambda.
@@ -615,6 +616,67 @@ async function handlePdfProxy(event: APIGatewayProxyEventV2): Promise<APIGateway
   }
 }
 
+// ── FiscalCustos — UH-OPS-001 ───────────────────────────────────────────────
+//
+// Lê snapshots persistidos pela Lambda fiscal-digital-costs-prod.
+// API NÃO chama Cost Explorer no request path (custo $0.01/call).
+// Tabela é PAY_PER_REQUEST single-key — Scan com prefix filter é cheap.
+
+interface CostDailyItem {
+  pk: string
+  date: string
+  totalUsd: number
+  totalBrl: number
+  byService: Array<{ service: string; usd: number; brl: number }>
+  ptaxBrl: number
+  capturedAt: string
+}
+
+interface CostMonthlyItem {
+  pk: string
+  month: string
+  mtdUsd: number
+  mtdBrl: number
+  projectedUsd: number
+  projectedBrl: number
+  prevMonthBrl: number | null
+  deltaPct: number | null
+  byService: Array<{ service: string; usd: number; brl: number }>
+  ptaxBrl: number
+  capturedAt: string
+}
+
+async function fetchCostsHistory(days: number): Promise<{
+  daily: CostDailyItem[]
+  monthly: CostMonthlyItem | null
+}> {
+  // Daily: scan prefix COST#DAILY# (no máx ~365 itens, payload kB).
+  const dailyOut = await ddb.send(new ScanCommand({
+    TableName: COSTS_TABLE,
+    FilterExpression: 'begins_with(pk, :p)',
+    ExpressionAttributeValues: { ':p': 'COST#DAILY#' },
+  }))
+  const allDaily = ((dailyOut.Items ?? []) as CostDailyItem[])
+    .filter(i => typeof i.date === 'string')
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  const cutoff = new Date()
+  cutoff.setUTCDate(cutoff.getUTCDate() - days)
+  const cutoffIso = cutoff.toISOString().slice(0, 10)
+  const daily = allDaily.filter(i => i.date >= cutoffIso)
+
+  // Monthly: pega mês corrente.
+  const now = new Date()
+  const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+  const monthlyOut = await ddb.send(new GetCommand({
+    TableName: COSTS_TABLE,
+    Key: { pk: `COST#MONTHLY#${monthKey}` },
+  }))
+  const monthly = (monthlyOut.Item as CostMonthlyItem | undefined) ?? null
+
+  return { daily, monthly }
+}
+
 // ── Lambda handler ──────────────────────────────────────────────────────────
 
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
@@ -740,6 +802,26 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       return ok(JSON.stringify(cities, null, 2), 'application/json; charset=UTF-8', 300)
     }
 
+    // /transparencia/costs?days=30 — UH-OPS-001 (FiscalCustos)
+    if (path === '/transparencia/costs' || path === '/transparencia/costs/') {
+      const days = Math.min(Math.max(parseInt(qs.days ?? '30', 10) || 30, 1), 365)
+      const { daily, monthly } = await fetchCostsHistory(days)
+      const updatedAt = monthly?.capturedAt ?? daily.at(-1)?.capturedAt ?? null
+      return ok(JSON.stringify({
+        currency: 'BRL',
+        days,
+        updatedAt,
+        monthly,
+        daily: daily.map(d => ({
+          date: d.date,
+          totalBrl: d.totalBrl,
+          totalUsd: d.totalUsd,
+          byService: d.byService,
+          ptaxBrl: d.ptaxBrl,
+        })),
+      }, null, 2), 'application/json; charset=UTF-8', 600)
+    }
+
     // /cities/{cityId}/stats — UH-API-001 (Sprint 6)
     const cityStatsMatch = path.match(/^\/cities\/(\d+)\/stats\/?$/)
     if (cityStatsMatch) {
@@ -768,6 +850,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
           'GET /stats',
           'GET /rss',
           'GET /pdf?source=...',
+          'GET /transparencia/costs?days=30',
           'POST /newsletter',
           'GET /health',
         ],

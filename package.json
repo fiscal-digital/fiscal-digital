@@ -6,7 +6,8 @@
     "packages/collector",
     "packages/analyzer",
     "packages/publisher",
-    "packages/api"
+    "packages/api",
+    "packages/costs"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
