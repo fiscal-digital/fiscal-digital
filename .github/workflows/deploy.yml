@@ -33,10 +33,11 @@ jobs:
           npm run bundle --workspace=packages/analyzer
           npm run bundle --workspace=packages/publisher
           npm run bundle --workspace=packages/api
+          npm run bundle --workspace=packages/costs
 
       - name: Zip Lambdas
         run: |
-          for pkg in collector analyzer publisher api; do
+          for pkg in collector analyzer publisher api costs; do
             zip -j packages/$pkg/dist/function.zip packages/$pkg/dist/index.js
           done
 
@@ -59,7 +60,7 @@ jobs:
 
       - name: Deploy Lambda code
         run: |
-          for pkg in collector analyzer publisher api; do
+          for pkg in collector analyzer publisher api costs; do
             aws lambda update-function-code \
               --function-name fiscal-digital-${pkg}-prod \
               --zip-file fileb://packages/${pkg}/dist/function.zip \
