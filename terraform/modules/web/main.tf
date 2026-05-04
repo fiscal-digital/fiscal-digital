@@ -487,11 +487,34 @@ resource "aws_cloudfront_distribution" "web" {
 
     forwarded_values {
       query_string = false
+      headers      = ["Accept-Encoding"] # NÃO incluir "Host" — quebra OAC sigv4 (LRN-034)
       cookies { forward = "none" }
     }
 
     min_ttl     = 31536000
     default_ttl = 31536000
+    max_ttl     = 31536000
+  }
+
+  # Behavior /brand/* — S3 (logos, favicons, social images do brand pack).
+  # public/brand/ é sincronizado pra s3://bucket/_next-static/brand/ pelo CI;
+  # origin_path "/_next-static" resolve.
+  ordered_cache_behavior {
+    path_pattern           = "/brand/*"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "s3-assets"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
+    forwarded_values {
+      query_string = false
+      headers      = ["Accept-Encoding"]
+      cookies { forward = "none" }
+    }
+
+    min_ttl     = 0
+    default_ttl = 86400
     max_ttl     = 31536000
   }
 
@@ -506,7 +529,7 @@ resource "aws_cloudfront_distribution" "web" {
 
     forwarded_values {
       query_string = true
-      # NÃO forward Host (causa 403 no Lambda Function URL — ver default behavior)
+      headers      = ["Accept-Encoding"] # NUNCA "Host" — 403 do Function URL (LRN-028/034)
       cookies { forward = "none" }
     }
 
