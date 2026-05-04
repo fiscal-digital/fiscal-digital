@@ -677,6 +677,97 @@ async function fetchCostsHistory(days: number): Promise<{
   return { daily, monthly }
 }
 
+interface LifetimeTotalItem {
+  pk: string
+  totalUsd: number
+  totalBrl: number
+  ptaxBrl: number
+  fromMonth: string
+  toMonth: string
+  capturedAt: string
+}
+
+async function buildCostsRss(): Promise<string> {
+  // 1) Fetch daily costs (últimos 365 dias ou menos se houver menos dados).
+  const dailyOut = await ddb.send(new ScanCommand({
+    TableName: COSTS_TABLE,
+    FilterExpression: 'begins_with(pk, :p)',
+    ExpressionAttributeValues: { ':p': 'COST#DAILY#' },
+  }))
+  const allDaily = ((dailyOut.Items ?? []) as CostDailyItem[])
+    .filter(i => typeof i.date === 'string')
+    .sort((a, b) => b.date.localeCompare(a.date)) // DESC — mais recente primeiro
+
+  // 2) Fetch lifetime total
+  const lifetimeOut = await ddb.send(new GetCommand({
+    TableName: COSTS_TABLE,
+    Key: { pk: 'COST#TOTAL#LIFETIME' },
+  }))
+  const lifetime = (lifetimeOut.Item as LifetimeTotalItem | undefined) ?? null
+
+  // 3) Map mês → monthly snapshot para rápido acesso no loop.
+  const monthlyByKey = new Map<string, CostMonthlyItem>()
+  const monthlyOut = await ddb.send(new ScanCommand({
+    TableName: COSTS_TABLE,
+    FilterExpression: 'begins_with(pk, :p)',
+    ExpressionAttributeValues: { ':p': 'COST#MONTHLY#' },
+  }))
+  for (const item of (monthlyOut.Items ?? []) as CostMonthlyItem[]) {
+    monthlyByKey.set(item.month, item)
+  }
+
+  // 4) Gera entrada RSS por dia.
+  // Cada entrada mostra: data, custo do dia, custo do mês corrente, total vitalício.
+  const items = allDaily
+    .map(daily => {
+      const month = daily.date.slice(0, 7) // YYYY-MM
+      const monthlySnap = monthlyByKey.get(month)
+      const monthValueBrl = monthlySnap?.mtdBrl ?? 0
+      const lifetimeValueBrl = lifetime?.totalBrl ?? 0
+
+      const dateFmt = new Date(daily.date + 'T00:00:00Z').toLocaleDateString('pt-BR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+      const title = `Custos FiscalDigital — ${dateFmt} | Mês: R$ ${monthValueBrl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Total: R$ ${lifetimeValueBrl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      const description = `
+Dia ${dateFmt}
+Custo do dia: R$ ${daily.totalBrl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+Custo do mês (até hoje): R$ ${monthValueBrl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+Total vitalício (desde ${lifetime?.fromMonth ?? '2026-01'}): R$ ${lifetimeValueBrl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+
+Breakdown por serviço (dia):
+${daily.byService.map(s => `  • ${s.service}: R$ ${s.brl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`).join('\n')}
+
+Taxa PTAX utilizada: R$ 1 USD = R$ ${daily.ptaxBrl.toLocaleString('pt-BR', { minimumFractionDigits: 4 })}`
+
+      return `    <item>
+      <title>${escapeXml(title)}</title>
+      <link>${SITE_URL}/transparencia/custos</link>
+      <description>${escapeXml(description)}</description>
+      <pubDate>${toRssDate(daily.capturedAt)}</pubDate>
+      <guid isPermaLink="false">fiscal-digital-costs-${daily.date}</guid>
+      <category>Custos</category>
+    </item>`
+    })
+    .join('\n')
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Fiscal Digital — Custos de Operação</title>
+    <link>${SITE_URL}/transparencia/custos</link>
+    <description>Transparência dos custos de operação do Fiscal Digital. Acompanhe nossos gastos mensais e investimento total no projeto.</description>
+    <language>pt-BR</language>
+    <lastBuildDate>${toRssDate()}</lastBuildDate>
+    <ttl>600</ttl>
+    <atom:link href="${escapeXml(`${API_URL}/transparencia/costs/feed.xml`)}" rel="self" type="application/rss+xml"/>
+${items}
+  </channel>
+</rss>`
+}
+
 // ── Lambda handler ──────────────────────────────────────────────────────────
 
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
@@ -822,6 +913,12 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       }, null, 2), 'application/json; charset=UTF-8', 600)
     }
 
+    // /transparencia/costs/feed.xml — RSS feed com valores mensais e total vitalício
+    if (path === '/transparencia/costs/feed.xml' || path === '/transparencia/costs/feed.xml/') {
+      const rss = await buildCostsRss()
+      return ok(rss, 'application/rss+xml; charset=UTF-8', 600)
+    }
+
     // /cities/{cityId}/stats — UH-API-001 (Sprint 6)
     const cityStatsMatch = path.match(/^\/cities\/(\d+)\/stats\/?$/)
     if (cityStatsMatch) {
@@ -851,6 +948,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
           'GET /rss',
           'GET /pdf?source=...',
           'GET /transparencia/costs?days=30',
+          'GET /transparencia/costs/feed.xml',
           'POST /newsletter',
           'GET /health',
         ],

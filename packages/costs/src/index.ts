@@ -169,6 +169,16 @@ interface MonthlySnapshot {
   capturedAt: string
 }
 
+interface LifetimeTotalSnapshot {
+  pk: string
+  totalUsd: number
+  totalBrl: number
+  ptaxBrl: number
+  fromMonth: string
+  toMonth: string
+  capturedAt: string
+}
+
 async function persistDaily(bucket: DailyCostBucket, ptaxBrl: number): Promise<DailySnapshot> {
   const totalBrl = round(bucket.totalUsd * ptaxBrl, 4)
   const item: DailySnapshot = {
@@ -252,6 +262,33 @@ async function persistMonthly(
   return item
 }
 
+// Calcula e persiste total vitalício (lifetime).
+// Idempotente — atualiza o snapshot a cada execução diária.
+async function persistLifetimeTotal(ptaxBrl: number): Promise<LifetimeTotalSnapshot> {
+  // Período: sempre a contar de 2026-01-01 (bootstrap do projeto) até hoje.
+  // CE retorna data agregada até o último dia completo.
+  const from = '2026-01-01'
+  const now = new Date()
+  const to = isoDate(addDays(now, 1)) // CE end é exclusivo
+  const lifetimeUsd = await fetchMonthlyTotal(from, to)
+  const lifetimeBrl = round(lifetimeUsd * ptaxBrl, 4)
+
+  const now_iso = new Date().toISOString()
+  const now_month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+
+  const item: LifetimeTotalSnapshot = {
+    pk: 'COST#TOTAL#LIFETIME',
+    totalUsd: round(lifetimeUsd, 6),
+    totalBrl: lifetimeBrl,
+    ptaxBrl: round(ptaxBrl, 4),
+    fromMonth: '2026-01',
+    toMonth: now_month,
+    capturedAt: now_iso,
+  }
+  await ddb.send(new PutCommand({ TableName: COSTS_TABLE, Item: item }))
+  return item
+}
+
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
@@ -316,12 +353,16 @@ export const handler = async (): Promise<{ statusCode: number; body: string }> =
     totalDaysMonth,
   )
 
+  // 5) Lifetime total — backfill para RSS /transparencia/costs/feed.xml
+  const lifetime = await persistLifetimeTotal(ptaxBrl)
+
   logger.info('FiscalCustos done', {
     monthKey,
     mtdUsd: monthly.mtdUsd,
     mtdBrl: monthly.mtdBrl,
     projectedBrl: monthly.projectedBrl,
     deltaPct: monthly.deltaPct,
+    lifetimeTotalBrl: lifetime.totalBrl,
   })
 
   return {
@@ -333,6 +374,7 @@ export const handler = async (): Promise<{ statusCode: number; body: string }> =
       monthKey,
       mtdBrl: monthly.mtdBrl,
       projectedBrl: monthly.projectedBrl,
+      lifetimeTotalBrl: lifetime.totalBrl,
     }),
   }
 }
