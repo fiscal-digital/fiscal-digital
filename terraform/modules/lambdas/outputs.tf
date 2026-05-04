@@ -17,3 +17,11 @@ output "api_arn" {
 output "api_url" {
   value = aws_lambda_function_url.api.function_url
 }
+
+output "costs_arn" {
+  value = aws_lambda_function.costs.arn
+}
+
+output "costs_function_name" {
+  value = aws_lambda_function.costs.function_name
+}

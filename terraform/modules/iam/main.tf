@@ -581,6 +581,52 @@ resource "aws_iam_role_policy" "api" {
         Action   = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem"]
         Resource = var.newsletter_table_arn
       },
+      {
+        # FiscalCustos snapshots — read-only para servir /transparencia/costs.
+        Sid      = "CostsRead"
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"]
+        Resource = var.costs_table_arn
+      },
+    ]
+  })
+}
+
+# ─── FiscalCustos (UH-OPS-001) ───────────────────────────────────────────────
+
+resource "aws_iam_role" "costs" {
+  name               = "fiscal-digital-costs-prod"
+  assume_role_policy = data.aws_iam_policy_document.lambda_trust.json
+}
+
+resource "aws_iam_role_policy_attachment" "costs_logs" {
+  role       = aws_iam_role.costs.name
+  policy_arn = aws_iam_policy.lambda_logs.arn
+}
+
+resource "aws_iam_role_policy" "costs" {
+  role = aws_iam_role.costs.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # Cost Explorer — region-less, Resource = "*" (não suporta resource-level).
+        Sid      = "CostExplorerRead"
+        Effect   = "Allow"
+        Action   = ["ce:GetCostAndUsage"]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query"]
+        Resource = var.costs_table_arn
+      },
+      {
+        # KMS — tabela costs usa SSE-KMS.
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
+        Resource = var.kms_key_arn
+      },
     ]
   })
 }

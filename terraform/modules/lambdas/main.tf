@@ -96,7 +96,9 @@ resource "aws_lambda_function" "api" {
   source_code_hash = data.archive_file.placeholder.output_base64sha256
 
   environment {
-    variables = local.common_env
+    variables = merge(local.common_env, {
+      COSTS_TABLE = var.costs_table_name
+    })
   }
 
   lifecycle {
@@ -130,5 +132,27 @@ resource "aws_lambda_function_url" "api" {
     allow_methods = ["GET", "HEAD"]
     allow_headers = ["content-type"]
     max_age       = 86400
+  }
+}
+
+# FiscalCustos (UH-OPS-001) — coleta diária de custos AWS via Cost Explorer
+resource "aws_lambda_function" "costs" {
+  function_name    = "fiscal-digital-costs-prod"
+  role             = var.costs_role_arn
+  handler          = "index.handler"
+  runtime          = "nodejs24.x"
+  timeout          = 60
+  memory_size      = 256
+  filename         = data.archive_file.placeholder.output_path
+  source_code_hash = data.archive_file.placeholder.output_base64sha256
+
+  environment {
+    variables = merge(local.common_env, {
+      COSTS_TABLE = var.costs_table_name
+    })
+  }
+
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
   }
 }

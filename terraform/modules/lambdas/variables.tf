@@ -18,6 +18,14 @@ variable "api_role_arn" {
   type = string
 }
 
+variable "costs_role_arn" {
+  type = string
+}
+
+variable "costs_table_name" {
+  type = string
+}
+
 variable "gazettes_queue_arn" {
   type = string
 }

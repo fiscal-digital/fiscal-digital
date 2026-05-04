@@ -34,6 +34,10 @@ variable "newsletter_table_arn" {
   type = string
 }
 
+variable "costs_table_arn" {
+  type = string
+}
+
 variable "gazettes_queue_arn" {
   type = string
 }

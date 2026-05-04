@@ -148,6 +148,31 @@ resource "aws_dynamodb_table" "entities" {
   deletion_protection_enabled = true
 }
 
+# costs-prod — Snapshots de custo AWS coletados pelo FiscalCustos (UH-OPS-001).
+# pk: COST#DAILY#{YYYY-MM-DD} | COST#MONTHLY#{YYYY-MM} | COST#FX#{YYYY-MM-DD}
+# Single-key. Histórico ≤ 90 dias é varredura barata. Sem GSI.
+resource "aws_dynamodb_table" "costs" {
+  name         = "fiscal-digital-costs-prod"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
+}
+
 # newsletter-prod — Inscrições da newsletter
 # pk: NEWSLETTER#{email_normalized} (lowercase + trim)
 # Atributos: email (S), createdAt (S), confirmedAt (S?), source (S?),
