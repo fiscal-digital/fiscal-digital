@@ -452,6 +452,29 @@ resource "aws_cloudfront_distribution" "web" {
     max_ttl     = 86400
   }
 
+  # Behavior /api/* — Lambda ISR, TODOS os métodos (POST/PUT/DELETE/PATCH)
+  # Default behavior só aceita GET/HEAD/OPTIONS — route handlers do Next
+  # (ex: /api/revalidate, ISR-WEB-002) precisam de POST. Sem cache.
+  ordered_cache_behavior {
+    path_pattern           = "/api/*"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "lambda-isr"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
+    forwarded_values {
+      query_string = true
+      # NÃO forward Host (causa 403 no Lambda Function URL — ver default behavior)
+      headers = ["Authorization", "Content-Type", "Accept-Encoding"]
+      cookies { forward = "none" }
+    }
+
+    min_ttl     = 0
+    default_ttl = 0
+    max_ttl     = 0
+  }
+
   # Behavior /_next/static/* — S3, TTL 1 ano (immutable hashed assets)
   ordered_cache_behavior {
     path_pattern           = "/_next/static/*"
