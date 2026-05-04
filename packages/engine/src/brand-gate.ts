@@ -1,13 +1,13 @@
 import glossaryRaw from './brand/glossary.json'
 
-interface AvoidEntry { pt: string; en: string; reason: string; use_instead: string[] }
+interface AvoidEntry { 'pt-br': string; 'en-us': string; reason: string; use_instead: string[] }
 interface GlossaryFile { avoid: AvoidEntry[] }
 
 const glossary = glossaryRaw as GlossaryFile
 
 const AVOID_TERMS: string[] = glossary.avoid.flatMap(entry => [
-  ...entry.pt.split('/').map(t => t.trim().toLowerCase()),
-  ...entry.en.split('/').map(t => t.trim().toLowerCase()),
+  ...entry['pt-br'].split('/').map(t => t.trim().toLowerCase()),
+  ...entry['en-us'].split('/').map(t => t.trim().toLowerCase()),
 ]).filter(Boolean)
 
 export interface NarrativeValidationResult {
