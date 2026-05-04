@@ -1,7 +1,7 @@
 resource "aws_cloudwatch_event_rule" "daily_collector" {
   name                = "fiscal-digital-daily-collector-prod"
-  description         = "Aciona o collector diariamente à meia-noite BRT (03:00 UTC)"
-  schedule_expression = "cron(0 3 * * ? *)"
+  description         = "Aciona o collector de seg a sex às 03:00 UTC (meia-noite BRT) — diários oficiais seguem calendário de dias úteis"
+  schedule_expression = "cron(0 3 ? * MON-FRI *)"
 }
 
 resource "aws_cloudwatch_event_target" "collector" {
