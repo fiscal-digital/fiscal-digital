@@ -296,12 +296,34 @@ resource "aws_lambda_function" "web_isr" {
       CACHE_BUCKET_NAME                   = aws_s3_bucket.web.bucket
       REVALIDATION_QUEUE_URL              = aws_sqs_queue.web_isr_revalidate.url
       ISR_TAG_TABLE_NAME                  = aws_dynamodb_table.web_isr_tags.name
+      # ISR-WEB-002: token simétrico para /api/revalidate. Publisher usa o
+      # mesmo secret pra autenticar revalidações on-demand pós-ingestão.
+      WEB_REVALIDATE_SECRET = aws_secretsmanager_secret_version.web_revalidate.secret_string
     }
   }
 
   lifecycle {
     ignore_changes = [filename, source_code_hash]
   }
+}
+
+# ─── Secrets Manager — token /api/revalidate (ISR-WEB-002) ──────────────────
+
+resource "aws_secretsmanager_secret" "web_revalidate" {
+  name                    = "fiscal-digital-revalidate-token-prod"
+  description             = "Token simétrico para POST /api/revalidate da Lambda ISR. Publisher usa o mesmo valor pra autenticar revalidação on-demand."
+  recovery_window_in_days = 7
+  kms_key_id              = data.aws_kms_key.main.arn
+}
+
+resource "random_password" "web_revalidate_token" {
+  length  = 48
+  special = false # base64-safe pra header Authorization
+}
+
+resource "aws_secretsmanager_secret_version" "web_revalidate" {
+  secret_id     = aws_secretsmanager_secret.web_revalidate.id
+  secret_string = random_password.web_revalidate_token.result
 }
 
 resource "aws_lambda_function_url" "web_isr" {
@@ -379,15 +401,14 @@ resource "aws_cloudfront_distribution" "web" {
   price_class = "PriceClass_100"
   comment     = "fiscal-digital-web-prod"
 
-  # Origin 1 — S3 assets estáticos (hashed, immutable)
-  # CI sync de open-next coloca assets em s3://bucket/_next-static/_next/static/...
-  # mas o Next gera HTML pedindo /_next/static/... (sem prefix).
-  # origin_path = "/_next-static" mapeia request /_next/static/X → S3 _next-static/_next/static/X.
+  # Origin 1 — S3 assets estáticos
+  # Workflow CI sincroniza .open-next/assets/ para bucket root (mirror direto):
+  # /_next/static/...  /brand/...  /favicon.ico  etc — paths que o Next gera no HTML.
+  # Sem origin_path: behaviors mapeiam 1:1 do request URI pra S3 key.
   origin {
     domain_name              = aws_s3_bucket.web.bucket_regional_domain_name
     origin_id                = "s3-assets"
     origin_access_control_id = aws_cloudfront_origin_access_control.web.id
-    origin_path              = "/_next-static"
   }
 
   # Origin 2 — Lambda ISR (custom origin via Function URL)
