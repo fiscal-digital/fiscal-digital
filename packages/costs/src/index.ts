@@ -12,6 +12,7 @@
 import {
   CostExplorerClient,
   GetCostAndUsageCommand,
+  type Expression,
 } from '@aws-sdk/client-cost-explorer'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import {
@@ -74,11 +75,29 @@ interface DailyCostBucket {
   totalUsd: number
 }
 
-// Filtro de tag aplicado em todas as queries do CE — isola custos do
-// Fiscal Digital dos demais projetos da conta AWS. Valor corresponde
-// ao padrão Terraform: Project=fiscal-digital (ver tags nos recursos).
-const CE_TAG_FILTER = {
-  Tags: { Key: 'Project', Values: ['fiscal-digital'] },
+// Filtro do CE — isola custos do Fiscal Digital dos demais projetos da
+// conta AWS compartilhada. Composto por OR:
+//
+//   1. Recursos com tag Project=fiscal-digital (default_tags do Terraform)
+//   2. Serviços não-tagueáveis que sabidamente são exclusivos do projeto:
+//      - Amazon Bedrock — invocações de modelos não herdam tag (limitação AWS)
+//      - "Claude Haiku 4.5 (Amazon Bedrock Edition)" — cobrança Bedrock por modelo
+//
+// Atenção: se outro projeto da conta passar a usar Bedrock, mover para
+// strategy de Application Inference Profile com tag — ver AWS docs.
+const CE_TAG_FILTER: Expression = {
+  Or: [
+    { Tags: { Key: 'Project', Values: ['fiscal-digital'] } },
+    {
+      Dimensions: {
+        Key: 'SERVICE',
+        Values: [
+          'Amazon Bedrock',
+          'Claude Haiku 4.5 (Amazon Bedrock Edition)',
+        ],
+      },
+    },
+  ],
 }
 
 // Route 53: custo $0.50/hosted-zone/mês. O CE não segrega por zona via tag —
