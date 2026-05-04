@@ -33,22 +33,23 @@ module "iam" {
 }
 
 module "lambdas" {
-  source             = "./modules/lambdas"
-  environment        = var.environment
-  collector_role_arn = module.iam.collector_role_arn
-  analyzer_role_arn  = module.iam.analyzer_role_arn
-  publisher_role_arn = module.iam.publisher_role_arn
-  api_role_arn       = module.iam.api_role_arn
-  costs_role_arn     = module.iam.costs_role_arn
-  costs_table_name   = module.dynamodb.costs_table_name
-  gazettes_queue_arn = module.sqs.gazettes_queue_arn
-  alerts_queue_arn   = module.sqs.alerts_queue_arn
-  gazettes_queue_url = module.sqs.gazettes_queue_url
-  alerts_queue_url   = module.sqs.alerts_queue_url
-  x_enabled          = var.x_enabled
-  x_dry_run          = var.x_dry_run
-  reddit_enabled     = var.reddit_enabled
-  reddit_dry_run     = var.reddit_dry_run
+  source                = "./modules/lambdas"
+  environment           = var.environment
+  collector_role_arn    = module.iam.collector_role_arn
+  analyzer_role_arn     = module.iam.analyzer_role_arn
+  publisher_role_arn    = module.iam.publisher_role_arn
+  api_role_arn          = module.iam.api_role_arn
+  costs_role_arn        = module.iam.costs_role_arn
+  costs_table_name      = module.dynamodb.costs_table_name
+  gazettes_queue_arn    = module.sqs.gazettes_queue_arn
+  alerts_queue_arn      = module.sqs.alerts_queue_arn
+  gazettes_queue_url    = module.sqs.gazettes_queue_url
+  alerts_queue_url      = module.sqs.alerts_queue_url
+  x_enabled             = var.x_enabled
+  x_dry_run             = var.x_dry_run
+  reddit_enabled        = var.reddit_enabled
+  reddit_dry_run        = var.reddit_dry_run
+  web_revalidate_secret = module.web.revalidate_secret_value
 }
 
 module "eventbridge" {

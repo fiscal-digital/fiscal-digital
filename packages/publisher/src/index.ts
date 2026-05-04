@@ -10,6 +10,7 @@ import {
 } from './channels/types'
 import { loadEnabledChannels } from './channels/registry'
 import { PublicationsStore } from './publications-store'
+import { notifyWebRevalidate } from './web-revalidate'
 
 const channels: PublishChannel[] = loadEnabledChannels()
 const store = new PublicationsStore()
@@ -113,6 +114,11 @@ export const handler = async (event: SQSEvent): Promise<void> => {
       })
       fatal = err
     }
+
+    // ISR-WEB-002: notifica site para purga imediata de cache (best-effort).
+    // Roda independente de canais terem publicado — finding já está em DDB
+    // e site exibe a partir daí. Não bloqueia DLQ logic.
+    await notifyWebRevalidate(finding)
 
     // Se algum canal falhou de forma fatal, lança para o record ir pra DLQ
     if (fatal) throw fatal

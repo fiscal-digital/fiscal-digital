@@ -77,6 +77,8 @@ resource "aws_lambda_function" "publisher" {
       X_DRY_RUN      = var.x_dry_run
       REDDIT_ENABLED = var.reddit_enabled
       REDDIT_DRY_RUN = var.reddit_dry_run
+      # ISR-WEB-002: token Bearer pro hook /api/revalidate (best-effort).
+      WEB_REVALIDATE_SECRET = var.web_revalidate_secret
     })
   }
 
