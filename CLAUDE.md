@@ -236,6 +236,8 @@ Razão: dados de teste em prod poluem feeds RSS, API pública, métricas. Site/l
 
 - **Lambda env vars — fail-fast obrigatório:** usar `requireEnv(key)` (em `packages/engine/src/env.ts`) em vez de `process.env.KEY!`. O `!` causa crash em runtime sem mensagem clara; `requireEnv` lança na inicialização com nome da variável faltante. *(Sprint 6 / TEC-ENG-001)*
 
+- **CloudFront — NUNCA forward `Host` header:** em qualquer behavior cuja origin seja S3 com OAC sigv4 OU Lambda Function URL. Sintoma varia por origin: S3 retorna **404 NotFound** (mascarado como "asset não existe"); Lambda Function URL retorna **403 AccessDeniedException**. Auditar TODOS os behaviors (default + ordered), não só o default. Em terraform: omitir `headers` em `forwarded_values` ou listar explicitamente sem `Host` (ex: `headers = ["Accept-Encoding"]`). *(LRN-20260503-028, LRN-20260503-034)*
+
 ## Convenção de Nomenclatura AWS
 
 `kebab-case` minúsculas em todos os recursos.
