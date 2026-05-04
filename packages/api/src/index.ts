@@ -687,6 +687,49 @@ interface LifetimeTotalItem {
   capturedAt: string
 }
 
+interface CostMtdResponse {
+  currency: 'BRL'
+  month: string
+  mtdBrl: number
+  projectedBrl: number
+  lifetimeBrl: number
+  deltaPct: number | null
+  updatedAt: string | null
+  source: 'aws-cost-explorer'
+}
+
+async function fetchCostsMtd(): Promise<CostMtdResponse | null> {
+  const now = new Date()
+  const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+
+  const [monthlyOut, lifetimeOut] = await Promise.all([
+    ddb.send(new GetCommand({
+      TableName: COSTS_TABLE,
+      Key: { pk: `COST#MONTHLY#${monthKey}` },
+    })),
+    ddb.send(new GetCommand({
+      TableName: COSTS_TABLE,
+      Key: { pk: 'COST#TOTAL#LIFETIME' },
+    })),
+  ])
+
+  const monthly = monthlyOut.Item as CostMonthlyItem | undefined
+  const lifetime = lifetimeOut.Item as LifetimeTotalItem | undefined
+
+  if (!monthly && !lifetime) return null
+
+  return {
+    currency: 'BRL',
+    month: monthKey,
+    mtdBrl: monthly?.mtdBrl ?? 0,
+    projectedBrl: monthly?.projectedBrl ?? 0,
+    lifetimeBrl: lifetime?.totalBrl ?? monthly?.mtdBrl ?? 0,
+    deltaPct: monthly?.deltaPct ?? null,
+    updatedAt: monthly?.capturedAt ?? lifetime?.capturedAt ?? null,
+    source: 'aws-cost-explorer',
+  }
+}
+
 async function buildCostsRss(): Promise<string> {
   // 1) Fetch daily costs (últimos 365 dias ou menos se houver menos dados).
   const dailyOut = await ddb.send(new ScanCommand({
@@ -967,6 +1010,20 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       }, null, 2), 'application/json; charset=UTF-8', 600)
     }
 
+    // /transparencia/costs/mtd — UH-OPS-002 (HeroStats)
+    // Endpoint focado para home — custo real operacional do mês, cache 1h.
+    if (path === '/transparencia/costs/mtd' || path === '/transparencia/costs/mtd/') {
+      const mtd = await fetchCostsMtd()
+      if (!mtd) {
+        return {
+          statusCode: 503,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+          body: JSON.stringify({ error: 'costs_not_yet_available' }),
+        }
+      }
+      return ok(JSON.stringify(mtd, null, 2), 'application/json; charset=UTF-8', 3600)
+    }
+
     // /transparencia/costs/feed.xml — RSS feed com valores mensais e total vitalício
     if (path === '/transparencia/costs/feed.xml' || path === '/transparencia/costs/feed.xml/') {
       const rss = await buildCostsRss()
@@ -1003,6 +1060,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
           'GET /rss',
           'GET /pdf?source=...',
           'GET /transparencia/costs?days=30',
+          'GET /transparencia/costs/mtd',
           'GET /transparencia/costs/feed.xml',
           'POST /newsletter',
           'GET /health',
