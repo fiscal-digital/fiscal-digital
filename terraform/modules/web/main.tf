@@ -375,17 +375,6 @@ resource "aws_lambda_event_source_mapping" "web_isr_revalidate_sqs" {
   batch_size       = 5
 }
 
-# ─── CloudFront Function — redirect /pt → /pt-br ────────────────────────────
-
-# Passo (2) foi removido: Lambda ISR resolve subdir/trailing-slash internamente.
-resource "aws_cloudfront_function" "redirect_pt_br_to_pt" {
-  name    = "fiscal-digital-redirect-pt-br-to-pt"
-  runtime = "cloudfront-js-2.0"
-  comment = "301 /pt-br/* → /pt/* — preserva backlinks Reddit/X pré-cutover PT-prefix"
-  publish = true
-  code    = file("${path.module}/redirect-pt-br-to-pt.js")
-}
-
 # ─── CloudFront distribution ─────────────────────────────────────────────────
 
 locals {
@@ -432,11 +421,6 @@ resource "aws_cloudfront_distribution" "web" {
     target_origin_id       = "lambda-isr"
     viewer_protocol_policy = "redirect-to-https"
     compress               = true
-
-    function_association {
-      event_type   = "viewer-request"
-      function_arn = aws_cloudfront_function.redirect_pt_br_to_pt.arn
-    }
 
     forwarded_values {
       query_string = true
