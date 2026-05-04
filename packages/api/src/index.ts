@@ -450,8 +450,11 @@ function hashIp(ip: string | undefined): string | undefined {
 
 interface NewsletterBody {
   email?: string
-  locale?: 'pt' | 'en'
+  locale?: 'pt-br' | 'en-us'
   source?: string
+  /** Honeypot field — humanos não veem (CSS off-screen + aria-hidden + tabindex=-1).
+   *  Se vier preenchido, é bot de form-fill — rejeita silenciosamente. */
+  website?: string
 }
 
 async function handleNewsletter(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
@@ -471,8 +474,15 @@ async function handleNewsletter(event: APIGatewayProxyEventV2): Promise<APIGatew
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'invalid_email' }) }
   }
   const email = normalizeEmail(emailRaw)
-  const locale = body.locale === 'en' ? 'en' : 'pt'
+  const locale: 'pt-br' | 'en-us' = body.locale === 'en-us' ? 'en-us' : 'pt-br'
   const source = (body.source ?? 'home').slice(0, 64)
+
+  // Honeypot — campo `website` invisível no frontend. Bots de form-fill
+  // preenchem; humanos não. Resposta 200 ok-like para não revelar a heurística
+  // (bots não tentam variantes). NÃO grava no DDB.
+  if (typeof body.website === 'string' && body.website.length > 0) {
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, status: 'subscribed' }) }
+  }
   const pk = `NEWSLETTER#${email}`
   const now = new Date().toISOString()
   const ipHash = hashIp(event.requestContext?.http?.sourceIp)
