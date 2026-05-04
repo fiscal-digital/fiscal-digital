@@ -5,6 +5,11 @@ data "aws_secretsmanager_secret" "anthropic" {
   name = "fiscaldigital-anthropic-prod"
 }
 
+# ISR revalidate token — criado em terraform/modules/web/main.tf
+data "aws_secretsmanager_secret" "web_revalidate" {
+  name = "fiscal-digital-revalidate-token-prod"
+}
+
 # ─── GitHub Actions OIDC ─────────────────────────────────────────────────────
 
 # OIDC provider já existe na conta (compartilhado entre projetos da org)
@@ -104,6 +109,25 @@ resource "aws_iam_role_policy" "github_actions" {
         Effect   = "Allow"
         Resource = data.aws_secretsmanager_secret.anthropic.arn
         Sid      = "SecretsManagerRead"
+      },
+      {
+        # ISR revalidate token (ISR-WEB-002) — Terraform precisa gerenciar
+        # o secret + a versão (PutSecretValue) + tags + delete para refactors.
+        Action = [
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:GetResourcePolicy",
+          "secretsmanager:PutSecretValue",
+          "secretsmanager:UpdateSecret",
+          "secretsmanager:UpdateSecretVersionStage",
+          "secretsmanager:DeleteSecret",
+          "secretsmanager:ListSecretVersionIds",
+          "secretsmanager:TagResource",
+          "secretsmanager:UntagResource",
+        ]
+        Effect   = "Allow"
+        Resource = data.aws_secretsmanager_secret.web_revalidate.arn
+        Sid      = "SecretsManagerWebRevalidate"
       },
       {
         # Resource = "*" obrigatório — iam:List* não suporta resource-level (ver IAM Action Reference)
