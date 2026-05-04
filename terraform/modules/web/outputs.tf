@@ -43,3 +43,9 @@ output "dynamodb_isr_tags_table" {
   description = "Nome da tabela DynamoDB de tags ISR"
   value       = aws_dynamodb_table.web_isr_tags.name
 }
+
+output "revalidate_secret_value" {
+  description = "Valor do token Bearer pra POST /api/revalidate. Publisher injeta como env var pra autenticar revalidação on-demand pós-publish (ISR-WEB-002)."
+  value       = aws_secretsmanager_secret_version.web_revalidate.secret_string
+  sensitive   = true
+}
