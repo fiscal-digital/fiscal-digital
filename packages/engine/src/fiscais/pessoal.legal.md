@@ -35,12 +35,25 @@ violação ao princípio da impessoalidade (CF, Art. 37, caput).
 ### 1. Pico de nomeações em período eleitoral (`pico_nomeacoes`)
 
 **Heurística:** contagem de atos de nomeação + exoneração + designação + cargo em comissão
-no mesmo excerpt de gazette.
+**somados em toda a gazette** (não por excerpt isolado — calibração 2026-05-02 LRN-019).
 
-| Contexto | Limiar | riskScore base |
-|---|---|---|
-| Janela eleitoral (3 meses antes da eleição) | >= 5 atos | 70–100 (alto) |
-| Fora da janela eleitoral | >= 10 atos | 45–60 (informativo) |
+**Threshold dinâmico por porte da cidade** (calibração 2026-05-06):
+
+| Porte | População | Janela eleitoral | Fora da janela |
+|---|---|---|---|
+| **large**  | > 1M hab    | ≥ 10 atos | ≥ 20 atos |
+| **medium** | 100k – 1M   | ≥ 5 atos  | ≥ 10 atos |
+| **small**  | < 100k      | ≥ 3 atos  | ≥ 7 atos  |
+
+**RiskScore base:** 70–100 (alto) em janela eleitoral; 45–60 (informativo) fora.
+
+**Justificativa do threshold por porte:** capitais e grandes metrópoles publicam dezenas
+de atos administrativos por dia em cadência normal. Aplicar o mesmo limiar absoluto que
+em cidades pequenas gera ~50% ruído (auditoria de 296 findings em prod, 2026-05-06).
+Cidades pequenas (<100k) têm administração enxuta — picos lá são proporcionalmente
+muito mais raros, então mantemos limiar baixo para não perder sinais legítimos.
+
+Mapeamento `cityId → população` em [`packages/engine/src/cities/populations.ts`](../cities/populations.ts).
 
 **Janelas eleitorais municipais hardcoded (eleições de outubro de anos pares):**
 - 2024: 01/07/2024 – 06/10/2024

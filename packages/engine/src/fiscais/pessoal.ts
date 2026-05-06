@@ -1,4 +1,5 @@
 import { scoreRisk } from '../skills/score_risk'
+import { cityBucket, populationOf, type CityBucket } from '../cities/populations'
 import type { Finding, RiskFactor } from '../types'
 import type { Fiscal, AnalisarInput } from './types'
 
@@ -62,6 +63,32 @@ function contarAtos(excerpt: string): number {
 }
 
 /**
+ * Threshold dinâmico de atos por gazette para disparar `pico_nomeacoes`.
+ *
+ * Calibração 2026-05-06 — auditoria identificou ~50% de ruído em capitais
+ * por aplicar o mesmo limiar em SP (11M hab) e Caxias (460k hab). Cidades
+ * grandes têm cadência administrativa naturalmente maior; o anômalo
+ * absoluto difere por porte.
+ *
+ * Eleitoral: cap. 10/5/3 (large/medium/small)
+ * Fora janela: cap. 20/10/7 (large/medium/small)
+ *
+ * Cidades small (<100k): limiar baixo porque admin enxuto raramente publica
+ * múltiplos atos no mesmo dia — qualquer pico tende a ser sinal real.
+ */
+function thresholdFor(bucket: CityBucket, isEleitoral: boolean): number {
+  if (isEleitoral) {
+    if (bucket === 'large')  return 10
+    if (bucket === 'medium') return 5
+    return 3
+  } else {
+    if (bucket === 'large')  return 20
+    if (bucket === 'medium') return 10
+    return 7
+  }
+}
+
+/**
  * Detecta rotatividade anormal: exoneração + nomeação para cargo comissionado
  * no mesmo excerpt, indicando ao menos 2 pessoas distintas no mesmo cargo.
  *
@@ -107,16 +134,21 @@ export const fiscalPessoal: Fiscal = {
     // Auditoria 2026-05-02 (LRN-019): threshold por excerpt nunca disparava
     // (excerpts são windows de 300 chars; raramente cabem 5 atos).
     // Agora soma todos os excerpts da MESMA gazette antes de testar.
+    //
+    // Calibração 2026-05-06 — auditoria de 296 findings em prod identificou
+    // ~50% ruído (5 atos em capital de 2M hab é cadência administrativa
+    // normal). Threshold agora é dinâmico por porte da cidade:
+    // small (<100k) / medium (100k-1M) / large (>1M).
     const totalAtos = relevantExcerpts.reduce((sum, e) => sum + contarAtos(e), 0)
     const janela = dentroJanelaEleitoral(gazette.date)
     const emJanela = janela !== null
+    const bucket = cityBucket(cityId)
 
     {
       const countAtos = totalAtos
       const excerpt = relevantExcerpts.join('\n---\n') // representação da gazette inteira para evidence
 
-      // Limiares calibrados: 3+ atos por gazette em janela eleitoral, 7+ fora
-      const limiar = emJanela ? 3 : 7
+      const limiar = thresholdFor(bucket, emJanela)
       const dispara = countAtos >= limiar
 
       if (dispara) {
@@ -130,7 +162,7 @@ export const fiscalPessoal: Fiscal = {
             type: 'volume_atos_pessoal',
             weight: 0.6,
             value: riskValue,
-            description: `${countAtos} atos de nomeação/exoneração detectados (limiar: ${limiar})`,
+            description: `${countAtos} atos de nomeação/exoneração detectados (limiar ${limiar} para porte ${bucket})`,
           },
           {
             type: 'janela_eleitoral',
@@ -149,10 +181,10 @@ export const fiscalPessoal: Fiscal = {
           ? `Identificamos ${countAtos} atos de nomeação, exoneração e designação de cargos comissionados ` +
             `em gazette de ${formatDate(gazette.date)}, dentro da janela eleitoral municipal ` +
             `(eleição prevista para ${formatDate(janela!.eleicao)}). ` +
-            `O documento aponta volume acima do limiar de ${limiar} atos por publicação. ` +
+            `O documento aponta volume acima do limiar de ${limiar} atos por publicação para uma cidade de porte ${bucket}. ` +
             `Lei 9.504/97, Art. 73, V, veda nomeações para cargos em comissão no período eleitoral, salvo exceções.`
           : `Identificamos ${countAtos} atos de nomeação, exoneração e designação de cargos comissionados ` +
-            `em gazette de ${formatDate(gazette.date)}, acima do limiar de ${limiar} atos por publicação fora de período eleitoral. ` +
+            `em gazette de ${formatDate(gazette.date)}, acima do limiar de ${limiar} atos por publicação para uma cidade de porte ${bucket} fora de período eleitoral. ` +
             `Registro informativo para monitoramento de tendências.`
 
         const finding: Finding = {
