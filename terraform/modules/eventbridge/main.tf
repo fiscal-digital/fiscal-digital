@@ -1,7 +1,12 @@
 resource "aws_cloudwatch_event_rule" "daily_collector" {
   name                = "fiscal-digital-daily-collector-prod"
-  description         = "Aciona o collector de seg a sex às 07:00 UTC (04:00 BRT) — cobre publicações do dia anterior com folga de 2h para toda a cadeia (collector + analyzer + publisher)"
-  schedule_expression = "cron(0 7 ? * MON-FRI *)"
+  # Throttle 2026-05-05: Querido Diário tem indexação irregular por spider —
+  # várias cidades nossas (Caxias, POA, SP, Brasília) sem gazette nova há
+  # meses. Reduzido de Mon-Fri para Mon-only enquanto OKFN não retoma fluxo
+  # nessas cidades. Histórico do gap em issue #1451 do okfn-brasil/querido-diario.
+  # Voltar para MON-FRI quando OKFN sinalizar normalização.
+  description         = "Aciona o collector às segundas 07:00 UTC (04:00 BRT). Throttle por gap de indexação no QD."
+  schedule_expression = "cron(0 7 ? * MON *)"
 }
 
 resource "aws_cloudwatch_event_target" "collector" {
