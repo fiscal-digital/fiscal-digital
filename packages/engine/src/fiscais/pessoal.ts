@@ -1,5 +1,7 @@
 import { scoreRisk } from '../skills/score_risk'
 import { cityBucket, populationOf, type CityBucket } from '../cities/populations'
+import { invokeModel, NARRATIVE_MODEL } from '../utils/bedrock'
+import { getCityOrFallback } from '../cities'
 import type { Finding, RiskFactor } from '../types'
 import type { Fiscal, AnalisarInput } from './types'
 
@@ -60,6 +62,138 @@ function formatDate(iso: string): string {
 function contarAtos(excerpt: string): number {
   const matches = excerpt.match(ATO_RE)
   return matches ? matches.length : 0
+}
+
+// ─── Extração de contexto (cargos + secretarias) ─────────────────────────────
+
+const SECRETARIA_RE =
+  /Secretaria\s+(?:Municipal\s+)?(?:de|da|do)\s+([A-ZÀ-Ü][\wÀ-ÿ]+(?:\s+(?:e|de|da|do)\s+[A-ZÀ-Ü][\wÀ-ÿ]+){0,4})/g
+
+const CARGO_RE =
+  /(?:para|do|no)\s+(?:o\s+)?cargo\s+(?:em\s+)?comiss[ãa]o\s+de\s+([A-ZÀ-Ü][\wÀ-ÿ]+(?:\s+(?:de|da|do)\s+[\wÀ-ÿ]+){0,3})/g
+
+const FUNCAO_RE =
+  /(?:Diretor[a]?|Coordenador[a]?|Chefe|Assessor[a]?|Secret[áa]rio[a]?|Superintendente|Gerente|Procurador[a]?)\s+(?:de|da|do)\s+([A-ZÀ-Ü][\wÀ-ÿ]+(?:\s+[\wÀ-ÿ]+){0,3})/g
+
+interface ContextoAtos {
+  secretarias: string[]
+  cargos: string[]
+  funcoes: string[]
+}
+
+/**
+ * Extrai secretarias, cargos comissionados e funções mencionadas nos excerpts.
+ * Usado para enriquecer a narrativa via Haiku — substitui template genérico
+ * por texto que cita órgãos específicos. Privacidade: NÃO extrai nomes
+ * próprios de pessoas físicas (regra do Fiscal de Pessoal — Lei 12.527 obriga
+ * publicar atos, não consolidar dossiês).
+ */
+function extrairContextoAtos(excerpts: string[]): ContextoAtos {
+  const text = excerpts.join('\n')
+  const secretarias = new Set<string>()
+  const cargos = new Set<string>()
+  const funcoes = new Set<string>()
+
+  for (const m of text.matchAll(SECRETARIA_RE)) {
+    secretarias.add(m[1].trim())
+  }
+  for (const m of text.matchAll(CARGO_RE)) {
+    cargos.add(m[1].trim())
+  }
+  for (const m of text.matchAll(FUNCAO_RE)) {
+    funcoes.add(m[1].trim())
+  }
+
+  // Top 5 de cada categoria — limita ruído de extração
+  return {
+    secretarias: Array.from(secretarias).slice(0, 5),
+    cargos: Array.from(cargos).slice(0, 5),
+    funcoes: Array.from(funcoes).slice(0, 5),
+  }
+}
+
+// ─── Narrativa via Haiku ─────────────────────────────────────────────────────
+
+const PESSOAL_SYSTEM_PROMPT = `Você é o Fiscal Digital, agente de fiscalização de gastos públicos municipais.
+
+Sua tarefa: gerar narrativa factual sobre detecção de pico de nomeações em uma gazette oficial.
+
+Regras inegociáveis:
+- Linguagem factual ("identificamos", "o documento aponta", "os dados indicam") — NUNCA acusatória
+- Não afirme culpa, fraude, desvio ou ilícito
+- Máximo 3 frases curtas (até 350 caracteres total)
+- NÃO cite nomes de pessoas físicas (privacidade — Lei 12.527 obriga publicar atos, não dossiês)
+- CITE secretarias e cargos específicos QUANDO o contexto os fornecer (especificidade > genericidade)
+- Em janela eleitoral: mencionar Lei 9.504/97 Art. 73 V
+- Fora de janela: tom informativo, sem alarmismo
+- Indique o porte da cidade (large/medium/small) ao explicar o limiar
+
+Formato esperado da saída: APENAS o texto narrativo, sem prefixos, sem aspas, sem markdown.`
+
+interface NarrativaInput {
+  cityName: string
+  cityUf: string
+  cityBucket: CityBucket
+  totalAtos: number
+  limiar: number
+  isEleitoral: boolean
+  eleicaoDate?: string
+  gazetteDate: string
+  contexto: ContextoAtos
+}
+
+/**
+ * Gera narrativa específica para `pico_nomeacoes` via Haiku 4.5 (Bedrock).
+ *
+ * Substitui o template hardcoded do MVP — narrativa cita secretarias/cargos
+ * extraídos quando disponíveis, dá contexto de porte da cidade, e diferencia
+ * período eleitoral vs informativo.
+ *
+ * Fallback: se Bedrock falhar (timeout, throttle, error), retorna template
+ * mínimo factual — Fiscal nunca trava por causa de LLM.
+ */
+async function gerarNarrativaPicoViaHaiku(input: NarrativaInput): Promise<string> {
+  const ctx = input.contexto
+  const ctxLines: string[] = []
+  if (ctx.secretarias.length > 0) ctxLines.push(`Secretarias mencionadas: ${ctx.secretarias.join('; ')}`)
+  if (ctx.cargos.length > 0)      ctxLines.push(`Cargos em comissão citados: ${ctx.cargos.join('; ')}`)
+  if (ctx.funcoes.length > 0)     ctxLines.push(`Funções/diretorias citadas: ${ctx.funcoes.join('; ')}`)
+  const contextoStr = ctxLines.length > 0 ? ctxLines.join('\n') : '(nenhuma secretaria ou cargo específico extraído)'
+
+  const userMessage = [
+    `Cidade: ${input.cityName}/${input.cityUf} (porte ${input.cityBucket})`,
+    `Data da gazette: ${formatDate(input.gazetteDate)}`,
+    `Atos de nomeação/exoneração/designação contados: ${input.totalAtos} (limiar: ${input.limiar})`,
+    input.isEleitoral
+      ? `Contexto: dentro da janela eleitoral municipal (eleição em ${formatDate(input.eleicaoDate ?? '')})`
+      : `Contexto: fora da janela eleitoral`,
+    '',
+    'Contexto extraído dos excerpts:',
+    contextoStr,
+    '',
+    'Gere a narrativa do achado conforme as regras.',
+  ].join('\n')
+
+  try {
+    const narrative = await invokeModel({
+      modelId: NARRATIVE_MODEL,
+      systemPrompt: PESSOAL_SYSTEM_PROMPT,
+      userMessage,
+      maxTokens: 220,
+      temperature: 0.2,
+    })
+    if (narrative && narrative.length > 30) {
+      return narrative
+    }
+  } catch (err) {
+    // Bedrock falhou — fallback factual abaixo
+    console.warn('[fiscal-pessoal] Bedrock falhou, usando template fallback:', (err as Error).message)
+  }
+
+  // Fallback resiliente — nunca trava o Fiscal por causa de LLM.
+  return input.isEleitoral
+    ? `Identificamos ${input.totalAtos} atos de nomeação, exoneração e designação de cargos comissionados em gazette de ${formatDate(input.gazetteDate)} em ${input.cityName}/${input.cityUf} (porte ${input.cityBucket}), dentro da janela eleitoral municipal. Volume acima do limiar de ${input.limiar}. Lei 9.504/97 Art. 73 V veda nomeações para cargos em comissão no período eleitoral.`
+    : `Identificamos ${input.totalAtos} atos de nomeação, exoneração e designação em gazette de ${formatDate(input.gazetteDate)} em ${input.cityName}/${input.cityUf} (porte ${input.cityBucket}), acima do limiar de ${input.limiar} para o porte da cidade. Registro informativo para monitoramento.`
 }
 
 /**
@@ -177,15 +311,21 @@ export const fiscalPessoal: Fiscal = {
         const scoreResult = await scoreRisk.execute({ factors: riskFactors })
         const riskScore = scoreResult.data
 
-        const narrativa = emJanela
-          ? `Identificamos ${countAtos} atos de nomeação, exoneração e designação de cargos comissionados ` +
-            `em gazette de ${formatDate(gazette.date)}, dentro da janela eleitoral municipal ` +
-            `(eleição prevista para ${formatDate(janela!.eleicao)}). ` +
-            `O documento aponta volume acima do limiar de ${limiar} atos por publicação para uma cidade de porte ${bucket}. ` +
-            `Lei 9.504/97, Art. 73, V, veda nomeações para cargos em comissão no período eleitoral, salvo exceções.`
-          : `Identificamos ${countAtos} atos de nomeação, exoneração e designação de cargos comissionados ` +
-            `em gazette de ${formatDate(gazette.date)}, acima do limiar de ${limiar} atos por publicação para uma cidade de porte ${bucket} fora de período eleitoral. ` +
-            `Registro informativo para monitoramento de tendências.`
+        // Narrativa via Haiku — cita secretarias e cargos extraídos quando
+        // disponíveis. Fallback resiliente em caso de falha do Bedrock.
+        const cidade = getCityOrFallback(cityId)
+        const contexto = extrairContextoAtos(relevantExcerpts)
+        const narrativa = await gerarNarrativaPicoViaHaiku({
+          cityName: cidade.name,
+          cityUf: cidade.uf,
+          cityBucket: bucket,
+          totalAtos: countAtos,
+          limiar,
+          isEleitoral: emJanela,
+          eleicaoDate: janela?.eleicao,
+          gazetteDate: gazette.date,
+          contexto,
+        })
 
         const finding: Finding = {
           fiscalId: FISCAL_ID,
