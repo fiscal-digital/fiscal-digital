@@ -33,7 +33,9 @@ export const gazettePicoNomeacoesJanelaEleitoral: Gazette = {
 }
 
 /**
- * Caso 2 — Fora da janela eleitoral (março/2026) + 7 atos → não dispara (limiar fora = 10).
+ * Caso 2 — Fora da janela eleitoral (março/2026) + 7 atos → NÃO dispara em
+ * cidade `medium` (Caxias 463k hab; limiar fora janela medium = 10).
+ * Disparararia em cidade `small` (limiar 7) — exercitado em test separado.
  */
 export const gazettePicoForaJanela7Atos: Gazette = {
   ...BASE_GAZETTE,
@@ -77,7 +79,9 @@ export const gazettePicoForaJanela12Atos: Gazette = {
 }
 
 /**
- * Caso 4 — Janela eleitoral 2026 + apenas 3 atos → não dispara (abaixo do limiar 5).
+ * Caso 4 — Janela eleitoral 2026 + apenas 3 atos → NÃO dispara em cidade
+ * `medium` (Caxias 463k hab; limiar eleitoral medium = 5). Dispararia em
+ * cidade `small` (limiar 3) — exercitado em test separado.
  */
 export const gazettePicoJanelaEleitoral3Atos: Gazette = {
   ...BASE_GAZETTE,
