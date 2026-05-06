@@ -108,8 +108,14 @@ async function fetchFindings(filters: {
   // ficam apenas na tabela alerts-prod para auditoria interna. Fiscais novos
   // (locacao, convenios) foram calibrados com confidence 0.65; sobem para 0.70+
   // depois de mais validação manual.
+  //
+  // Brand gate exhausted: findings com `unpublishable: true` (ex: narrativas
+  // que travaram no glossary.json#avoid mesmo após 3× regeneração) ficam no
+  // DDB como audit trail mas não aparecem em feed público. Ver publisher
+  // markUnpublishable.
   return all
     .filter(f => f.type && f.riskScore >= 60 && (f.confidence ?? 0) >= 0.70)
+    .filter(f => !(f as Finding & { unpublishable?: boolean }).unpublishable)
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
 }
 
@@ -128,7 +134,9 @@ async function scanAllFindings(): Promise<Finding[]> {
     all.push(...((out.Items ?? []) as Finding[]))
     exclusiveStartKey = out.LastEvaluatedKey
   } while (exclusiveStartKey)
-  return all
+  // Filtra unpublishable também aqui — /stats deve refletir o universo
+  // efetivamente publicável, mantendo paridade com /alerts.
+  return all.filter(f => !(f as Finding & { unpublishable?: boolean }).unpublishable)
 }
 
 // WIN-API-003: counter agregado em `gazettes-prod#AGG#GAZETTE_COUNT`.

@@ -11,6 +11,7 @@ export { validateCNPJ } from './skills/validate_cnpj'
 export { checkSanctions } from './skills/check_sanctions'
 export { scoreRisk } from './skills/score_risk'
 export { generateNarrative } from './skills/generate_narrative'
+export { regenerateNarrative } from './skills/regenerate_narrative'
 export { pdfCacheUrl, pdfCacheS3Key, gazetteKey, GAZETTES_CDN_HOST } from './utils/pdf_cache'
 
 export type { QueryDiarioInput } from './skills/query_diario'
@@ -36,7 +37,7 @@ export { fiscalNepotismo } from './fiscais/nepotismo'
 export type { Fiscal, AnalisarInput, FiscalContext } from './fiscais/types'
 export type { FiscalGeralInput } from './fiscais/geral'
 
-export { validateNarrative } from './brand-gate'
+export { validateNarrative, getUseInsteadFor } from './brand-gate'
 export type { NarrativeValidationResult } from './brand-gate'
 
 export { requireEnv } from './env'
