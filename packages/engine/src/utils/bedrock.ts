@@ -10,6 +10,8 @@ export interface InvokeModelParams {
   systemPrompt: string
   userMessage: string
   maxTokens: number
+  /** 0 = determinístico (default). >0 quebra repetição em retries de geração. */
+  temperature?: number
 }
 
 export async function invokeModel(params: InvokeModelParams): Promise<string> {
@@ -17,7 +19,7 @@ export async function invokeModel(params: InvokeModelParams): Promise<string> {
     modelId: params.modelId,
     system: [{ text: params.systemPrompt }],
     messages: [{ role: 'user', content: [{ text: params.userMessage }] }],
-    inferenceConfig: { maxTokens: params.maxTokens, temperature: 0 },
+    inferenceConfig: { maxTokens: params.maxTokens, temperature: params.temperature ?? 0 },
   })
 
   const response = await client.send(command)

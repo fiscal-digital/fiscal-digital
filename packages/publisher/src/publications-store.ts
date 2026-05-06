@@ -83,6 +83,48 @@ export class PublicationsStore {
     }
   }
 
+  /**
+   * Marca um finding como `unpublishable` no DDB. Chamado quando o brand
+   * gate rejeita a narrativa em todas as N tentativas de regeneração — o
+   * finding fica preservado (audit trail) mas é filtrado do feed público
+   * pela API.
+   *
+   * Importante: o pk usado é o do próprio FINDING# (mesmo item criado pelo
+   * analyzer), não o `ALERT#FINDING#` que `recordPublication` legacy usa.
+   * Itens FINDING# são os que aparecem no /alerts.
+   */
+  async markUnpublishable(
+    findingPk: string,
+    reason: string,
+    hits: string[],
+  ): Promise<void> {
+    const hitList = hits.length
+      ? { L: hits.map((h) => ({ S: h })) }
+      : { L: [] as { S: string }[] }
+    await this.client.send(
+      new UpdateItemCommand({
+        TableName: ALERTS_TABLE,
+        Key: { pk: { S: findingPk } },
+        UpdateExpression:
+          'SET #unpub = :true, #reason = :reason, #hits = :hits, #unpubAt = :now',
+        ConditionExpression: 'attribute_exists(#pk)',
+        ExpressionAttributeNames: {
+          '#pk': 'pk',
+          '#unpub': 'unpublishable',
+          '#reason': 'unpublishableReason',
+          '#hits': 'unpublishableHits',
+          '#unpubAt': 'unpublishableAt',
+        },
+        ExpressionAttributeValues: {
+          ':true': { BOOL: true },
+          ':reason': { S: reason },
+          ':hits': hitList,
+          ':now': { S: new Date().toISOString() },
+        },
+      }),
+    )
+  }
+
   private async ensurePublicationsMap(pk: string): Promise<void> {
     try {
       await this.client.send(

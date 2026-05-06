@@ -544,6 +544,15 @@ resource "aws_iam_role_policy" "publisher" {
         Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
         Resource = var.kms_key_arn
       },
+      {
+        # Publisher invoca Haiku via Bedrock para regenerar narrativa quando
+        # brand gate (glossary.json#avoid) rejeita a versão original.
+        # Ver regenerateNarrative no engine + MAX_REGEN_ATTEMPTS no publisher.
+        Sid      = "BedrockInvokeNarrativeRegen"
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel"]
+        Resource = "*"
+      },
     ]
   })
 }

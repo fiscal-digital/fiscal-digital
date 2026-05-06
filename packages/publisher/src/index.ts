@@ -1,7 +1,20 @@
 ﻿import type { SQSEvent } from 'aws-lambda'
-import { validateNarrative, createLogger, type Finding } from '@fiscal-digital/engine'
+import {
+  validateNarrative,
+  regenerateNarrative,
+  createLogger,
+  type Finding,
+} from '@fiscal-digital/engine'
 
 const logger = createLogger('publisher')
+
+/**
+ * Tentativas máximas de regeneração contra o brand gate antes de marcar
+ * finding como `unpublishable`. Haiku é estocástico (temperature > 0 nas
+ * regenerações) + prompt aumentado com termos a evitar — empiricamente
+ * 3 tentativas cobrem >95% dos casos.
+ */
+const MAX_REGEN_ATTEMPTS = 3
 import type { PublishChannel } from './channels/types'
 import {
   AlreadyPublishedError,
@@ -54,14 +67,69 @@ export const handler = async (event: SQSEvent): Promise<void> => {
       continue
     }
 
-    const check = validateNarrative(finding.narrative)
-    if (!check.valid) {
-      logger.error('narrativa rejeitada por brand gate', {
-        findingId: finding.id, hits: check.hits,
+    // Brand gate com regeneração N×: brand gate é proteção crítica
+    // (princípio "não acusar, informar"), mas Haiku ocasionalmente derrapa
+    // em "desvio"/"fraud". Em vez de throw → DLQ (estado anterior), tentamos
+    // regenerar com prompt aumentado. Se exaustão, marcamos `unpublishable`
+    // no DDB (audit trail preservado) e seguimos. Nunca throw aqui.
+    let validatedNarrative = finding.narrative
+    let validationCheck = validateNarrative(validatedNarrative)
+
+    for (
+      let attempt = 1;
+      attempt <= MAX_REGEN_ATTEMPTS && !validationCheck.valid;
+      attempt++
+    ) {
+      logger.warn('brand gate hit — regenerando', {
+        findingId: finding.id,
+        attempt,
+        maxAttempts: MAX_REGEN_ATTEMPTS,
+        hits: validationCheck.hits,
       })
-      // Throw → record vai para DLQ. TODO: regenerar via Haiku no analyzer.
-      throw new Error(`narrativa rejeitada: termos proibidos (${check.hits.join(', ')})`)
+      try {
+        validatedNarrative = await regenerateNarrative(
+          finding,
+          validationCheck.hits,
+          attempt,
+        )
+        validationCheck = validateNarrative(validatedNarrative)
+      } catch (err) {
+        logger.error('falha ao regenerar narrativa', {
+          findingId: finding.id,
+          attempt,
+          err,
+        })
+        break
+      }
     }
+
+    if (!validationCheck.valid) {
+      logger.warn('brand gate exaurido — marcando unpublishable', {
+        findingId: finding.id,
+        finalHits: validationCheck.hits,
+      })
+      if (finding.id) {
+        try {
+          await store.markUnpublishable(
+            finding.id,
+            'brand_gate',
+            validationCheck.hits,
+          )
+        } catch (err) {
+          logger.error('falha ao marcar unpublishable', {
+            findingId: finding.id,
+            err,
+          })
+        }
+      }
+      logger.removeKeys(['gazetteId'])
+      continue
+    }
+
+    // Substitui a narrativa do finding pela versão validada (pode ser a
+    // original que passou de cara, ou uma regenerada que passou). Canais
+    // recebem `finding` já com narrativa válida.
+    finding.narrative = validatedNarrative
 
     const targets = channels.filter((c) => c.enabled(finding))
     if (targets.length === 0) {

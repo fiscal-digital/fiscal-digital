@@ -1,19 +1,24 @@
 /**
  * brand-gate-integration.test.ts
  *
- * Testa que o handler rejeita findings com narrativa acusatória
- * e deixa passar findings com narrativa factual.
+ * Testa que o handler rejeita findings com narrativa acusatória,
+ * tenta regenerar via Haiku, e marca como `unpublishable` quando
+ * todas as tentativas exaurem.
  *
  * Estratégia de mock:
  *   - channels/registry → retorna canal stub que registra chamadas
- *   - publications-store → alreadyPublished: false, recordPublication: no-op
+ *   - publications-store → alreadyPublished: false, recordPublication: no-op,
+ *     markUnpublishable: spy
+ *   - regenerateNarrative → mock para controlar o output das tentativas
  */
 
 import type { SQSEvent, SQSRecord } from 'aws-lambda'
 import type { Finding } from '@fiscal-digital/engine'
 
-// ─── Shared spy ────────────────────────────────────────────────────────────
+// ─── Shared spies ──────────────────────────────────────────────────────────
 const publishSpy = jest.fn()
+const markUnpublishableSpy = jest.fn().mockResolvedValue(undefined)
+const regenerateNarrativeSpy = jest.fn()
 
 // ─── Mock channels/registry ────────────────────────────────────────────────
 jest.mock('../channels/registry', () => ({
@@ -31,7 +36,24 @@ jest.mock('../publications-store', () => ({
   PublicationsStore: jest.fn().mockImplementation(() => ({
     alreadyPublished: jest.fn().mockResolvedValue(false),
     recordPublication: jest.fn().mockResolvedValue(undefined),
+    markUnpublishable: markUnpublishableSpy,
   })),
+}))
+
+// ─── Mock regenerateNarrative no engine ────────────────────────────────────
+// Mockar só `regenerateNarrative`, deixando validateNarrative / createLogger /
+// tipos passarem do real. Mock devolve uma Promise<string> controlada por teste.
+jest.mock('@fiscal-digital/engine', () => {
+  const actual = jest.requireActual('@fiscal-digital/engine')
+  return {
+    ...actual,
+    regenerateNarrative: regenerateNarrativeSpy,
+  }
+})
+
+// ─── Mock notifyWebRevalidate (best-effort, evita rede em teste) ───────────
+jest.mock('../web-revalidate', () => ({
+  notifyWebRevalidate: jest.fn().mockResolvedValue(undefined),
 }))
 
 // ─── Import handler after mocks ────────────────────────────────────────────
@@ -78,6 +100,7 @@ describe('handler — brand-gate integration', () => {
       publishedAt: new Date().toISOString(),
     })
     jest.clearAllMocks()
+    markUnpublishableSpy.mockResolvedValue(undefined)
   })
 
   it('finding com narrativa factual → publish chamado normalmente', async () => {
@@ -86,31 +109,50 @@ describe('handler — brand-gate integration', () => {
     await expect(handler(event)).resolves.toBeUndefined()
 
     expect(publishSpy).toHaveBeenCalledTimes(1)
-    expect(publishSpy).toHaveBeenCalledWith(BASE_FINDING)
+    expect(regenerateNarrativeSpy).not.toHaveBeenCalled()
+    expect(markUnpublishableSpy).not.toHaveBeenCalled()
   })
 
-  it('finding com "fraude" na narrativa → throw + console.error + publish NÃO chamado', async () => {
+  it('narrativa com "fraude" mas regeneração 1× passa → publish chamado, NÃO marca unpublishable', async () => {
     const finding: Finding = {
       ...BASE_FINDING,
       id: 'finding-test-002',
       narrative:
         'Identificamos indício de fraude no contrato 042/2024 da Secretaria de Obras.',
     }
+    regenerateNarrativeSpy.mockResolvedValueOnce(
+      'Identificamos indícios de irregularidade no contrato 042/2024 da Secretaria de Obras.',
+    )
     const event = makeSQSEvent(finding)
 
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    await expect(handler(event)).resolves.toBeUndefined()
 
-    await expect(handler(event)).rejects.toThrow(/narrativa rejeitada/)
+    expect(regenerateNarrativeSpy).toHaveBeenCalledTimes(1)
+    expect(publishSpy).toHaveBeenCalledTimes(1)
+    expect(markUnpublishableSpy).not.toHaveBeenCalled()
+  })
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      '[publisher] narrativa rejeitada por brand gate',
-      expect.objectContaining({
-        findingId: 'finding-test-002',
-        hits: expect.arrayContaining(['fraude']),
-      }),
-    )
+  it('narrativa com "fraude" e 3 regenerações também rejeitadas → markUnpublishable + publish NÃO chamado + sem throw', async () => {
+    const finding: Finding = {
+      ...BASE_FINDING,
+      id: 'finding-test-003',
+      narrative: 'Identificamos fraude clara no contrato.',
+    }
+    // Todas as regenerações ainda contêm termos proibidos
+    regenerateNarrativeSpy
+      .mockResolvedValueOnce('Houve desvio de recursos no contrato.')
+      .mockResolvedValueOnce('Há indício de fraude continuada.')
+      .mockResolvedValueOnce('O esquema beneficia o fornecedor.')
+    const event = makeSQSEvent(finding)
+
+    await expect(handler(event)).resolves.toBeUndefined()
+
+    expect(regenerateNarrativeSpy).toHaveBeenCalledTimes(3)
     expect(publishSpy).not.toHaveBeenCalled()
-
-    consoleSpy.mockRestore()
+    expect(markUnpublishableSpy).toHaveBeenCalledWith(
+      'finding-test-003',
+      'brand_gate',
+      expect.any(Array),
+    )
   })
 })
