@@ -39,10 +39,12 @@ describe('fiscalPessoal', () => {
     expect(pico[0].riskScore).toBeGreaterThanOrEqual(60)
     expect(pico[0].legalBasis).toMatch(/Lei 9\.504\/97/)
     expect(pico[0].legalBasis).toMatch(/Art\. 73/)
-    // Linguagem factual — sem termos acusatórios
-    expect(pico[0].narrative).toMatch(/[Ii]dentificamos/)
+    // Linguagem factual — sem termos acusatórios. Narrativa é gerada pelo Haiku
+    // (Onda 2), então o tom é validado por ausência de termos acusatórios + presença
+    // de contexto eleitoral. Aberturas variam ("Identificamos", "Os dados...",
+    // "A análise..."), por isso não fixamos o verbo inicial.
     expect(pico[0].narrative).not.toMatch(/fraudou|desviou|corrup|ilícito/i)
-    expect(pico[0].narrative).toMatch(/janela eleitoral/)
+    expect(pico[0].narrative).toMatch(/eleitoral/i)
     expect(pico[0].evidence[0].source).toMatch(/queridodiario/)
   })
 
