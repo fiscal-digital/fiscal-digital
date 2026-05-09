@@ -224,6 +224,17 @@ Razão: dados de teste em prod poluem feeds RSS, API pública, métricas. Site/l
 - **Alertas:** confidence >= 0.70 + riskScore >= 60 para publicar
 - **Linguagem dos alertas:** factual — "identificamos", "o documento aponta" — nunca acusatório
 
+### Política de testes (Definition of Done)
+
+- **Mudança UI / componente client ≥ M (1-3h):** teste E2E correspondente em `fiscal-digital-web/e2e/*.spec.ts` (Playwright)
+- **Função pura nova em engine:** unit test (Vitest após TEC-WEB-002; Jest legado quebrado)
+- **Bug fix em prod:** regression test que **falha** antes do fix, **passa** após — sem teste, fix não merge
+- **PR-gate `E2E Tests` verde** é obrigatório para merge em `main`
+- **Antes de push:** rodar `npm run test:e2e` localmente (ou `/test`)
+- **Testes E2E rodam contra prod** (`https://fiscaldigital.org`) — read-only por design (sem POST, sem DDB)
+- **Workers=1** obrigatório (LRN-20260509-003) — evita throttle CloudFront
+- **Slash commands:** `/test`, `/test-author`, `/test-debug`. Agents: `qa-fiscal-digital`, `test-author`.
+
 ### Regras de engenharia aprendidas em produção (LRN promoted)
 
 - **DynamoDB GSI keys — nunca `?? null`:** campos que são `hash_key` ou `range_key` de GSI devem ser omitidos quando ausentes, nunca setados para `null`. Usar `...(value && { field: value })`. `null` causa `ValidationException` em prod que passa silenciosamente em unit tests. *(LRN-20260502-019)*
