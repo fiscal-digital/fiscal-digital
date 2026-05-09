@@ -2,6 +2,7 @@ import { extractEntities as defaultExtractEntities } from '../skills/extract_ent
 import { saveMemory } from '../skills/save_memory'
 import { generateNarrative as defaultGenerateNarrative } from '../skills/generate_narrative'
 import { scoreRisk } from '../skills/score_risk'
+import { getPublishThresholds } from '../thresholds'
 import type { Finding, RiskFactor } from '../types'
 import { gazetteKey } from '../utils/pdf_cache'
 import { LEI_14133_ART_75_I_LIMITE, LEI_14133_ART_75_II_LIMITE } from './legal-constants'
@@ -55,7 +56,8 @@ async function generateNarrativaDispensa(
   inciso: 'I' | 'II',
   gazetteDate: string,
 ): Promise<string> {
-  if (finding.riskScore >= 60) {
+  const { riskThreshold } = await getPublishThresholds()
+  if (finding.riskScore >= riskThreshold) {
     const genNarr = context.generateNarrative
     if (genNarr) {
       return genNarr(finding)
