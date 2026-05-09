@@ -102,3 +102,16 @@ resource "aws_ssm_parameter" "publish_confidence_threshold" {
     ignore_changes = [value]
   }
 }
+
+# MIT-02 / EVO-002: feature flag para analyzer escrever em suppliers-prod.
+# Default false: deploy entra "dark", flip para true quando smoke validar.
+# Rollback: aws ssm put-parameter --overwrite --name .../enable-supplier-write --value false
+resource "aws_ssm_parameter" "enable_supplier_write" {
+  name  = "/fiscal-digital/prod/enable-supplier-write"
+  type  = "String"
+  value = "false"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}

@@ -592,6 +592,7 @@ resource "aws_iam_role_policy" "api" {
           var.alerts_table_arn,
           "${var.alerts_table_arn}/index/*",
           var.suppliers_table_arn,
+          "${var.suppliers_table_arn}/index/*", # MIT-02: GSI1-city-date
         ]
       },
       {
