@@ -1,10 +1,14 @@
 # Fiscal Digital
 
+[![Deploy](https://github.com/fiscal-digital/fiscal-digital/actions/workflows/deploy.yml/badge.svg)](https://github.com/fiscal-digital/fiscal-digital/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Data License: CC BY 4.0](https://img.shields.io/badge/Data%20License-CC%20BY%204.0-blue.svg)](https://creativecommons.org/licenses/by/4.0/)
+
 **Agente autônomo de fiscalização de gastos públicos municipais no Brasil.**
 
 Fiscal Digital monitora diários oficiais municipais, detecta irregularidades e publica alertas verificáveis para a sociedade — sempre com a fonte citada.
 
-🌐 [fiscaldigital.org](https://fiscaldigital.org) · 🐦 [@FiscalDigitalBR](https://x.com/FiscalDigitalBR) · 📰 [RSS](https://api.fiscaldigital.org/rss)
+🌐 [fiscaldigital.org](https://fiscaldigital.org) · 🐦 [@FiscalDigitalBR](https://x.com/FiscalDigitalBR) · 📰 RSS público em breve via `api.fiscaldigital.org`
 
 ---
 
@@ -17,8 +21,10 @@ Diário Oficial Municipal (via Querido Diário)
            ↓
     Camada 2 — Nova Lite via Bedrock (extração e classificação)
            ↓
-    9 Fiscais Autônomos (paralelos)
+    10 Fiscais Autônomos (paralelos)
   ┌──────────────────────────────────┐
+  │ Geral (orquestrador, padrão     │
+  │   recorrente cross-gazette)      │
   │ Licitações       — Lei 14.133/21 │
   │ Contratos        — Lei 14.133/21 │
   │ Fornecedores     — RFB + CGU     │
@@ -67,6 +73,12 @@ Mapeamento canônico PT/EN: [`packages/engine/src/types/index.ts`](packages/engi
 | [fiscal-digital-web](https://github.com/fiscal-digital/fiscal-digital-web) | Site e dashboards públicos |
 | [fiscal-digital-collectors](https://github.com/fiscal-digital/fiscal-digital-collectors) | Coletores de fontes de dados |
 | [fiscal-digital-analytics](https://github.com/fiscal-digital/fiscal-digital-analytics) | Análises e relatórios |
+
+---
+
+## Transparência aplicada ao próprio projeto
+
+**FiscalCustos** (agente operacional, não fiscaliza município) consulta diariamente o AWS Cost Explorer, persiste em DynamoDB e expõe em [`fiscaldigital.org/transparencia/custos`](https://fiscaldigital.org/transparencia/custos): mês corrente, projeção, breakdown por serviço, conversão USD→BRL via PTAX BCB. O mesmo padrão de verificabilidade que aplicamos a contratos públicos aplicamos aos nossos próprios custos.
 
 ---
 
