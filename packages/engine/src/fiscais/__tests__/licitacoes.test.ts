@@ -356,12 +356,10 @@ describe('fiscalLicitacoes', () => {
 
     const dispensa_irregular = findings.filter(f => f.type === 'dispensa_irregular')
 
-    // Verificar que não há termos acusatórios
+    // Verificar que não há termos acusatórios + presença de conceitos-chave
+    // (LRN-20260509-005 — não fixa verbo de abertura, que varia entre Haiku e fallback).
     for (const finding of dispensa_irregular) {
       expect(finding.narrative).not.toMatch(/fraudou|desviou|corrup[ção]|ilícito|irregularidade comprovada/i)
-      // Verificar linguagem factual
-      expect(finding.narrative).toMatch(/[Ii]dentificamos/)
-      // Verificar menção ao limite legal
       expect(finding.narrative).toMatch(/limite legal/)
       expect(finding.narrative).toMatch(/Lei 14\.133\/2021/)
     }

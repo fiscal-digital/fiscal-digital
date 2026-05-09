@@ -466,9 +466,9 @@ describe('fiscalConvenios', () => {
     const semChamamento = findings.filter(f => f.type === 'convenio_sem_chamamento')
     expect(semChamamento.length).toBeGreaterThanOrEqual(1)
     for (const f of semChamamento) {
-      // Linguagem factual, sem termos acusatórios
+      // Linguagem factual, sem termos acusatórios. Tom é validado por ausência
+      // de termos vetados; abertura varia entre Haiku e fallback (LRN-20260509-005).
       expect(f.narrative).not.toMatch(/fraudou|desviou|corrup[ção]|ilícito|crim(?:e|inoso)|irregularidade comprovada/i)
-      expect(f.narrative).toMatch(/[Ii]dentificamos|[Oo]\s+documento\s+aponta/)
       expect(f.narrative).toMatch(/Lei 13\.019\/2014/)
     }
   })

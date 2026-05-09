@@ -151,8 +151,8 @@ describe('fiscalPublicidade', () => {
     expect(findings[0].confidence).toBeGreaterThanOrEqual(0.70)
     expect(findings[0].legalBasis).toMatch(/Lei 9\.504\/97/)
     expect(findings[0].legalBasis).toMatch(/Art\.\s*73/)
-    // Linguagem factual — sem termos acusatórios
-    expect(findings[0].narrative).toMatch(/[Ii]dentificamos/)
+    // Linguagem factual — sem termos acusatórios + presença do conceito-chave
+    // (LRN-20260509-005 — abertura varia entre Haiku e fallback).
     expect(findings[0].narrative).not.toMatch(/fraudou|desviou|corrup|ilícito|ilegal/i)
     expect(findings[0].narrative).toMatch(/janela vedada/i)
     expect(findings[0].evidence[0].source).toMatch(/queridodiario/)
