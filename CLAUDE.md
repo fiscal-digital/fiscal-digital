@@ -249,6 +249,12 @@ Razão: dados de teste em prod poluem feeds RSS, API pública, métricas. Site/l
 
 - **CloudFront — NUNCA forward `Host` header:** em qualquer behavior cuja origin seja S3 com OAC sigv4 OU Lambda Function URL. Sintoma varia por origin: S3 retorna **404 NotFound** (mascarado como "asset não existe"); Lambda Function URL retorna **403 AccessDeniedException**. Auditar TODOS os behaviors (default + ordered), não só o default. Em terraform: omitir `headers` em `forwarded_values` ou listar explicitamente sem `Host` (ex: `headers = ["Accept-Encoding"]`). *(LRN-20260503-028, LRN-20260503-034)*
 
+- **Gate de PR é fonte da verdade — não scripts fantasma:** se `npm run lint` está declarado mas eslint não está instalado, o script sai com exit 0 sem checar nada. Análogo: `terraform plan` com `continue-on-error: true` mascara erros reais de prod. Sempre verificar que um PR vazio com violação conhecida é barrado pelo gate — se não barra, o gate está mentindo. *(LRN-20260505-004)*
+
+- **npm overrides para deps transitivas — regenerar lock fresh:** `npm install --force` NÃO recalcula resolução quando override é adicionado, porque npm v11 lê o lock primeiro. Para deps transitivas profundas (típico em CVEs de AWS SDK): `rm -rf node_modules package-lock.json && npm install`. Verificar via `npm ls <dep>`. *(LRN-20260509-001)*
+
+- **Plan.yml gate exige Build engine antes de Test + NODE_OPTIONS=--experimental-vm-modules:** workspaces que importam `@fiscal-digital/engine` falham com `Cannot find module` se o engine não foi compilado (TypeScript precisa de `dist/index.d.ts`). AWS SDK v3 usa dynamic `import()` para deps optional → Jest sem `--experimental-vm-modules` falha com `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG`. Ambos cobertos no `plan.yml` da Fase 0. *(LRN-20260509-002)*
+
 ## Convenção de Nomenclatura AWS
 
 `kebab-case` minúsculas em todos os recursos.
@@ -536,10 +542,11 @@ aws secretsmanager get-secret-value --secret-id <ARN> --query SecretString --out
 
 ## GitHub Actions
 
-- PR → `terraform plan` + lint + testes
-- Push `main` → `terraform apply` + deploy Lambdas
-- Workflows: `id-token: write` + `role-to-assume: ${{ vars.AWS_ROLE_ARN }}`
-- Proibido: `AWS_ACCESS_KEY_ID` em qualquer workflow
+- **PR (`plan.yml` — gate de Test Hardening Fase 0):** `npm ci` + ESLint flat + `npm run build -w packages/engine` + Jest com DDB Local + `terraform fmt -check` + `terraform validate` + `tflint` + `checkov` + `aws-quota-check.mjs` + `terraform plan` (sem `continue-on-error`) + comment idempotente do plan no PR + upload do `tfplan.bin` como artifact
+- **Push `main` (`deploy.yml`):** `npm ci` + build engine + bundle Lambdas + `terraform apply` + `aws lambda update-function-code` + alias `prod`
+- Workflows: `id-token: write` + `role-to-assume: ${{ secrets.AWS_ROLE_ARN }}` — `secrets` (não `vars`) porque o ARN expõe Account ID e o repo é OSS público; `secrets` é mascarado nos logs
+- **Proibido em qualquer workflow:** `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` (até como dummy — DDB Local recebe credenciais embutidas no client via `DDB_ENDPOINT` ramo do `utils/dynamodb.ts`)
+- **Proibido:** `continue-on-error: true` em qualquer step de validação que reflita estado de prod (gate fantasma — ver LRN-20260505-004)
 
 ## Execução Autônoma
 

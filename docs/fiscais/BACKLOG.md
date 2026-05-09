@@ -5,7 +5,7 @@
 
 ---
 
-## Fiscais em Produção (9 ativos)
+## Fiscais em Produção (10 ativos)
 
 ### 1. FiscalLicitacoes — `fiscal-licitacoes`
 - **Status:** ✅ em prod, calibrado 2026-05-02
