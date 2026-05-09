@@ -104,15 +104,43 @@ resource "aws_dynamodb_table" "suppliers" {
   name         = "fiscal-digital-suppliers-prod"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "pk"
+  range_key    = "sk"
 
   server_side_encryption {
     enabled     = true
     kms_key_arn = var.kms_key_arn
   }
 
+  # MIT-02 / EVO-002: schema cross-supplier
+  # pk: SUPPLIER#{cnpj}
+  # sk: {contractedAt}#{contractId} — cronológico + dedupe por contractId
+  # Atributos: cityId, secretaria, valueAmount, contractType, sourceFindingId, capturedAt
   attribute {
     name = "pk"
     type = "S"
+  }
+
+  attribute {
+    name = "sk"
+    type = "S"
+  }
+
+  attribute {
+    name = "cityId"
+    type = "S"
+  }
+
+  attribute {
+    name = "contractedAt"
+    type = "S"
+  }
+
+  # Cross-supplier por cidade — "contratos do CNPJ X em Caxias por data"
+  global_secondary_index {
+    name            = "GSI1-city-date"
+    hash_key        = "cityId"
+    range_key       = "contractedAt"
+    projection_type = "ALL"
   }
 
   point_in_time_recovery {
