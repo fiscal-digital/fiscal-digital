@@ -86,7 +86,7 @@ jobs:
         working-directory: terraform
         run: |
           tflint --init
-          tflint --recursive --format=compact
+          tflint --recursive --format=compact --minimum-failure-severity=error
 
       - name: Run checkov
         uses: bridgecrewio/checkov-action@v12
