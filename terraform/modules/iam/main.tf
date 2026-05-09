@@ -74,6 +74,17 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:fiscal-digital-*"
       },
       {
+        # Quota check no plan.yml gate (LRN-20260503-020). APIs account-level
+        # read-only que não suportam resource scoping.
+        Sid    = "QuotaCheckReadOnly"
+        Effect = "Allow"
+        Action = [
+          "lambda:GetAccountSettings",
+          "dynamodb:DescribeLimits",
+        ]
+        Resource = "*"
+      },
+      {
         Sid    = "TerraformManage"
         Effect = "Allow"
         Action = [
