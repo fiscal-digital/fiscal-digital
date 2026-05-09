@@ -172,10 +172,11 @@ describe('GET /stats', () => {
       makeFinding({ fiscalId: 'fiscal-licitacoes', cityId: '4305108', type: 'fracionamento' }),
       makeFinding({ fiscalId: 'fiscal-contratos',  cityId: '3550308', type: 'aditivo_abusivo' }),
     ]
-    // 1ª chamada: scanAllFindings (alerts) — 2ª chamada: countGazettes (gazettes)
+    // 1ª chamada: scanAllFindings (Scan alerts)
+    // 2ª chamada: countGazettes (GetItem em AGG#GAZETTE_COUNT — WIN-API-003)
     mockDdbSend
       .mockResolvedValueOnce({ Items: findings })
-      .mockResolvedValueOnce({ Count: 8400 })
+      .mockResolvedValueOnce({ Item: { total: 8400 } })
 
     const res = asResult(await handler(makeEvent('/stats')))
     expect(res.statusCode).toBe(200)
@@ -209,7 +210,7 @@ describe('GET /stats', () => {
   it('retorna stats zerados quando não há findings nem gazettes (estado vazio)', async () => {
     mockDdbSend
       .mockResolvedValueOnce({ Items: [] })
-      .mockResolvedValueOnce({ Count: 0 })
+      .mockResolvedValueOnce({ Item: { total: 0 } })
 
     const res = asResult(await handler(makeEvent('/stats')))
     expect(res.statusCode).toBe(200)
@@ -248,7 +249,17 @@ describe('GET /cities', () => {
       makeFinding({ cityId: '4305108', createdAt: '2026-04-15T00:00:00.000Z' }),
       makeFinding({ cityId: '3550308', createdAt: '2026-04-12T00:00:00.000Z' }),
     ]
-    mockDdbSend.mockResolvedValueOnce({ Items: findings })
+    // WIN-API-002: handler agora chama N Queries (uma por cidade) em GSI1-city-date
+    // em vez de 1 Scan global. Mock filtra findings pelo cityId da Query.
+    mockDdbSend.mockImplementation((cmd: { __type?: string; input?: { ExpressionAttributeValues?: Record<string, unknown> } }) => {
+      if (cmd?.__type === 'Query') {
+        const cityId = cmd.input?.ExpressionAttributeValues?.[':cid']
+        return Promise.resolve({
+          Items: findings.filter(f => f.cityId === cityId),
+        })
+      }
+      return Promise.resolve({ Items: [] })
+    })
 
     const res = asResult(await handler(makeEvent('/cities')))
     expect(res.statusCode).toBe(200)
