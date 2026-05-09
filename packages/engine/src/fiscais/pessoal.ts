@@ -10,7 +10,7 @@ const FISCAL_ID = 'fiscal-pessoal'
 // ─── Regex de filtro etapa 1 ──────────────────────────────────────────────────
 
 const NOMEACAO_RE = /nome(a[çc][ãa]o|ando|ado)|designa[çc][ãa]o|exonera[çc][ãa]o/i
-const COMISSAO_RE = /cargo\s+(em\s+)?comiss[ãa]o/i
+const COMISSAO_RE = /cargo\s+(?:em\s+)?comiss[ãa]o|cargo\s+comissionado/i
 
 // ─── Regex de contagem (etapa 3 — pico) ──────────────────────────────────────
 
@@ -112,7 +112,7 @@ function contarPessoasUnicas(excerpts: string[]): number {
 // ─── Extração de contexto (cargos + secretarias) ─────────────────────────────
 
 const SECRETARIA_RE =
-  /Secretaria\s+(?:Municipal\s+)?(?:de|da|do)\s+([A-ZÀ-Ü][\wÀ-ÿ]+(?:\s+(?:e|de|da|do)\s+[A-ZÀ-Ü][\wÀ-ÿ]+){0,4})/g
+  /[Ss]ecretaria\s+(?:[Mm]unicipal\s+)?(?:de|da|do|DE|DA|DO)\s+([A-ZÀ-Ü][\wÀ-ÿ]+(?:\s+(?:e|de|da|do|E|DE|DA|DO)\s+[A-ZÀ-Ü][\wÀ-ÿ]+){0,4})/g
 
 const CARGO_RE =
   /(?:para|do|no)\s+(?:o\s+)?cargo\s+(?:em\s+)?comiss[ãa]o\s+de\s+([A-ZÀ-Ü][\wÀ-ÿ]+(?:\s+(?:de|da|do)\s+[\wÀ-ÿ]+){0,3})/g
@@ -171,7 +171,7 @@ Regras inegociáveis:
 - CITE secretarias e cargos específicos QUANDO o contexto os fornecer (especificidade > genericidade)
 - Em janela eleitoral: mencionar Lei 9.504/97 Art. 73 V
 - Fora de janela: tom informativo, sem alarmismo
-- Indique o porte da cidade (large/medium/small) ao explicar o limiar
+- Indique o porte da cidade em português natural: "cidade de grande porte (mais de 1 milhão de habitantes)", "cidade de médio porte", "cidade de pequeno porte". NÃO use os termos técnicos "large", "medium" ou "small".
 
 Formato esperado da saída: APENAS o texto narrativo, sem prefixos, sem aspas, sem markdown.`
 
@@ -325,8 +325,9 @@ export const fiscalPessoal: Fiscal = {
     const pessoasUnicas = contarPessoasUnicas(relevantExcerpts)
     const ocorrencias = relevantExcerpts.reduce((sum, e) => sum + contarAtos(e), 0)
     // Usa pessoas únicas como métrica primária quando heuristica capturou
-    // >= 2 nomes; senão cai em ocorrências (heuristica conservadora).
-    const totalAtos = pessoasUnicas >= 2 ? pessoasUnicas : ocorrencias
+    // >= 1 nome. Antes era >= 2, o que fazia 1 pessoa nomeada para múltiplos
+    // cargos cair no fallback de palavras (ex: 4 ocorrências) — falso positivo.
+    const totalAtos = pessoasUnicas >= 1 ? pessoasUnicas : ocorrencias
     const janela = dentroJanelaEleitoral(gazette.date)
     const emJanela = janela !== null
     const bucket = cityBucket(cityId)
@@ -364,6 +365,11 @@ export const fiscalPessoal: Fiscal = {
         const scoreResult = await scoreRisk.execute({ factors: riskFactors })
         const riskScore = scoreResult.data
 
+        // Findings fora da janela eleitoral têm baseRisco=45 e raramente
+        // ultrapassam 60. O gate de publicação exige riskScore >= 60.
+        // Criar findings abaixo desse limiar polui o DDB sem benefício público.
+        if (riskScore >= 60) {
+
         // Narrativa via Haiku — cita secretarias e cargos extraídos quando
         // disponíveis. Fallback resiliente em caso de falha do Bedrock.
         const cidade = getCityOrFallback(cityId)
@@ -385,7 +391,10 @@ export const fiscalPessoal: Fiscal = {
           cityId,
           type: 'pico_nomeacoes',
           riskScore,
-          confidence: 0.75,
+          // Confiança reflete o método de detecção:
+          // - pessoas únicas (regex nomeação): mais preciso → 0.82
+          // - fallback contagem de palavras: menos preciso → 0.65
+          confidence: pessoasUnicas >= 1 ? 0.82 : 0.65,
           evidence: [
             {
               source: gazette.url,
@@ -399,6 +408,7 @@ export const fiscalPessoal: Fiscal = {
         }
 
         findings.push(finding)
+        } // end if (riskScore >= 60)
       }
 
     }
@@ -429,7 +439,7 @@ export const fiscalPessoal: Fiscal = {
           `Identificamos exoneração e nomeação para cargo comissionado na gazette de ` +
           `${formatDate(gazette.date)}. O documento aponta troca de titular no mesmo ato. ` +
           `Rotatividade elevada em cargos comissionados pode indicar uso político do funcionalismo (CF, Art. 37, V). ` +
-          `Análise cross-gazette de histórico completo requer schema de personas (TODO).`
+          `Análise de rotatividade histórica entre múltiplas gazettes está em desenvolvimento.`
 
         const finding: Finding = {
           fiscalId: FISCAL_ID,
