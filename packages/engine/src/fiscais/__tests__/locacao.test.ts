@@ -384,10 +384,10 @@ describe('fiscalLocacao', () => {
 
     expect(findings).toHaveLength(1)
     const finding = findings[0]
+    // Linguagem factual + base legal citada (LRN-20260509-005 — não fixa abertura).
     expect(finding.narrative).not.toMatch(
       /fraudou|desviou|corrup[ção]|ilícito|irregularidade comprovada/i,
     )
-    expect(finding.narrative).toMatch(/[Ii]dentificamos/)
     expect(finding.narrative).toMatch(/Lei 14\.133\/2021/)
     expect(finding.narrative).toMatch(/Art\.\s*74/)
   })

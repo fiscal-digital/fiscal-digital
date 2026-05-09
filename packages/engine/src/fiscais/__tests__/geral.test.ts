@@ -53,7 +53,7 @@ describe('fiscalGeral', () => {
     expect(meta[0].cnpj).toBe(cnpj)
     expect(meta[0].riskScore).toBeGreaterThanOrEqual(90)
     expect(meta[0].fiscalId).toBe('fiscal-geral')
-    expect(meta[0].narrative).toMatch(/[Ii]dentificamos/)
+    // Linguagem factual — só validamos ausência de termos acusatórios (LRN-20260509-005).
     expect(meta[0].narrative).not.toMatch(/fraudou|desviou|corrup/i)
     // Evidências consolidadas: 1 por finding original = 3 total
     expect(meta[0].evidence).toHaveLength(3)

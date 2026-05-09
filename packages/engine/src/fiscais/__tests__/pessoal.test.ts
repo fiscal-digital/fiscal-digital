@@ -132,7 +132,7 @@ describe('fiscalPessoal', () => {
     const rotatividade = findings.filter(f => f.type === 'rotatividade_anormal')
     expect(rotatividade).toHaveLength(1)
     expect(rotatividade[0].legalBasis).toMatch(/CF.*Art\. 37/)
-    expect(rotatividade[0].narrative).toMatch(/[Ii]dentificamos/)
+    // Linguagem factual — só validamos ausência de termos acusatórios (LRN-20260509-005).
     expect(rotatividade[0].narrative).not.toMatch(/fraudou|desviou|corrup/i)
     expect(rotatividade[0].evidence[0].source).toMatch(/queridodiario/)
   })

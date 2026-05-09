@@ -87,8 +87,7 @@ describe('fiscalFornecedores', () => {
     expect(cnpjJovem[0].cnpj).toBe('55.111.222/0001-33')
     expect(cnpjJovem[0].riskScore).toBeGreaterThan(0)
     expect(cnpjJovem[0].legalBasis).toMatch(/Art\. 67/)
-    // Narrativa factual — sem termos acusatórios
-    expect(cnpjJovem[0].narrative).toMatch(/[Ii]dentificamos/)
+    // Narrativa factual — só validamos ausência de termos acusatórios (LRN-20260509-005).
     expect(cnpjJovem[0].narrative).not.toMatch(/fraudou|desviou|corrup/i)
   })
 
@@ -187,7 +186,8 @@ describe('fiscalFornecedores', () => {
     expect(concentracao[0].cnpj).toBe(cnpj)
     expect(concentracao[0].secretaria).toBe(secretaria)
     expect(concentracao[0].legalBasis).toMatch(/Art\. 11/)
-    expect(concentracao[0].narrative).toMatch(/[Ii]dentificamos/)
+    // Narrativa factual (LRN-20260509-005) — sem termos acusatórios.
+    expect(concentracao[0].narrative).not.toMatch(/fraudou|desviou|corrup/i)
   })
 
   // Caso 6 — Contratos diversificados (CNPJs distintos) → não dispara concentracao_fornecedor

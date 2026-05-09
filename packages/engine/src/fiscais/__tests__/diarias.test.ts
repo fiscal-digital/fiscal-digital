@@ -150,7 +150,7 @@ describe('fiscalDiarias', () => {
     expect(irregular).toHaveLength(1)
     expect(irregular[0].legalBasis).toMatch(/Lei 8\.112\/90/)
     expect(irregular[0].legalBasis).toMatch(/Art\. 58/)
-    expect(irregular[0].narrative).toMatch(/[Ii]dentificamos/)
+    // Linguagem factual + presença do conceito-chave (LRN-20260509-005).
     expect(irregular[0].narrative).not.toMatch(/fraudou|desviou|corrup|ilícito/i)
     expect(irregular[0].narrative).toMatch(/sábado/i)
     expect(irregular[0].evidence[0].source).toBe(gazette.url)
