@@ -3,7 +3,7 @@ import { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand, QueryComma
 import { S3Client, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda'
 import crypto from 'node:crypto'
-import { CITIES, getCityOrFallback, pdfCacheUrl, pdfCacheS3Key, createLogger } from '@fiscal-digital/engine'
+import { CITIES, getCityOrFallback, pdfCacheUrl, pdfCacheS3Key, createLogger, getPublishThresholds } from '@fiscal-digital/engine'
 import type { Finding } from '@fiscal-digital/engine'
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' })
@@ -103,18 +103,17 @@ async function fetchFindings(filters: {
     } while (exclusiveStartKey)
   }
 
-  // Gate de publicação: CLAUDE.md exige riskScore >= 60 E confidence >= 0.70.
+  // Gate de publicação: thresholds dinâmicos via SSM (TEC-ENG-002), default 60/0.70.
   // Findings que ficam abaixo desses thresholds não vão para feed/home/RSS —
-  // ficam apenas na tabela alerts-prod para auditoria interna. Fiscais novos
-  // (locacao, convenios) foram calibrados com confidence 0.65; sobem para 0.70+
-  // depois de mais validação manual.
+  // ficam apenas na tabela alerts-prod para auditoria interna.
   //
   // Brand gate exhausted: findings com `unpublishable: true` (ex: narrativas
   // que travaram no glossary.json#avoid mesmo após 3× regeneração) ficam no
   // DDB como audit trail mas não aparecem em feed público. Ver publisher
   // markUnpublishable.
+  const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
   return all
-    .filter(f => f.type && f.riskScore >= 60 && (f.confidence ?? 0) >= 0.70)
+    .filter(f => f.type && f.riskScore >= riskThreshold && (f.confidence ?? 0) >= confidenceThreshold)
     .filter(f => !(f as Finding & { unpublishable?: boolean }).unpublishable)
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
 }
@@ -266,6 +265,8 @@ async function countFindingsByCity(cityId: string): Promise<{ count: number; las
   let count = 0
   let last: string | null = null
   let exclusiveStartKey: Record<string, unknown> | undefined
+  // Thresholds via SSM (TEC-ENG-002) — uma chamada cacheada por cold start.
+  const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
   do {
     const out: { Items?: unknown[]; LastEvaluatedKey?: Record<string, unknown> } = await ddb.send(new QueryCommand({
       TableName: ALERTS_TABLE,
@@ -279,8 +280,8 @@ async function countFindingsByCity(cityId: string): Promise<{ count: number; las
       ExpressionAttributeValues: {
         ':cid': cityId,
         ':empty': '',
-        ':r': 60,
-        ':c': 0.70,
+        ':r': riskThreshold,
+        ':c': confidenceThreshold,
       },
       ProjectionExpression: 'createdAt',
       ScanIndexForward: false,
@@ -897,8 +898,9 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         Key: { pk },
       }))
       const f = out.Item as Finding | undefined
-      // Gate de publicação — não expor findings abaixo do threshold via URL pública.
-      if (!f || !f.type || (f.riskScore ?? 0) < 60 || (f.confidence ?? 0) < 0.70) {
+      // Gate de publicação via SSM (TEC-ENG-002) — não expor findings abaixo do threshold via URL pública.
+      const { riskThreshold: rt, confidenceThreshold: ct } = await getPublishThresholds()
+      if (!f || !f.type || (f.riskScore ?? 0) < rt || (f.confidence ?? 0) < ct) {
         return { statusCode: 404, body: JSON.stringify({ error: 'finding_not_found' }), headers: { 'Content-Type': 'application/json' } }
       }
       const source = f.evidence?.[0]?.source
@@ -985,15 +987,16 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     if (path === '/stats' || path === '/stats/') {
-      const [allFindings, gazettesCount] = await Promise.all([
+      const [allFindings, gazettesCount, thresholds] = await Promise.all([
         scanAllFindings(),
         countGazettes(),
+        getPublishThresholds(),
       ])
-      // Aplicar gate de publicação para consistência com /alerts e /cities.
+      // Aplicar gate de publicação (SSM TEC-ENG-002) para consistência com /alerts e /cities.
       // KPIs do site (Hero, StatsCounter) devem mostrar findings publicáveis,
       // não TODOS findings na tabela (que inclui rascunhos < gate).
       const findings = allFindings.filter(
-        f => f.type && f.riskScore >= 60 && (f.confidence ?? 0) >= 0.70,
+        f => f.type && f.riskScore >= thresholds.riskThreshold && (f.confidence ?? 0) >= thresholds.confidenceThreshold,
       )
       const stats = buildStats(findings, gazettesCount)
       return ok(JSON.stringify(stats, null, 2), 'application/json; charset=UTF-8', 60)
