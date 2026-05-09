@@ -6,7 +6,15 @@ import {
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb'
 
-const raw = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
+const raw = new DynamoDBClient({
+  region: process.env.AWS_REGION ?? 'us-east-1',
+  ...(process.env.DDB_ENDPOINT
+    ? {
+        endpoint: process.env.DDB_ENDPOINT,
+        credentials: { accessKeyId: 'local', secretAccessKey: 'local' },
+      }
+    : {}),
+})
 export const docClient = DynamoDBDocumentClient.from(raw)
 
 export async function getItem(
