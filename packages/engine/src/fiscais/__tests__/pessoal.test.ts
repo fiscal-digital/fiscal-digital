@@ -63,8 +63,10 @@ describe('fiscalPessoal', () => {
     expect(pico).toHaveLength(0)
   })
 
-  // Caso 3 — Fora da janela + 12 atos → dispara informativo (riskScore < 60)
-  it('3. informativo fora janela: 12 atos em fev/2026 → emite pico_nomeacoes com riskScore < 60', async () => {
+  // Caso 3 — Fora da janela + 12 atos: gate auditoria (Onda 3 / 7-ajustes)
+  // bloqueia findings com riskScore < 60 para não poluir DDB.
+  // Em medium (Caxias), 12 atos fora janela = baseRisco 45 + excesso < 60.
+  it('3. fora janela: 12 atos em fev/2026 → NÃO dispara (riskScore < 60 blocked)', async () => {
     const context = makeContext({
       now: () => new Date('2026-02-20T10:00:00.000Z'),
     })
@@ -76,10 +78,7 @@ describe('fiscalPessoal', () => {
     })
 
     const pico = findings.filter(f => f.type === 'pico_nomeacoes')
-    expect(pico).toHaveLength(1)
-    expect(pico[0].riskScore).toBeLessThan(60)
-    expect(pico[0].narrative).toMatch(/[Ii]dentificamos/)
-    expect(pico[0].narrative).toMatch(/informativo/)
+    expect(pico).toHaveLength(0)
   })
 
   // Caso 4 — Calibração 2026-05-06: 3 atos eleitoral em medium (Caxias) →
