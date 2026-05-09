@@ -25,7 +25,13 @@ Contribuidores
 
 - Push direto proibido — apenas via PR
 - Mínimo 1 aprovação obrigatória
-- CI deve passar (lint + testes + terraform plan)
+- CI deve passar — gate `plan.yml` (Test Hardening Fase 0):
+  - **Lint:** ESLint v9 flat config + custom rule contra `process.env.X!`
+  - **Build engine:** `npm run build -w packages/engine` (workspaces dependentes consomem `dist/`)
+  - **Tests unit + integration:** Jest com DynamoDB Local em service container; `NODE_OPTIONS=--experimental-vm-modules` para AWS SDK v3
+  - **Terraform:** `fmt -check`, `validate`, `tflint --recursive` com plugin AWS, `checkov` (33 rules em `skip_check` documentadas para hardening em PRs separados — TST-070..073)
+  - **AWS quota check:** soma `reserved_concurrent_executions` no Terraform vs `lambda:GetAccountSettings` (LRN-20260503-020)
+  - **Terraform Plan:** sem `continue-on-error`; comment idempotente do plan no PR; `tfplan.bin` upload como artifact (7 dias)
 - Histórico linear (squash merge)
 
 ## Responsabilidade editorial

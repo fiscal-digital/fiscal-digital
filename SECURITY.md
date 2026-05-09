@@ -4,7 +4,7 @@
 
 **Não abra uma Issue pública para vulnerabilidades de segurança.**
 
-Envie um email para: seguranca@fiscaldigital.org
+Envie um email para: lineu@fiscaldigital.org
 
 Inclua:
 - Descrição da vulnerabilidade

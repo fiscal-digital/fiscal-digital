@@ -72,4 +72,4 @@ A credibilidade do projeto depende dessa transparência.
 
 - GitHub Issues: para bugs e features
 - GitHub Discussions: para dúvidas e propostas
-- Email: contato@fiscaldigital.org
+- Email: lineu@fiscaldigital.org
