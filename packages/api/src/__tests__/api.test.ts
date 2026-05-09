@@ -25,6 +25,9 @@ jest.mock('@aws-sdk/lib-dynamodb', () => ({
     from: jest.fn().mockReturnValue({ send: (...args: unknown[]) => mockDdbSend(...args) }),
   },
   ScanCommand: jest.fn().mockImplementation((input: unknown) => ({ __type: 'Scan', input })),
+  GetCommand: jest.fn().mockImplementation((input: unknown) => ({ __type: 'Get', input })),
+  PutCommand: jest.fn().mockImplementation((input: unknown) => ({ __type: 'Put', input })),
+  QueryCommand: jest.fn().mockImplementation((input: unknown) => ({ __type: 'Query', input })),
 }))
 
 // ---------------------------------------------------------------------------
