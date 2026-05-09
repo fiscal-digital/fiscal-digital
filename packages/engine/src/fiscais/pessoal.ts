@@ -64,6 +64,51 @@ function contarAtos(excerpt: string): number {
   return matches ? matches.length : 0
 }
 
+// ─── Pessoas únicas ──────────────────────────────────────────────────────────
+
+/**
+ * Verbo de ato (nomear/exonerar/designar) seguido de nome próprio em
+ * Title Case ou ALL CAPS. Cobre padrões comuns em diários oficiais BR:
+ *   "NOMEIA Maria da Silva"   "Nomear MARIA DA SILVA"
+ *   "EXONERA o sr. João Lima" "Designar o servidor João Lima"
+ *
+ * Conector (de/da/do/...) aceito em qualquer caixa para suportar nomes
+ * em CAPS LOCK comuns em portarias. Captura 2–5 palavras.
+ *
+ * Validado em fixtures cobrindo: 7 pessoas distintas, rotatividade
+ * (exoneração + nomeação no mesmo excerpt), CAPS LOCK, Title Case,
+ * sem nome (nomeação genérica).
+ */
+const PESSOA_NOMEADA_RE =
+  /\b(?:nomeia|nomear|nomeando|nomeada|nomeado|exonera|exonerar|exonerando|exonerado|exonerada|designa|designar|designando|designado|designada)\b\s+(?:o[s]?\s+|a[s]?\s+)?(?:sr\.?\s+|sra\.?\s+|servidor[a]?\s+)?((?:[A-ZÀ-Ü][\wÀ-ÿ]+)(?:\s+(?:de|da|do|dos|das|e|DE|DA|DO|DOS|DAS|E)\s+[A-ZÀ-Ü][\wÀ-ÿ]+|\s+[A-ZÀ-Ü][\wÀ-ÿ]+){1,4})/gi
+
+const STOP_PATTERN_PESSOA = /\b(para|do cargo|da diretoria|no cargo|na secretaria|sob a|com efeito|como|a partir|em comiss)\b/i
+
+/**
+ * Conta pessoas únicas (não ocorrências de palavra). Resolve falso positivo
+ * comum: "NOMEIA Maria da Silva para Diretor, Coordenador, Chefe" — o
+ * `contarAtos` antigo conta 4 atos (1 verbo + 3 cargos), mas é 1 pessoa só.
+ *
+ * Heurística: extrai nomes próprios após verbos de ato, normaliza, aplica
+ * Set. Cortar no primeiro stop-word (`para`, `do cargo`, `na secretaria`...)
+ * para evitar capturar palavras-ruído como parte do nome.
+ */
+function contarPessoasUnicas(excerpts: string[]): number {
+  const text = excerpts.join('\n')
+  const pessoas = new Set<string>()
+  for (const m of text.matchAll(PESSOA_NOMEADA_RE)) {
+    let raw = m[1].trim()
+    const stop = raw.search(STOP_PATTERN_PESSOA)
+    if (stop > 0) raw = raw.slice(0, stop).trim()
+    const nome = raw.replace(/[.,;:]+$/, '').replace(/\s+/g, ' ').trim().toLowerCase()
+    // Filtro mínimo: nome com 2+ palavras + 6+ chars (evita falsos curtos)
+    if (nome.split(/\s+/).length >= 2 && nome.length >= 6) {
+      pessoas.add(nome)
+    }
+  }
+  return pessoas.size
+}
+
 // ─── Extração de contexto (cargos + secretarias) ─────────────────────────────
 
 const SECRETARIA_RE =
@@ -270,10 +315,18 @@ export const fiscalPessoal: Fiscal = {
     // Agora soma todos os excerpts da MESMA gazette antes de testar.
     //
     // Calibração 2026-05-06 — auditoria de 296 findings em prod identificou
-    // ~50% ruído (5 atos em capital de 2M hab é cadência administrativa
-    // normal). Threshold agora é dinâmico por porte da cidade:
-    // small (<100k) / medium (100k-1M) / large (>1M).
-    const totalAtos = relevantExcerpts.reduce((sum, e) => sum + contarAtos(e), 0)
+    // ~50% ruído. Mudanças (Ondas 1-3):
+    //   - Threshold dinâmico por porte da cidade (Onda 1)
+    //   - Narrativa via Haiku citando secretarias/cargos (Onda 2)
+    //   - Conta PESSOAS ÚNICAS quando heuristica encontra >=2; fallback em
+    //     contagem de palavras (Onda 3) — resolve falso positivo
+    //     "NOMEIA Maria para Diretor, Coordenador, Chefe" = 4 ocorrências
+    //     mas 1 pessoa.
+    const pessoasUnicas = contarPessoasUnicas(relevantExcerpts)
+    const ocorrencias = relevantExcerpts.reduce((sum, e) => sum + contarAtos(e), 0)
+    // Usa pessoas únicas como métrica primária quando heuristica capturou
+    // >= 2 nomes; senão cai em ocorrências (heuristica conservadora).
+    const totalAtos = pessoasUnicas >= 2 ? pessoasUnicas : ocorrencias
     const janela = dentroJanelaEleitoral(gazette.date)
     const emJanela = janela !== null
     const bucket = cityBucket(cityId)
