@@ -1,5 +1,5 @@
 resource "aws_cloudwatch_event_rule" "daily_collector" {
-  name                = "fiscal-digital-daily-collector-prod"
+  name = "fiscal-digital-daily-collector-prod"
   # Throttle 2026-05-05: Querido Diário tem indexação irregular por spider —
   # várias cidades nossas (Caxias, POA, SP, Brasília) sem gazette nova há
   # meses. Reduzido de Mon-Fri para Mon-only enquanto OKFN não retoma fluxo
