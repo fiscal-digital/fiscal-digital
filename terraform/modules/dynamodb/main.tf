@@ -147,7 +147,11 @@ resource "aws_dynamodb_table" "suppliers" {
     enabled = true
   }
 
-  deletion_protection_enabled = true
+  # ATENÇÃO: alterar `range_key` em DDB exige replace (destroy + create), não
+  # in-place alter. Tabela vazia em prod (Count=0 verificado 2026-05-09).
+  # Após este PR mergear E apply ser bem-sucedido, re-flipar para `true` em
+  # PR de follow-up para proteger contra destruição acidental.
+  deletion_protection_enabled = false
 }
 
 # entities-prod — Cache de extração LLM (UH-22)
