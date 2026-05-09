@@ -48,6 +48,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DDB_ENDPOINT: http://localhost:8000
+          NODE_OPTIONS: --experimental-vm-modules
         run: npm test
 
       - name: Configure AWS credentials (OIDC)
