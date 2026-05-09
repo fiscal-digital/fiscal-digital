@@ -250,15 +250,27 @@ describe('GET /cities', () => {
       makeFinding({ cityId: '3550308', createdAt: '2026-04-12T00:00:00.000Z' }),
     ]
     // WIN-API-002: handler agora chama N Queries (uma por cidade) em GSI1-city-date
-    // em vez de 1 Scan global. Mock filtra findings pelo cityId da Query.
-    mockDdbSend.mockImplementation((cmd: { __type?: string; input?: { ExpressionAttributeValues?: Record<string, unknown> } }) => {
-      if (cmd?.__type === 'Query') {
-        const cityId = cmd.input?.ExpressionAttributeValues?.[':cid']
-        return Promise.resolve({
-          Items: findings.filter(f => f.cityId === cityId),
-        })
+    // em vez de 1 Scan global. Mock filtra findings pelo cityId da Query e
+    // valida shape para falhar se o handler mudar de index ou tipo de comando.
+    type DdbCmd = {
+      __type?: string
+      input?: {
+        TableName?: string
+        IndexName?: string
+        ExpressionAttributeValues?: Record<string, unknown>
       }
-      return Promise.resolve({ Items: [] })
+    }
+    mockDdbSend.mockImplementation((cmd: DdbCmd) => {
+      if (cmd?.__type !== 'Query') {
+        throw new Error(`/cities deve usar Query, recebeu ${cmd?.__type}`)
+      }
+      if (cmd.input?.IndexName !== 'GSI1-city-date') {
+        throw new Error(`/cities deve usar GSI1-city-date, recebeu ${cmd.input?.IndexName}`)
+      }
+      const cityId = cmd.input.ExpressionAttributeValues?.[':cid']
+      return Promise.resolve({
+        Items: findings.filter(f => f.cityId === cityId),
+      })
     })
 
     const res = asResult(await handler(makeEvent('/cities')))
