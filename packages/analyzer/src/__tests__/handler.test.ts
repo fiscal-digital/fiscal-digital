@@ -89,6 +89,12 @@ jest.mock('@fiscal-digital/engine', () => ({
     appendKeys: jest.fn(),
     removeKeys: jest.fn(),
   })),
+  // getPublishThresholds — TEC-ENG-002 (thresholds via SSM, cache em memória).
+  // No teste retorna defaults sem chamar SSM.
+  getPublishThresholds: jest.fn().mockResolvedValue({
+    riskThreshold: 60,
+    confidenceThreshold: 0.70,
+  }),
 }))
 
 // ---------------------------------------------------------------------------

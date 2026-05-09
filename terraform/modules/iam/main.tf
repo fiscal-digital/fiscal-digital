@@ -632,6 +632,13 @@ resource "aws_iam_role_policy" "api" {
         Action   = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"]
         Resource = var.costs_table_arn
       },
+      {
+        # TEC-ENG-002: api lê thresholds dinâmicos do SSM (mesmo path do analyzer).
+        Sid      = "SSMReadThresholds"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter", "ssm:GetParameters"]
+        Resource = "arn:aws:ssm:us-east-1:*:parameter/fiscal-digital/prod/*"
+      },
     ]
   })
 }

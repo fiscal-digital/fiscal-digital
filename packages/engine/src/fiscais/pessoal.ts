@@ -2,10 +2,13 @@ import { scoreRisk } from '../skills/score_risk'
 import { cityBucket, populationOf, type CityBucket } from '../cities/populations'
 import { invokeModel, NARRATIVE_MODEL } from '../utils/bedrock'
 import { getCityOrFallback } from '../cities'
+import { createLogger } from '../logger'
+import { getPublishThresholds } from '../thresholds'
 import type { Finding, RiskFactor } from '../types'
 import type { Fiscal, AnalisarInput } from './types'
 
 const FISCAL_ID = 'fiscal-pessoal'
+const logger = createLogger(FISCAL_ID)
 
 // ─── Regex de filtro etapa 1 ──────────────────────────────────────────────────
 
@@ -232,7 +235,7 @@ async function gerarNarrativaPicoViaHaiku(input: NarrativaInput): Promise<string
     }
   } catch (err) {
     // Bedrock falhou — fallback factual abaixo
-    console.warn('[fiscal-pessoal] Bedrock falhou, usando template fallback:', (err as Error).message)
+    logger.warn('Bedrock falhou, usando template fallback', { err: (err as Error).message })
   }
 
   // Fallback resiliente — nunca trava o Fiscal por causa de LLM.
@@ -366,9 +369,10 @@ export const fiscalPessoal: Fiscal = {
         const riskScore = scoreResult.data
 
         // Findings fora da janela eleitoral têm baseRisco=45 e raramente
-        // ultrapassam 60. O gate de publicação exige riskScore >= 60.
-        // Criar findings abaixo desse limiar polui o DDB sem benefício público.
-        if (riskScore >= 60) {
+        // ultrapassam o gate. Criar findings abaixo do threshold polui o DDB
+        // sem benefício público. Threshold via SSM (TEC-ENG-002).
+        const { riskThreshold } = await getPublishThresholds()
+        if (riskScore >= riskThreshold) {
 
         // Narrativa via Haiku — cita secretarias e cargos extraídos quando
         // disponíveis. Fallback resiliente em caso de falha do Bedrock.
@@ -408,7 +412,7 @@ export const fiscalPessoal: Fiscal = {
         }
 
         findings.push(finding)
-        } // end if (riskScore >= 60)
+        } // end if (riskScore >= riskThreshold)
       }
 
     }

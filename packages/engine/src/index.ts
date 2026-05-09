@@ -42,3 +42,10 @@ export type { NarrativeValidationResult } from './brand-gate'
 
 export { requireEnv } from './env'
 export { createLogger } from './logger'
+export {
+  getPublishThresholds,
+  DEFAULT_PUBLISH_RISK_THRESHOLD,
+  DEFAULT_PUBLISH_CONFIDENCE_THRESHOLD,
+  _resetThresholdsCacheForTests,
+} from './thresholds'
+export type { PublishThresholds } from './thresholds'

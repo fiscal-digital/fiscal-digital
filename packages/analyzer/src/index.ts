@@ -1,5 +1,4 @@
 ﻿import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs'
-import { SSMClient, GetParametersCommand } from '@aws-sdk/client-ssm'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import type { SQSEvent } from 'aws-lambda'
@@ -20,6 +19,7 @@ import {
   gazetteKey,
   requireEnv,
   createLogger,
+  getPublishThresholds,
 } from '@fiscal-digital/engine'
 import type {
   CollectorMessage,
@@ -33,7 +33,6 @@ import type {
 // ---------------------------------------------------------------------------
 
 const sqsClient = new SQSClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
-const ssmClient = new SSMClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
 
 const _rawDdb = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
 export const docClient = DynamoDBDocumentClient.from(_rawDdb)
@@ -45,42 +44,6 @@ export const docClient = DynamoDBDocumentClient.from(_rawDdb)
 const ALERTS_TABLE = process.env.ALERTS_TABLE ?? 'fiscal-digital-alerts-prod'
 const GAZETTES_TABLE = process.env.GAZETTES_TABLE ?? 'fiscal-digital-gazettes-prod'
 const ALERTS_QUEUE_URL = requireEnv('ALERTS_QUEUE_URL')
-
-// Thresholds lidos do SSM no cold start; fallback para valores padrão se SSM indisponível.
-// Alterar sem redeploy: aws ssm put-parameter --overwrite --name /fiscal-digital/prod/... --value X
-const DEFAULT_PUBLISH_RISK_THRESHOLD = 60
-const DEFAULT_PUBLISH_CONFIDENCE_THRESHOLD = 0.70
-
-let publishRiskThreshold = DEFAULT_PUBLISH_RISK_THRESHOLD
-let publishConfidenceThreshold = DEFAULT_PUBLISH_CONFIDENCE_THRESHOLD
-let thresholdsLoaded = false
-
-async function loadThresholds(): Promise<void> {
-  if (thresholdsLoaded) return
-  try {
-    const res = await ssmClient.send(new GetParametersCommand({
-      Names: [
-        '/fiscal-digital/prod/publish-risk-threshold',
-        '/fiscal-digital/prod/publish-confidence-threshold',
-      ],
-    }))
-    for (const p of res.Parameters ?? []) {
-      if (p.Name?.endsWith('risk-threshold') && p.Value) {
-        publishRiskThreshold = Number(p.Value)
-      }
-      if (p.Name?.endsWith('confidence-threshold') && p.Value) {
-        publishConfidenceThreshold = Number(p.Value)
-      }
-    }
-  } catch (err) {
-    logger.warn('SSM threshold load failed — using defaults', {
-      riskThreshold: DEFAULT_PUBLISH_RISK_THRESHOLD,
-      confidenceThreshold: DEFAULT_PUBLISH_CONFIDENCE_THRESHOLD,
-      err,
-    })
-  }
-  thresholdsLoaded = true
-}
 
 const logger = createLogger('analyzer')
 
@@ -355,9 +318,10 @@ async function processRecord(body: string): Promise<void> {
         logger.error('falha ao persistir finding', { type: finding.type, err })
       }
 
+      const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
       const shouldPublish =
-        finding.riskScore >= publishRiskThreshold &&
-        finding.confidence >= publishConfidenceThreshold
+        finding.riskScore >= riskThreshold &&
+        finding.confidence >= confidenceThreshold
 
       if (shouldPublish) {
         try {
@@ -408,11 +372,11 @@ async function processRecord(body: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export const handler = async (event: SQSEvent): Promise<void> => {
-  await loadThresholds()
+  const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
   logger.info('iniciando', {
     records: event.Records.length,
-    publishRiskThreshold,
-    publishConfidenceThreshold,
+    publishRiskThreshold: riskThreshold,
+    publishConfidenceThreshold: confidenceThreshold,
   })
 
   for (const record of event.Records) {
