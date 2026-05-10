@@ -12,8 +12,57 @@ const logger = createLogger(FISCAL_ID)
 
 // ─── Regex de filtro etapa 1 ──────────────────────────────────────────────────
 
-const NOMEACAO_RE = /nome(a[çc][ãa]o|ando|ado)|designa[çc][ãa]o|exonera[çc][ãa]o/i
+const NOMEACAO_RE = /nome(a[çc][ãa]o|ando|ado|ia)|designa[çc][ãa]o|exonera[çc][ãa]o/i
 const COMISSAO_RE = /cargo\s+(?:em\s+)?comiss[ãa]o|cargo\s+comissionado/i
+
+// ─── Filtros de exclusão (ADR-001 + padrões Ciclo 3) ─────────────────────────
+// Padrões de FP descobertos no Ciclo 2/3 (n=708 amostras totais, 572 rotuladas).
+// O Fiscal pula o excerpt ANTES de contar atos quando detecta qualquer um deles.
+
+const STOPWORDS_PESSOAL: ReadonlyArray<RegExp> = [
+  // (a) Comunicado de convocação para vaga — não é nomeação consumada (C3)
+  /\bcomunicado\b[\s\S]{0,80}\bnomea[çc][ãa]o\s+sem\s+v[íi]nculo\s+efetivo\b/i,
+  /\bcomunicado\s+de\s+convoca[çc][ãa]o\b/i,
+  // (b) Vaga decorrente de exoneração/substituição individual — turnover normal (C3)
+  /\bvaga\s+decorrente\s+(?:da\s+|de\s+)?exonera[çc][ãa]o\s+de\b/i,
+  /\bsubstitui[çc][ãa]o\s+individual\b/i,
+  // (c) Texto normativo mencionando "nomeação" como conceito jurídico (C3)
+  /\bVEDA\s+A\s+NOMEA[ÇC][ÃA]O\s+PELA\s+ADMINISTRA[ÇC][ÃA]O\b/i,
+  /\bLei\s+Maria\s+da\s+Penha\b/i,
+  /\bC[óo]digo\s+de\s+\w+\s+veda\s+nomea[çc][ãa]o\b/i,
+  // (d) Ratificação retroativa de ato antigo (ADR-001 GS-071)
+  /\bratifica[çc][ãa]o\s+(retroativa|com\s+efeito\s+retroativo)\b/i,
+  /\bratific\w+\b[\s\S]{0,40}\ba\s+contar\s+de\s+\d{1,2}\/\d{1,2}\/(?:19\d{2}|200[0-9]|201[0-9]|202[0-3])\b/i,
+  // (e) Lei Complementar criando quadro funcional (C3)
+  /\bLei\s+Complementar\s+n[º°.]?\s*\d+[\s\S]{0,100}\b(cria|disp[õo]e\s+sobre)\s+(?:o\s+)?quadro\s+(?:de\s+)?(funcion[áa]rios?|servidores?|cargos)\b/i,
+  /\bOrganiza[çc][ãa]o\s+da\s+Administra[çc][ãa]o\s+Direta\s+do\s+Poder\s+Executivo\b/i,
+  // (f) "Tornar sem efeito" — anulação em massa, não nova nomeação (C3)
+  /\btornar\s+sem\s+efeito\b[\s\S]{0,80}\b(nomea[çc][õo]es?|portaria(?:s)?)\b/i,
+  // (g) FG (Função Gratificada) / GIP — não é cargo comissionado (C3)
+  /\bcargo\s+de\s+(?:Fun[çc][ãa]o\s+Gratificada|FG|GIP|Gratifica[çc][ãa]o)\b/i,
+  // (h) Concurso público regular (não comissionado) — C3
+  /\bconcurso\s+p[úu]blico\b[\s\S]{0,80}\bhomologa(?:[çc][ãa]o|do|da)\b/i,
+  /\bnomea[çc][ãa]o\s+(?:em\s+)?car[áa]ter\s+(?:efetivo|permanente)\b/i,
+  // (i) Exoneração "a pedido" individual — sem indicação de pico (C2)
+  /\bexonerar?,?\s+a\s+pedido,?\s+(?:do\s+|da\s+)?(?:sr\.?|sra\.?|servidor[a]?)?\b/i,
+]
+
+function isExcludedPessoal(excerpt: string): boolean {
+  return STOPWORDS_PESSOAL.some(re => re.test(excerpt))
+}
+
+// ─── Transição de mandato municipal (janeiro pós-eleição) ────────────────────
+// Janeiro do ano seguinte à eleição municipal tem volume legítimo alto de
+// nomeações/exonerações por transição de gestão. ADR-001 fiscal-pessoal item 5.
+
+const JANEIROS_TRANSICAO: ReadonlySet<string> = new Set([
+  '2025-01', '2029-01', '2033-01', // pós-eleições 2024/2028/2032
+])
+
+function isJaneiroTransicao(dateISO: string): boolean {
+  const ym = dateISO.slice(0, 7)
+  return JANEIROS_TRANSICAO.has(ym)
+}
 
 // ─── Regex de contagem (etapa 3 — pico) ──────────────────────────────────────
 
@@ -258,16 +307,21 @@ async function gerarNarrativaPicoViaHaiku(input: NarrativaInput): Promise<string
  * Cidades small (<100k): limiar baixo porque admin enxuto raramente publica
  * múltiplos atos no mesmo dia — qualquer pico tende a ser sinal real.
  */
-function thresholdFor(bucket: CityBucket, isEleitoral: boolean): number {
+function thresholdFor(bucket: CityBucket, isEleitoral: boolean, isTransicaoMandato = false): number {
+  let limiar: number
   if (isEleitoral) {
-    if (bucket === 'large')  return 10
-    if (bucket === 'medium') return 5
-    return 3
+    if (bucket === 'large')  limiar = 10
+    else if (bucket === 'medium') limiar = 5
+    else limiar = 3
   } else {
-    if (bucket === 'large')  return 20
-    if (bucket === 'medium') return 10
-    return 7
+    if (bucket === 'large')  limiar = 20
+    else if (bucket === 'medium') limiar = 10
+    else limiar = 7
   }
+  // Janeiro pós-eleição municipal: volume legítimo alto por transição de gestão.
+  // ADR-001 fiscal-pessoal item 5 — dobra o limiar para evitar FP de mandato.
+  if (isTransicaoMandato) limiar *= 2
+  return limiar
 }
 
 /**
@@ -304,9 +358,17 @@ export const fiscalPessoal: Fiscal = {
     const findings: Finding[] = []
 
     // Etapa 1 — Filtro regex (sem LLM): descarta excerpts sem termos de pessoal
-    const relevantExcerpts = gazette.excerpts.filter(
-      e => NOMEACAO_RE.test(e) || COMISSAO_RE.test(e),
-    )
+    // e excerpts identificados como FP sistemático no Ciclo 2/3:
+    //   - comunicado de convocação (não nomeação consumada)
+    //   - vaga decorrente substituição individual (turnover normal)
+    //   - texto normativo mencionando "nomeação" como conceito jurídico
+    //   - ratificação retroativa, Lei Complementar criando quadro
+    //   - "tornar sem efeito em massa", FG/GIP, concurso público regular
+    const relevantExcerpts = gazette.excerpts.filter(e => {
+      if (!(NOMEACAO_RE.test(e) || COMISSAO_RE.test(e))) return false
+      if (isExcludedPessoal(e)) return false
+      return true
+    })
 
     if (relevantExcerpts.length === 0) {
       return []
@@ -339,7 +401,8 @@ export const fiscalPessoal: Fiscal = {
       const countAtos = totalAtos
       const excerpt = relevantExcerpts.join('\n---\n') // representação da gazette inteira para evidence
 
-      const limiar = thresholdFor(bucket, emJanela)
+      const isTransicaoMandato = isJaneiroTransicao(gazette.date)
+      const limiar = thresholdFor(bucket, emJanela, isTransicaoMandato)
       const dispara = countAtos >= limiar
 
       if (dispara) {
