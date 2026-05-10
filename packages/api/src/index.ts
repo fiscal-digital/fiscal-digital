@@ -73,9 +73,34 @@ async function fetchFindings(filters: {
   type?: string
   limit?: number
 }): Promise<Finding[]> {
-  const cityIds = filters.state
-    ? Object.values(CITIES).filter(c => c.uf === (filters.state ?? '').toUpperCase()).map(c => c.cityId)
-    : filters.cityId ? [filters.cityId] : null
+  // cityId é mais específico que state — quando ambos passados, cityId ganha.
+  // Se cityId pertence a outro state que o filtro, retorna vazio (filtros
+  // contraditórios). Sem esse guard, filter `?state=RS&city=4305108` retornava
+  // todas cidades do RS (Caxias + Porto Alegre) em vez de só Caxias do Sul
+  // (TEC-WEB-009 / regression visível em deep-link compartilhado).
+  let cityIds: string[] | null = null
+  if (filters.cityId) {
+    const city = Object.values(CITIES).find(c => c.cityId === filters.cityId)
+    if (!city) {
+      cityIds = []
+    } else if (filters.state && city.uf !== filters.state.toUpperCase()) {
+      cityIds = []
+    } else {
+      cityIds = [filters.cityId]
+    }
+  } else if (filters.state) {
+    cityIds = Object.values(CITIES)
+      .filter(c => c.uf === filters.state!.toUpperCase())
+      .map(c => c.cityId)
+  }
+
+  // cityIds === [] sinaliza filtros contraditórios (cityId não existe em CITIES,
+  // ou cityId pertence a outro state que o filtro state). Retorna vazio sem
+  // chamar DDB — Scan global daqui retornaria findings que NÃO casam com os
+  // filtros pedidos.
+  if (cityIds !== null && cityIds.length === 0) {
+    return []
+  }
 
   let all: Finding[] = []
   if (cityIds && cityIds.length > 0) {
