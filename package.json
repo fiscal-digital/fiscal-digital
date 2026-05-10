@@ -12,7 +12,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "lint": "eslint packages"
+    "lint": "eslint packages",
+    "label": "node packages/engine/scripts/labeler/index.mjs"
   },
   "devDependencies": {
     "eslint": "^9.18.0",
