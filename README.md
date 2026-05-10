@@ -73,6 +73,7 @@ Mapeamento canônico PT/EN: [`packages/engine/src/types/index.ts`](packages/engi
 | [fiscal-digital-web](https://github.com/fiscal-digital/fiscal-digital-web) | Site e dashboards públicos |
 | [fiscal-digital-collectors](https://github.com/fiscal-digital/fiscal-digital-collectors) | Coletores de fontes de dados |
 | [fiscal-digital-analytics](https://github.com/fiscal-digital/fiscal-digital-analytics) | Análises e relatórios |
+| [fiscal-digital-evaluations](https://github.com/fiscal-digital/fiscal-digital-evaluations) | Auto-avaliação dos Fiscais (golden set rotulado, ADRs, baselines de precisão) |
 
 ---
 
