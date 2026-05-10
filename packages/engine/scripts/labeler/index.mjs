@@ -73,7 +73,7 @@ function distributionStats(samples) {
     pending[fiscal] = 0
   }
   for (const s of samples) {
-    if (!labeled[s.fiscalId]) {
+    if (labeled[s.fiscalId] === undefined) {
       labeled[s.fiscalId] = 0
       pending[s.fiscalId] = 0
     }
@@ -119,31 +119,43 @@ async function importCandidates({ fiscal, count }) {
 
   // Imports tardios para nao carregar AWS SDK em --stats / --help
   const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb')
-  const { DynamoDBDocumentClient, QueryCommand } = await import('@aws-sdk/lib-dynamodb')
+  const { DynamoDBDocumentClient, ScanCommand } = await import('@aws-sdk/lib-dynamodb')
   const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }))
 
   console.log(`\n▶ Importando ate ${count} candidatos para ${fiscal}...`)
 
-  // Estrategia: query findings reais do Fiscal em alerts-prod (GSI1-city-date)
-  // pegando das cidades-padrao Caxias + POA (PoC).
-  const POC_CITIES = ['4305108', '4314902']
+  // Estrategia: scan paginado de alerts-prod com FilterExpression por fiscalId.
+  // GSI1-city-date filtra por cidade; mas muitos Fiscais tem findings concentrados
+  // em poucas cidades (ou cidades nao-POC). Scan global cobre amostragem real.
   const candidates = []
-  for (const cityId of POC_CITIES) {
-    const r = await ddb.send(new QueryCommand({
+  let ExclusiveStartKey
+  let scanned = 0
+  const MAX_SCANNED = 5000  // limite de seguranca (alerts-prod tem ~3862 items hoje)
+  do {
+    const r = await ddb.send(new ScanCommand({
       TableName: 'fiscal-digital-alerts-prod',
-      IndexName: 'GSI1-city-date',
-      KeyConditionExpression: 'cityId = :c',
-      FilterExpression: 'fiscalId = :f',
-      ExpressionAttributeValues: { ':c': cityId, ':f': fiscal },
-      ScanIndexForward: false,
-      Limit: count * 2, // pega mais para diversificar
+      FilterExpression: 'fiscalId = :f AND begins_with(pk, :p)',
+      ExpressionAttributeValues: { ':f': fiscal, ':p': 'FINDING#' },
+      ExclusiveStartKey,
     }))
     candidates.push(...(r.Items ?? []))
-  }
+    scanned += r.ScannedCount ?? 0
+    ExclusiveStartKey = r.LastEvaluatedKey
+    // Para cedo se ja temos amostras suficientes para diversificar (count * 5)
+    if (candidates.length >= count * 5) break
+    if (scanned >= MAX_SCANNED) break
+  } while (ExclusiveStartKey)
 
   // Embaralhar e pegar `count`
   const shuffled = candidates.sort(() => Math.random() - 0.5).slice(0, count)
-  console.log(`  Encontrados ${candidates.length}, selecionados ${shuffled.length}`)
+  console.log(`  Encontrados ${candidates.length} (scanned ${scanned}), selecionados ${shuffled.length}`)
+
+  if (shuffled.length === 0) {
+    console.warn(`  ⚠ Nenhum finding em prod para ${fiscal}. Possiveis causas:`)
+    console.warn(`     - Fiscal conservador demais (Nepotismo, Fornecedores) — 0 findings`)
+    console.warn(`     - Adicionar amostras manualmente em fixtures/golden-set.json com label="FN"`)
+    console.warn(`       indica que Fiscal nao detecta caso real (gap de recall)`)
+  }
 
   return shuffled.map(f => ({
     fiscalId: f.fiscalId,
