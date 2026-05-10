@@ -20,6 +20,7 @@ import {
   requireEnv,
   createLogger,
   getPublishThresholds,
+  isFeatureEnabled,
 } from '@fiscal-digital/engine'
 import type {
   CollectorMessage,
@@ -138,6 +139,52 @@ async function persistFinding(finding: Finding): Promise<void> {
       pk,
     },
   })
+
+  // EVO-002 / MIT-02: deriva SUPPLIER do Finding e grava em suppliers-prod
+  // para habilitar cross-supplier (FiscalContratos + FiscalFornecedores Sprint 9).
+  // Best-effort: try/catch + feature flag SSM; falha não derruba o finding.
+  await maybeWriteSupplier(finding, createdAt)
+}
+
+const SUPPLIERS_TABLE = process.env.SUPPLIERS_TABLE ?? 'fiscal-digital-suppliers-prod'
+
+/**
+ * Grava SUPPLIER no `suppliers-prod` se o finding tem CNPJ.
+ * Best-effort: erros são logados mas não falham o finding.
+ * Controlado por feature flag SSM `/fiscal-digital/prod/enable-supplier-write`
+ * (default false — flip via CLI quando smoke validar).
+ */
+async function maybeWriteSupplier(finding: Finding, createdAt: string): Promise<void> {
+  if (!finding.cnpj) return
+  if (!(await isFeatureEnabled('enable-supplier-write'))) return
+  try {
+    // sk: {contractedAt}#{contractId} — cronológico + dedupe por contractId.
+    // Fallback contractedAt = createdAt do finding (não temos contract date no Finding hoje).
+    const contractedAt = createdAt
+    const contractId = finding.contractNumber ?? finding.id ?? 'unknown'
+    await saveMemory.execute({
+      pk: `SUPPLIER#${finding.cnpj}`,
+      table: SUPPLIERS_TABLE,
+      item: {
+        sk: `${contractedAt}#${contractId}`,
+        cityId: finding.cityId,
+        contractedAt,
+        contractId,
+        contractNumber: finding.contractNumber,
+        valueAmount: finding.value,
+        secretaria: finding.secretaria,
+        sourceFindingId: finding.id,
+        sourceFiscalId: finding.fiscalId,
+        capturedAt: new Date().toISOString(),
+      },
+    })
+  } catch (err) {
+    logger.warn('supplier write falhou — finding preservado', {
+      cnpj: finding.cnpj,
+      findingId: finding.id,
+      err: (err as Error).message,
+    })
+  }
 }
 
 // ---------------------------------------------------------------------------
