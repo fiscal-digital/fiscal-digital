@@ -98,6 +98,31 @@ escolha do locador.
 
 ## 5. Exemplo que NÃO DISPARA o alerta
 
+### 5.0. Tipos de ato excluídos pelos filtros de etapa 1 (ADR-001)
+
+Após o patch P0 Locação (2026-05-10), o Fiscal rejeita **antes** de chamar LLM
+os seguintes contextos identificados como FP sistemático no
+[`fiscal-digital-evaluations/analyses/fiscal-locacao/ADR-001-overmatch.md`](https://github.com/fiscal-digital/fiscal-digital-evaluations/blob/main/analyses/fiscal-locacao/ADR-001-overmatch.md):
+
+| Padrão | Razão | Exemplo |
+|---|---|---|
+| Rescisão | Encerramento, não nova contratação | "EXTRATO DE RESCISÃO... LOCATÁRIO..." |
+| Designação de Gestor/Fiscal | Fiscaliza contrato existente | "DESIGNAR servidor como GESTOR/FISCAL do contrato de Locação" |
+| Termo Aditivo / Prorrogação / Apostilamento | Não é nova contratação | "Termo Aditivo nº 2... prorrogar prazo" |
+| Aviso de Procura / Chamamento Público | Fase pré-contratual | "AVISO DE PROCURA — comunica interesse em locação" |
+| Decreto regulamentando programa/tributo | Município é regulador | "Decreto... regulamenta IPTU... cópia do contrato de locação" |
+| Anexo de Portaria com rol CONTRATO FORNECEDOR | Listagem cross-block | "ANEXO CONTRATO FORNECEDOR OBJETO 036/2020 — LOCAÇÃO DE IMÓVEL" |
+| Súmula de Convênios e Contratos | Cross-block matching | "SÚMULA DE CONTRATOS... locação parcial" |
+| Lei 13.303/2016 (estatais) | Regime próprio fora da Lei 14.133 | "COMPANHIA MUNICIPAL... Lei 13.303 contrata locação" |
+| Termo de Fomento Lei 13.019 (OSCs) | Parceria, não inexigibilidade | "TERMO DE FOMENTO... apoio a famílias precisem de locação" |
+| Cópia do contrato de locação (rol documental) | Documento exigido, não nova contratação | "I – cópia do contrato de locação..." |
+| Cláusulas contratuais listadas | Texto interno do contrato | "III - manutenção do imóvel... IV - arcar com despesas..." |
+| Modalidade competitiva sem inexigibilidade | Locação por Pregão/Concorrência tem regime próprio | "AVISO DE LICITAÇÃO — Pregão Eletrônico... locação de imóvel" |
+
+Estes filtros não dependem de LLM — economizam tokens da Camada 2 (Nova Lite)
+ao rejeitar ~80% dos excerpts que continham apenas a palavra "locação" sem
+serem nova contratação por inexigibilidade.
+
 ### 5.1. Locação com laudo de avaliação e justificativa
 
 ```
