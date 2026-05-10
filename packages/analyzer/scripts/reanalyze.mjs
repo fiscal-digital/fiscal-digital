@@ -36,7 +36,7 @@
  */
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb'
+import { DynamoDBDocumentClient, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs'
 
 const REGION = 'us-east-1'
@@ -109,6 +109,9 @@ async function* scanGazettes(filters) {
         date,
         edition,
         url: item.url,
+        // EVO-001: excerpts já gravados em gazettes-prod (collector pós 2026-05-09).
+        // Se presente, evita round-trip ao QD ($10 → $0.05 por rodada).
+        excerpts: item.excerpts,
         missingFiscals, // ← envia apenas os faltantes para o analyzer
       }
     }
@@ -159,6 +162,34 @@ async function sendBatch(messages) {
   }))
 }
 
+// ── EVO-001: Lazy fill — write-through de excerpts no DDB ────────────────────
+//
+// Pattern:
+//   1. scanGazettes retorna `excerpts` se já presente no item DDB (collector
+//      pós 2026-05-09 grava). Hit = $0.
+//   2. Se ausente, busca QD via fetchExcerpts() (paga rate-limit + Bedrock 0).
+//   3. Após buscar QD, grava de volta no item DDB para acelerar próxima rodada.
+//
+// Auto-amortizando: 1ª passada custa $10, 2ª custa $0.05.
+
+async function backfillExcerptsInDdb(territoryId, date, edition, excerpts) {
+  if (!excerpts || excerpts.length === 0) return
+  const pk = `GAZETTE#${territoryId}#${date}#${edition}`
+  try {
+    await ddb.send(new UpdateCommand({
+      TableName: GAZETTES_TABLE,
+      Key: { pk },
+      // SET apenas se ainda não existe — race-safe entre execuções paralelas
+      UpdateExpression: 'SET #e = if_not_exists(#e, :ex)',
+      ExpressionAttributeNames: { '#e': 'excerpts' },
+      ExpressionAttributeValues: { ':ex': excerpts },
+    }))
+  } catch (err) {
+    // Não-crítico: se falhar, próxima rodada paga QD novamente. Não bloqueia.
+    console.warn(`  [warn] backfill excerpts falhou para ${pk}:`, err.message)
+  }
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -201,9 +232,24 @@ async function main() {
   console.log(`  Force: ${force} · DryRun: ${dryRun}`)
   console.log(`${'='.repeat(72)}\n`)
 
+  // EVO-001: warning de execução ampla (nem cidade nem range filter + sem dry-run)
+  // Re-disparar análise massiva (50k gazettes × N fiscais) custa ~$50 + acorda
+  // alarmes em prod. Forçar consciência se for esse o caso.
+  if (!dryRun && !cities && !since && !until) {
+    console.warn(`\n⚠️  AVISO: rodando sem --city, --since ou --until E sem --dry-run.`)
+    console.warn(`   Isso vai re-disparar análise sobre TODAS as gazettes históricas.`)
+    console.warn(`   Custo estimado: ~$50 + ~14h de execução SQS.`)
+    console.warn(`   Se é intencional, continue. Se não, Ctrl+C agora e adicione --dry-run.\n`)
+    // Pequena pausa visual para Ctrl+C consciente
+    await sleep(3000)
+  }
+
   const filters = { fiscals, cities, since, until, force }
   let totalCandidates = 0
   let totalEnqueued = 0
+  let cacheHits = 0      // EVO-001: gazettes com excerpts já no DDB
+  let cacheMisses = 0    // EVO-001: gazettes que precisaram QD
+  let writeThroughs = 0  // EVO-001: gazettes onde gravamos excerpts de volta no DDB
   let batch = []
 
   for await (const g of scanGazettes(filters)) {
@@ -211,17 +257,31 @@ async function main() {
 
     if (dryRun) continue
 
-    // Buscar excerpts do QD para essa gazette
-    const qdGazettes = await fetchExcerpts(g.territoryId, g.date)
-    const qdMatch = qdGazettes.find(qd => qd.url === g.url) ?? qdGazettes[0]
-    if (!qdMatch) continue
+    // EVO-001: lazy fill — usa excerpts do DDB se presente, senão busca QD
+    let excerpts = g.excerpts
+    if (excerpts && excerpts.length > 0) {
+      cacheHits++
+    } else {
+      cacheMisses++
+      const qdGazettes = await fetchExcerpts(g.territoryId, g.date)
+      const qdMatch = qdGazettes.find(qd => qd.url === g.url) ?? qdGazettes[0]
+      if (!qdMatch) continue
+      excerpts = qdMatch.excerpts ?? []
+      // Write-through: grava no DDB para acelerar próxima rodada (auto-amortiza)
+      if (excerpts.length > 0) {
+        await backfillExcerptsInDdb(g.territoryId, g.date, g.edition, excerpts)
+        writeThroughs++
+      }
+    }
+
+    if (excerpts.length === 0) continue
 
     const msg = {
       gazetteId: g.gazetteId,
       territory_id: g.territoryId,
       date: g.date,
       url: g.url,
-      excerpts: qdMatch.excerpts ?? [],
+      excerpts,
       entities: { cnpjs: [], values: [], dates: [], contractNumbers: [] },
       // UH-22 Phase 2: envia apenas Fiscais que NÃO rodaram nesta gazette
       // (state tracking elimina trabalho duplicado)
@@ -234,7 +294,7 @@ async function main() {
       totalEnqueued += batch.length
       batch = []
       if (totalEnqueued % 100 === 0) {
-        console.log(`  ... ${totalEnqueued} enfileiradas`)
+        console.log(`  ... ${totalEnqueued} enfileiradas (cache hits: ${cacheHits}, misses: ${cacheMisses})`)
       }
     }
   }
@@ -247,6 +307,15 @@ async function main() {
   console.log(`  CONCLUÍDO`)
   console.log(`  Candidatos (gazettes sem ${fiscals.join('+')}): ${totalCandidates}`)
   console.log(`  Enfileirados: ${totalEnqueued}`)
+  if (!dryRun) {
+    console.log(`  EVO-001 cache hits (excerpts no DDB):  ${cacheHits}`)
+    console.log(`  EVO-001 cache misses (buscou QD):       ${cacheMisses}`)
+    console.log(`  EVO-001 write-throughs (gravou no DDB): ${writeThroughs}`)
+    if (cacheMisses > 0) {
+      const savedRatio = (cacheHits / (cacheHits + cacheMisses) * 100).toFixed(1)
+      console.log(`  Cache hit ratio: ${savedRatio}% — próxima rodada será mais barata`)
+    }
+  }
   console.log(`  Analyzer processará via SQS event source mapping`)
   console.log(`  Cache de extração (UH-22 Phase 1) elimina custo Bedrock`)
   console.log(`${'='.repeat(72)}\n`)
