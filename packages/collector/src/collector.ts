@@ -89,7 +89,7 @@ export async function runCollector(config: CollectorConfig): Promise<{ processed
         },
       }))
 
-      const queued = await markQueued(key, gazette.url, gazette.date, cachedPdfUrl, gazette.id)
+      const queued = await markQueued(key, gazette.url, gazette.date, cachedPdfUrl, gazette.id, gazette.excerpts)
       if (queued) sent++
       else processed-- // já existia (race) — não conta como processado novo
     }
@@ -213,6 +213,7 @@ async function markQueued(
   date: string,
   cachedPdfUrl: string | null,
   gazetteId: string,
+  excerpts: string[] | undefined,
 ): Promise<boolean> {
   const item: Record<string, unknown> = {
     pk: `GAZETTE#${key}`,
@@ -222,6 +223,11 @@ async function markQueued(
     status: 'queued',
     queuedAt: new Date().toISOString(),
     ...(cachedPdfUrl != null && { cachedPdfUrl }),
+    // EVO-001 / UH-22: persistir excerpts evita re-coletar QD ($10/rodada,
+    // 14h de execução por rate-limit). Reanalyze lê do DDB (lazy fill no
+    // miss). Item médio ~3 KB (10 excerpts × 300 chars), bem abaixo do
+    // limite de 400 KB do DynamoDB.
+    ...(excerpts && excerpts.length > 0 && { excerpts }),
   }
 
   try {
