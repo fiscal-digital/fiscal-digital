@@ -28,6 +28,43 @@ const CONTRATACAO_RE =
 const NOME_PREFEITO_RE =
   /\b(?:prefeit[oa](?:\s+municipal)?|alcaide|gest[ãa]o(?:\s+municipal)?|administra[çc][ãa]o\s+do\s+prefeit[oa])\b/i
 
+// ── Filtros de exclusão (ADR-001 — patch 2026-05-10) ────────────────────────
+// Padrões identificados nos 6 FPs originais (Ciclo 1+2, universo esgotado n=23).
+// Reduz overmatch sistemático em "divulgação", header do DO, designação fiscal,
+// publicação legal obrigatória, concessão patrimonial.
+
+const STOPWORDS_PUBLICIDADE: ReadonlyArray<RegExp> = [
+  // Cabeçalho do Diário Oficial (não é contratação).
+  // Nota: \b não funciona antes de "Órgão" porque "Ó" não está na classe word
+  // ASCII do JavaScript — usar (?:^|\s|[.,;:-]) como boundary alternativo.
+  /(?:^|[\s.,;:-])[óo]rg[ãa]o\s+de\s+divulga[çc][ãa]o\s+do\s+(?:munic[íi]pio|estado)/i,
+  /\bjornal\s+oficial\s+n[º°]/i,
+  /\bpublica[çc][ãa]o\s+di[áa]ria\b/i,
+  // Designação de Fiscal de Contrato (não é contratação publicitária)
+  /\bdesigna(?:r|m)?\b[\s\S]{0,80}\bfiscal\s+(?:de\s+)?contrato\b/i,
+  /\bDESIGNA\b[\s\S]{0,200}\bfiscalizar\b/i,
+  /\bnomear\b[\s\S]{0,80}\bfiscal\s+de\s+contrato\b/i,
+  // Publicação legal / obrigatória (Lei Orgânica, editais)
+  /\ban[úu]ncios?\s+de\s+car[áa]ter\s+legal\b/i,
+  /\bpublica[çc][ãa]o\s+(de\s+)?editais\b/i,
+  /\bpublica[çc][ãa]o\s+legal\b/i,
+  /\bin[sçc][êe]r[çc][õo]es?\s+em\s+di[áa]rios?\s+oficia[il]s?\b/i,
+  /\bpresta[çc][ãa]o\s+de\s+contas\s+(trimestral|semestral|anual)\b/i,
+  /\brelat[óo]rio\s+(trimestral|semestral|anual)\b/i,
+  // Concessão patrimonial: município RECEBE outorga (operação inversa)
+  /\bconcess[ãa]o\b[\s\S]{0,80}\boutdoor\b/i,
+  /\boutorga\s+fixa\b/i,
+  /\bBRASIL\s+OUTDOOR\b/i,
+  // Atribuição funcional ("organização da divulgação do serviço")
+  /\bdivulga[çc][ãa]o\s+do\s+servi[çc]o\b/i,
+  // Outro padrão C2: "Fiscal" como cargo/sobrenome, não contratação publicitária
+  /\bfiscais?\s+de\s+impress[ãa]o\b/i,
+]
+
+function isPublicidadeExcluida(excerpt: string): boolean {
+  return STOPWORDS_PUBLICIDADE.some(re => re.test(excerpt))
+}
+
 // ─── Janelas vedadas para publicidade institucional ──────────────────────────
 //
 // Lei 9.504/97, Art. 73, VI, "b": é vedada a publicidade institucional dos atos,
@@ -111,7 +148,17 @@ export const fiscalPublicidade: Fiscal = {
     const findings: Finding[] = []
 
     // Etapa 1 — filtro regex: descarta excerpts sem termos de publicidade
-    const relevantExcerpts = gazette.excerpts.filter(e => PUBLICIDADE_RE.test(e))
+    // e excerpts identificados como FP sistemático (ADR-001):
+    //   - Header do Diário Oficial ("Órgão de divulgação", "Jornal Oficial nº")
+    //   - Designação de Fiscal de Contrato
+    //   - Publicação legal/obrigatória (anúncios de caráter legal, editais)
+    //   - Concessão patrimonial (município recebe outorga, operação inversa)
+    //   - Atribuição funcional ("organização da divulgação do serviço")
+    const relevantExcerpts = gazette.excerpts.filter(e => {
+      if (!PUBLICIDADE_RE.test(e)) return false
+      if (isPublicidadeExcluida(e)) return false
+      return true
+    })
     if (relevantExcerpts.length === 0) {
       return []
     }
