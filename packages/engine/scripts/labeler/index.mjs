@@ -5,10 +5,10 @@
  * Rotula amostras do golden set (fixtures/golden-set.json) interativamente.
  *
  * Modos:
- *   pnpm label                              # rotula amostras pendentes
- *   pnpm label --import --fiscal=X --count=N  # importa novas amostras de prod
- *   pnpm label --fiscal=X                   # filtra para 1 Fiscal só
- *   pnpm label --stats                      # mostra distribuicao atual
+ *   npm run label                              # rotula amostras pendentes
+ *   npm run label -- --import --fiscal=X --count=N  # importa novas amostras de prod
+ *   npm run label -- --fiscal=X                # filtra para 1 Fiscal só
+ *   npm run label -- --stats                   # mostra distribuicao atual
  *
  * Cada amostra leva <10s: mostra excerpt + finding hipotetico, pede T/F/N/B/?.
  *
@@ -306,7 +306,7 @@ async function main() {
       })
     }
     saveDataset(ds)
-    console.log(`\n✓ ${candidates.length} amostras importadas. Rode 'pnpm label' para rotular.`)
+    console.log(`\n✓ ${candidates.length} amostras importadas. Rode 'npm run label' para rotular.`)
     printStats(ds)
     return
   }

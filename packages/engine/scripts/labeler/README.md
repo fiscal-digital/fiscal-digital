@@ -10,16 +10,16 @@ Sem dataset rotulado, qualquer mudança em Fiscal é palpite. Este labeler permi
 
 ```bash
 # Modo padrão: rotula amostras pendentes em fixtures/golden-set.json
-pnpm label
+npm run label
 
 # Importar candidatos novos de prod (gazettes-prod com findings reais)
-pnpm label --import --fiscal=fiscal-pessoal --count=12
+npm run label --import --fiscal=fiscal-pessoal --count=12
 
 # Pular para um Fiscal específico
-pnpm label --fiscal=fiscal-nepotismo
+npm run label --fiscal=fiscal-nepotismo
 
 # Stats sem rotular
-pnpm label --stats
+npm run label --stats
 ```
 
 ## Distribuição alvo
@@ -41,7 +41,7 @@ pnpm label --stats
 ## Workflow recomendado
 
 1. **Sessão 1 (90 min):** rotular 30 amostras iniciais — ~5 por Fiscal P0+P1, 1 por P2
-2. Validar baseline numérico via `pnpm eval` (script futuro)
+2. Validar baseline numérico via `npm run eval` (script futuro)
 3. **Sessão 2 (90 min):** rotular +40 para chegar em 70
 
 ## Schema da amostra
