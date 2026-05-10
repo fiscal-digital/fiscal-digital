@@ -49,3 +49,4 @@ export {
   _resetThresholdsCacheForTests,
 } from './thresholds'
 export type { PublishThresholds } from './thresholds'
+export { isFeatureEnabled, _resetFeatureFlagsCacheForTests } from './feature-flags'
