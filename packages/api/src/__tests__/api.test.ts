@@ -163,6 +163,44 @@ describe('GET /alerts', () => {
     expect(body.total).toBe(0)
     expect(body.items).toEqual([])
   })
+
+  // Regression test (TEC-WEB-009): quando state e cityId são passados,
+  // cityId é mais específico e deve filtrar por uma única cidade. Antes
+  // do fix, state ganhava e retornava todas cidades do estado.
+  it('cityId tem precedência sobre state quando ambos passados (filtro mais específico)', async () => {
+    // Mock retorna 1 finding por Query — Caxias é o único cityId que deve ser consultado.
+    mockDdbSend.mockImplementation((cmd: { __type: string; input: { ExpressionAttributeValues?: { ':cid'?: string } } }) => {
+      if (cmd.__type === 'Query') {
+        const cid = cmd.input.ExpressionAttributeValues?.[':cid']
+        // Só Caxias do Sul deve ser consultada — Porto Alegre nunca deve aparecer.
+        expect(cid).toBe('4305108')
+        return Promise.resolve({ Items: [makeFinding({ cityId: '4305108' })] })
+      }
+      return Promise.resolve({ Items: [] })
+    })
+
+    const res = asResult(await handler(makeEvent('/alerts', { state: 'RS', city: '4305108' })))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.total).toBe(1)
+    expect(body.items[0].cityId).toBe('4305108')
+    expect(body.pageInfo.citiesCount).toBe(1)
+  })
+
+  // Regression test (TEC-WEB-009): cityId que não pertence ao state filtrado
+  // retorna vazio (filtros contraditórios).
+  it('cityId fora do state filtrado retorna vazio (filtros contraditórios)', async () => {
+    mockDdbSend.mockImplementation(() => {
+      throw new Error('Não deveria chamar DDB com filtros contraditórios')
+    })
+
+    // 4305108 é Caxias do Sul (RS). Pedindo state=SP → contradição.
+    const res = asResult(await handler(makeEvent('/alerts', { state: 'SP', city: '4305108' })))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.total).toBe(0)
+    expect(body.items).toEqual([])
+  })
 })
 
 describe('GET /stats', () => {
