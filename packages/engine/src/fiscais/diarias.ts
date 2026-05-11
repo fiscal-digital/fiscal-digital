@@ -26,7 +26,56 @@ export const DIARIA_VALOR_LIMITE = 800.00
 
 // ─── Regex etapa 1 (filtro sem LLM) ───────────────────────────────────────────
 
-const DIARIA_RE = /\b(di[áa]ria(?:s)?|viagem|deslocamento)\b/i
+// Trigger estrito: apenas "diária"/"diárias". Removidos "viagem" e "deslocamento"
+// que geravam overmatch sistemático (proper nouns "Boa Viagem", "Despesas de
+// Viagem", "Praça da Viagem") — ver ADR-001 fiscal-digital-evaluations.
+const DIARIA_RE = /\bdi[áa]rias?\b/i
+
+// Adjetivo/advérbio com quebra de linha: "diaria-\nmente" — o engine quebra
+// o token e o `\b` original casa em "diaria" + boundary. Excluir explicitamente.
+const DIARIAMENTE_LINEBREAK_RE = /\bdi[áa]ria-?\s*\n?\s*mente\b/i
+
+// Verbo de autorização/pagamento — exigido para confirmar que é pagamento, não
+// menção descritiva ou unidade de medida.
+const VERBO_AUTORIZACAO_RE = /\b(concede|conced[oae]r?|conceder|conces[sã][oa]|pagamento|paga(?:r|mento)?|autoriz(?:a|ar|ado|aç[ãa]o)|reembols\w+|ressarci\w+|empenho)\b/i
+
+// Stopwords — rejeição imediata se qualquer um destes padrões aparece no excerpt.
+// Consolida ADR-001 + padrões novos do Ciclo 2.
+const STOPWORDS_DIARIA: ReadonlyArray<RegExp> = [
+  // Ata de Registro de Preços / Pregão para hospedagem (não é pagamento de diária)
+  /\bATA\s+DE\s+REGISTRO\s+DE\s+PRE[ÇC]OS\b/i,
+  /\bARP\s+N[º°]/i,
+  /\bPREG[ÃA]O\s+(ELETR[ÔO]NICO|PRESENCIAL)\b/i,
+  /\b(servi[çc]os?|presta[çc][ãa]o)[\s\S]{0,40}(hospedagem|hot[ée]is?|apartamento|pernoite)\b/i,
+  // Locação/aluguel de veículo com tarifa "diária"
+  /\bloca[çc][ãa]o\s+de\s+ve[íi]culo\b/i,
+  /\baluguel\s+de\s+ve[íi]culo\b/i,
+  /\bvalor\s+global\s+da\s+di[áa]ria\s+do\s+contrato\b/i,
+  // Unidade de medida / tarifa unitária
+  /\bUnid\.?\s*\/\s*di[áa]ria\b/i,
+  /\bm²\s*\/\s*di[áa]ria\b/i,
+  // Dotação orçamentária — autorização contábil, não pagamento
+  /\b3\.3\.90\.14\b/,
+  /\bcr[ée]dito\s+suplementar\b/i,
+  /\bdota[çc][ãa]o\s+or[çc]ament[áa]ria\b/i,
+  // Polissemia "diária" — padrões novos descobertos no Ciclo 2 (n=37 universo esgotado)
+  /\bdivis[ãa]o\s+de\s+di[áa]rias?\s+e\s+passagens?\b/i, // unidade administrativa
+  /\bpublica[çc][ãa]o\s+di[áa]ria\b/i,
+  /\bcircula[çc][ãa]o\s+di[áa]ria\b/i,
+  /\bjornada\s+di[áa]ria\b/i,
+  /\bsess[õo]es?\s+di[áa]rias?\b/i,
+  /\bmulta\s+di[áa]ria\b/i,
+  /\balimenta[çc][ãa]o\s+di[áa]ria\b/i,
+]
+
+function isExcludedDiaria(excerpt: string): boolean {
+  if (DIARIAMENTE_LINEBREAK_RE.test(excerpt)) return true
+  return STOPWORDS_DIARIA.some(re => re.test(excerpt))
+}
+
+function temVerboAutorizacao(excerpt: string): boolean {
+  return VERBO_AUTORIZACAO_RE.test(excerpt)
+}
 
 // ─── Regex de extração ────────────────────────────────────────────────────────
 
@@ -234,7 +283,17 @@ export const fiscalDiarias: Fiscal = {
     const findings: Finding[] = []
 
     // Etapa 1 — Filtro regex (sem LLM)
-    const relevantExcerpts = gazette.excerpts.filter(e => DIARIA_RE.test(e))
+    //
+    // Triagem em 3 níveis (ADR-001 fiscal-digital-evaluations):
+    //  (a) palavra-chave "diária"/"diárias" com word boundary
+    //  (b) rejeitar stopwords: ARP/Pregão/hotel/veículo/dotação 3.3.90.14/polissemia
+    //  (c) exigir verbo de autorização (concede, paga, autoriza, reembolsa, empenho)
+    const relevantExcerpts = gazette.excerpts.filter(e => {
+      if (!DIARIA_RE.test(e)) return false
+      if (isExcludedDiaria(e)) return false
+      if (!temVerboAutorizacao(e)) return false
+      return true
+    })
     if (relevantExcerpts.length === 0) return []
 
     for (const excerpt of relevantExcerpts) {

@@ -149,4 +149,103 @@ describe('fiscalPessoal', () => {
 
     expect(findings).toHaveLength(0)
   })
+
+  // ── Regression tests do golden set fiscal-digital-evaluations (Ciclo 1+2+3) ──
+  // ADR-001 — fiscal-pessoal/ADR-001-regex-conjugacao.md
+  // Padrões C2/C3: comunicado convocação, vaga substituição, texto normativo,
+  // ratificação retroativa, Lei Complementar quadro, FG/GIP, concurso público.
+  describe('regression tests (golden set FPs — ADR-001 + Ciclo 3)', () => {
+    function expectNoFinding(excerpts: string[], label: string, date = '2026-08-15') {
+      return async () => {
+        const gazette = {
+          id: `gs-pessoal-${label}`,
+          territory_id: '4305108',
+          date,
+          url: `https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=pessoal-${label}`,
+          excerpts,
+          edition: '1',
+          is_extra: false,
+        }
+        const findings = await fiscalPessoal.analisar({
+          gazette,
+          cityId: '4305108',
+          context: makeContext({ now: () => new Date(`${date}T10:00:00.000Z`) }),
+        })
+        expect(findings).toHaveLength(0)
+      }
+    }
+
+    // ── GS originais (Ciclo 1) — devem retornar no_finding ──
+    it('GS-071: ratificação retroativa de nomeação de 2005', expectNoFinding(
+      [
+        'PORTARIA n° 050/2026. Ratificação retroativa da nomeação de CUELLAR LOPEZ, a contar de 12/05/2005, conforme decisão judicial. Cargo: Assessor Especial.',
+      ],
+      '071',
+    ))
+
+    it('GS-072: janeiro pós-eleição municipal (transição de mandato)', expectNoFinding(
+      [
+        'NOMEIA Maria Silva Diretora; NOMEIA João Souza Coordenador; NOMEIA Pedro Lima Assessor; EXONERA Carlos Mendes; NOMEIA Ana Costa; NOMEIA Lucia Pereira; NOMEIA Roberto Alves; EXONERA Paulo Santos.',
+      ],
+      '072',
+      '2025-01-15', // janeiro pós-eleição 2024
+    ))
+
+    // ── Padrões novos descobertos no Ciclo 3 ──
+    it('C3-COMUNICADO: comunicado de nomeação sem vínculo efetivo (GS-1289)', expectNoFinding(
+      [
+        'COMUNICADO – NOMEAÇÃO SEM VÍNCULO EFETIVO. Convoca para vaga em comissão. Sr. JOSÉ DA SILVA, classificado em processo seletivo simplificado.',
+      ],
+      'c3-comunicado',
+    ))
+
+    it('C3-SUBSTITUICAO: vaga decorrente de exoneração individual (GS-1290)', expectNoFinding(
+      [
+        'Para o cargo em comissão de Assessor de Gabinete. Vaga decorrente da exoneração de Wagner Souza. NOMEIA José Lima.',
+      ],
+      'c3-substituicao',
+    ))
+
+    it('C3-NORMATIVO: texto de lei vedando nomeações (GS-1291)', expectNoFinding(
+      [
+        'DECRETO Nº 1.234. VEDA A NOMEAÇÃO PELA ADMINISTRAÇÃO PÚBLICA DE PESSOAS CONDENADAS PELA LEI MARIA DA PENHA, conforme entendimento jurisprudencial consolidado.',
+      ],
+      'c3-normativo',
+    ))
+
+    it('C3-LEI-COMPLEMENTAR: Lei Complementar cria quadro funcional', expectNoFinding(
+      [
+        'Considerando o disposto na Lei Complementar nº 247, de 29 de dezembro de 2017, que dispõe sobre a Organização da Administração Direta do Poder Executivo. NOMEIA quadro de funcionários públicos efetivos.',
+      ],
+      'c3-lei-comp',
+    ))
+
+    it('C3-TORNAR-SEM-EFEITO: anulação em massa de portarias', expectNoFinding(
+      [
+        'Resolve TORNAR SEM EFEITO as nomeações constantes das Portarias nº 100 a 150/2024, em razão de vício formal.',
+      ],
+      'c3-tornar-sem-efeito',
+    ))
+
+    it('C3-FG-GIP: cargo de Função Gratificada (não comissionado)', expectNoFinding(
+      [
+        'NOMEIA José da Silva para o cargo de Função Gratificada FG-3, junto à Secretaria de Administração. NOMEIA Maria Souza FG-2.',
+      ],
+      'c3-fg',
+    ))
+
+    it('C3-CONCURSO: concurso público regular homologado (não comissionado)', expectNoFinding(
+      [
+        'NOMEIA em caráter efetivo os candidatos aprovados no Concurso Público nº 001/2024, homologação publicada em 15/01/2026: João da Silva, Maria Souza, Pedro Lima.',
+      ],
+      'c3-concurso',
+    ))
+
+    it('C3-A-PEDIDO: exoneração a pedido individual', expectNoFinding(
+      [
+        'EXONERAR, a pedido, do servidor TÚLIO REBELO, matrícula 12345, do cargo em comissão de Assessor Especial.',
+      ],
+      'c3-a-pedido',
+    ))
+  })
 })
