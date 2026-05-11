@@ -74,6 +74,20 @@ Base legal: `"Lei 13.019/2014, Art. 33 e 35"`
 - **Chamamento público com convênio celebrado** — quando o excerpt cita explicitamente
   "chamamento público nº X" ou "Edital de chamamento", presume-se regularidade.
 
+### Filtros de exclusão pré-LLM (ADR-001 — patch 2026-05-10)
+
+Após o patch P0 Convênios (precisão pré-patch 0% sobre n=75 amostras / universo
+esgotado), o Fiscal rejeita **antes** de chamar a Camada 2 (Nova Lite) os
+seguintes contextos identificados como FP sistemático no
+[`fiscal-digital-evaluations/analyses/fiscal-convenios/ADR-001-contrato-repasse.md`](https://github.com/fiscal-digital/fiscal-digital-evaluations/blob/main/analyses/fiscal-convenios/ADR-001-contrato-repasse.md):
+
+| Filtro | Padrão FP | Exemplo (GS) |
+|---|---|---|
+| Contrato de Repasse federal | Sigla ministerial (MTUR/MDR/MAPA/MS/MEC/MJ/MMA/MCID/MCIDADANIA/MIDR/MCTI/MTE/MESP/MINFRA/MCom) | GS-056/057/058/059/095/097 |
+| Contraparte não-OSC | Universidade, PUC, UFR*, fundação pública/universitária, hospital público/metropolitano/universitário, autarquia, sociedade de economia mista, Santa Casa, Pio Sodalício, Misericórdia | GS-017, GS-094 |
+| Decreto orçamentário | Crédito Suplementar, abertura de crédito, Lei 9452/97, fonte X de convênio, subação N | GS-055, GS-096 |
+| Polaridade negativa | "não poderá ter o Termo de Colaboração renovado" | GS-096 |
+
 ---
 
 ## 3. Exemplos que DISPARAM o alerta
