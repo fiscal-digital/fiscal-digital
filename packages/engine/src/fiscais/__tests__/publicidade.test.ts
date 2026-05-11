@@ -280,4 +280,67 @@ describe('fiscalPublicidade', () => {
     // GSI safety — cnpj não foi extraído, deve estar ausente (não NULL)
     expect(Object.prototype.hasOwnProperty.call(findings[0], 'cnpj')).toBe(false)
   })
+
+  // ── Regression tests do golden set fiscal-digital-evaluations (Ciclo 1+2) ──
+  // ADR-001 — fiscal-publicidade/ADR-001-keywords-overmatch.md
+  // 6 FPs originais (GS-016, 050, 051, 052, 053, 054) — universo n=23 esgotado.
+  describe('regression tests (golden set FPs — ADR-001)', () => {
+    function expectNoFinding(excerpt: string, label: string, date = '2024-10-15') {
+      return async () => {
+        const gazette = {
+          ...BASE_GAZETTE,
+          id: `gs-${label}`,
+          date,
+          excerpts: [excerpt],
+        }
+        const findings = await fiscalPublicidade.analisar({
+          gazette,
+          cityId: '4305108',
+          context: makeContext(),
+        })
+        expect(findings).toHaveLength(0)
+      }
+    }
+
+    it('GS-016: Publicação Diária + transporte escolar (gazette header)', expectNoFinding(
+      'ANO XXVI Nº 5333 Publicação Diária Jornal Oficial nº 5333 Pág. 2 Terça-feira, 29 de outubro de 2024. OBJETO: A contratação de empresas de fretamento de ônibus para o transporte de alunos no dia 30/11/2024 nos períodos matutino e vespertino. Divulgação dos resultados.',
+      '016',
+    ))
+
+    it('GS-050: Designar Fiscal de Contrato (não publicidade)', expectNoFinding(
+      'Jornal Oficial nº 5284 Pág. 4 Terça-feira, 27 de agosto de 2024. RESOLVEM: Art. 1º Designar servidores para exercer a função de Fiscal de Contrato, conforme segue: ANA KARLA JACOBY 151670 SECRETARIA MUNICIPAL. Divulgação ampla.',
+      '050',
+    ))
+
+    it('GS-051: "organização da divulgação do serviço" (atribuição funcional)', expectNoFinding(
+      'gestão e supervisão do funcionamento do serviço; II- organização da divulgação do serviço e mobilização das famílias; III- organização de seleção e contratação de pessoal. Programa Família Acolhedora.',
+      '051',
+    ))
+
+    it('GS-052: "Órgão de divulgação do Município" + homologar contratações (header DO)', expectNoFinding(
+      'DOS SANTOS BARBOSA 159168/07 Autoridade competente por homologar as contratações diretas (titular da pasta ou Ordenador de Despesa). Secretário Municipal. Órgão de divulgação do Município - Ano XXIX - Edição 7315 - Sexta-feira, 26 de julho de 2024.',
+      '052',
+    ))
+
+    it('GS-053: Aditivo de concessão de outdoor (BRASIL OUTDOOR — outorga ao Município)', expectNoFinding(
+      'SMOSP – Contratante: Município de Caxias do Sul. Contratado: BRASIL OUTDOOR CAXIAS SPE S.A. Objeto: Termo aditivo n.º 01 ao contrato de concessão n.º 503/2023 para prorrogação da segunda parcela da outorga fixa. Modalidade: concessão de outdoor.',
+      '053',
+    ))
+
+    it('GS-054: DESIGNA fiscalizar Termo Aditivo (designação fiscal de TI)', expectNoFinding(
+      'DESIGNA servidor para acompanhar e fiscalizar a execução e o adequado cumprimento das cláusulas estabelecidas no Contrato referente nº 81833/2023, Termo Aditivo firmado com a empresa SELBETTI TECNOLOGIA. Comunicação social autorizada.',
+      '054',
+    ))
+
+    // ── Padrões adicionais Ciclo 2 ──
+    it('C2-LEGAL: publicação obrigatória de editais (Lei 14.133)', expectNoFinding(
+      'CONTRATAÇÃO de empresa para inserções em Diários Oficiais para divulgação de anúncios de caráter legal exigidos pela Lei 14.133/2021. Valor: R$ 120.000,00. Pregão Eletrônico 215/2024.',
+      'c2-legal',
+    ))
+
+    it('C2-PRESTACAO: prestação de contas trimestral (transparência, não contratação)', expectNoFinding(
+      'PUBLICAÇÃO da prestação de contas trimestral da Secretaria de Comunicação Social, conforme Lei Orgânica Art. 62. Período: jul-set/2024. Divulgação no portal de transparência.',
+      'c2-prestacao',
+    ))
+  })
 })

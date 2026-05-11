@@ -37,6 +37,22 @@ ou candidato.
 
 ---
 
+## Filtros de exclusão pré-LLM (ADR-001 — patch 2026-05-10)
+
+Após o patch P0 Publicidade (precisão pré-patch 8,7% sobre n=23 amostras / universo
+esgotado), o Fiscal rejeita **antes** de avaliar a janela eleitoral os contextos
+identificados como FP sistemático no
+[`fiscal-digital-evaluations/analyses/fiscal-publicidade/ADR-001-keywords-overmatch.md`](https://github.com/fiscal-digital/fiscal-digital-evaluations/blob/main/analyses/fiscal-publicidade/ADR-001-keywords-overmatch.md):
+
+| Categoria | Padrão | GS amostra |
+|---|---|---|
+| Cabeçalho do Diário Oficial | "Órgão de divulgação do Município", "Jornal Oficial nº", "Publicação Diária" | GS-016, GS-052 |
+| Designação de Fiscal de Contrato | "Designar/DESIGNA Fiscal de Contrato", "fiscalizar Termo Aditivo" | GS-050, GS-054 |
+| Publicação legal/obrigatória | "anúncios de caráter legal", "publicação de editais", "publicação legal", "inserções em Diários Oficiais", "prestação de contas trimestral", "relatório trimestral" | C2 padrão |
+| Concessão patrimonial (operação inversa) | "concessão de outdoor", "outorga fixa", "BRASIL OUTDOOR" | GS-053 |
+| Atribuição funcional | "organização da divulgação do serviço" | GS-051 |
+| Polissemia "Fiscal" | "fiscais de impressão" (outsourcing TI) | C2 padrão |
+
 ## Padrão detectado no MVP
 
 ### `publicidade_eleitoral`
