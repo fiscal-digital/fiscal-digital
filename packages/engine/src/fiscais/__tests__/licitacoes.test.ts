@@ -415,6 +415,91 @@ describe('fiscalLicitacoes', () => {
     const dispensa_irregular = findings.filter(f => f.type === 'dispensa_irregular')
     expect(dispensa_irregular).toHaveLength(0)
   })
+
+  // ── Regression tests do golden set fiscal-digital-evaluations (Ciclo 1) ──
+  // ADR-001 — fiscal-licitacoes/ADR-001-classificacao-objeto.md
+  // 2 FPs originais (GS-077 locação imóvel, GS-081 designação fiscal) + 1 borderline
+  // (GS-074 Art. 75 VIII emergência sanitária)
+  describe('regression tests (golden set FPs — ADR-001)', () => {
+    function expectNoFinding(excerpt: string, label: string, values: number[]) {
+      return async () => {
+        const context = makeContext({
+          extractEntities: makeExtractEntitiesMock({ values }),
+        })
+        const gazette = {
+          id: `gs-licit-${label}`,
+          territory_id: '4305108',
+          date: '2026-04-10',
+          url: `https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=licit-${label}`,
+          excerpts: [excerpt],
+          edition: '1',
+          is_extra: false,
+        }
+        const findings = await fiscalLicitacoes.analisar({
+          gazette,
+          cityId: '4305108',
+          context,
+        })
+        const dispensa = findings.filter(f => f.type === 'dispensa_irregular')
+        expect(dispensa).toHaveLength(0)
+      }
+    }
+
+    it('GS-077: locação de imóvel para SEMMA (roteia para FiscalLocação)', expectNoFinding(
+      'EXTRATO DE DISPENSA. OBJETO: locação de imóvel para a sede da SEMMA. Contratada: OMC IMOBILIÁRIA. Valor: R$ 264.000,00. Modalidade: Inexigibilidade. Termo Aditivo n.º 01.',
+      '077',
+      [264000],
+    ))
+
+    it('GS-081: locação de imóvel + designação de fiscal (Escola Darcy Ribeiro)', expectNoFinding(
+      'Locação de imóvel destinado à Escola Darcy Ribeiro. Contratada: HELEN MARIANA. Valor: R$ 300.929,00. DESIGNA servidor para fiscalizar o contrato.',
+      '081',
+      [300929],
+    ))
+
+    it('GS-074: Art. 75 VIII — emergência sanitária + agulhas hospitalares (insumos saúde)', expectNoFinding(
+      'DISPENSA DE LICITAÇÃO. OBJETO: aquisição de agulhas de punção intraóssea — insumo hospitalar. Contratada: MAX CIRURGICA. Valor: R$ 68.100,00. Fundamento: Art. 75 VIII (emergência sanitária declarada).',
+      '074',
+      [68100],
+    ))
+
+    // ── Padrões adicionais Ciclo 2 ──
+    it('C2-FORNECEDOR-EXCLUSIVO: Art. 75 III "a" — única fornecedora', expectNoFinding(
+      'DISPENSA. OBJETO: aquisição de software de gestão hospitalar. Fornecedor exclusivo: BETHA SISTEMAS LTDA, conforme atestado de exclusividade comprovada. Valor: R$ 150.000,00. Notória especialização.',
+      'c2-exclusivo',
+      [150000],
+    ))
+
+    it('C2-EMERGENCIA: emergência declarada estado de calamidade', expectNoFinding(
+      'DISPENSA. OBJETO: contratação emergencial para combate à dengue. Estado de emergência pública declarado pelo Decreto Municipal nº 100/2026. Valor: R$ 90.000,00.',
+      'c2-emergencia',
+      [90000],
+    ))
+
+    it('C2-ART75-IX: contratação entre entes da administração pública', expectNoFinding(
+      'DISPENSA. Contratante: Município. Contratado: Empresa Municipal de Artes Gráficas S.A. Fundamento: Art. 75 IX (contratação entre entes da administração). Valor: R$ 113.990,00.',
+      'c2-ix',
+      [113990],
+    ))
+
+    it('C2-ART75-XV: universidade pública (Art. 75 XV)', expectNoFinding(
+      'DISPENSA. Contratada: UNIVERSIDADE ESTADUAL DE FEIRA DE SANTANA. Objeto: pesquisa acadêmica. Valor: R$ 155.600,00. Amparo legal: Art. 75, inciso XV da Lei 14.133/2021.',
+      'c2-xv',
+      [155600],
+    ))
+
+    it('C2-ADITIVO: Termo Aditivo (roteia para FiscalContratos)', expectNoFinding(
+      'TERMO DE ADITAMENTO DO CONTRATO Nº 44/2023. DATA: 09/02/2026. OBJETO: prorrogação contratual. Valor acrescido: R$ 100.000,00. Modalidade: Dispensa de Licitação original.',
+      'c2-aditivo',
+      [100000],
+    ))
+
+    it('C2-DESIGNACAO: designação de Fiscal de Contrato (não nova contratação)', expectNoFinding(
+      'DESIGNA o servidor JOÃO DA SILVA para exercer a função de Fiscal de Contrato do contrato nº 100/2024 referente à dispensa de licitação. Valor do contrato: R$ 80.000,00.',
+      'c2-designacao',
+      [80000],
+    ))
+  })
 })
 
 // Variável dummy para evitar erro no teste 8 (actType como campo extra)
