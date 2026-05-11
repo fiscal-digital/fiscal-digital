@@ -36,6 +36,48 @@ const IMOVEL_RE = /\bim[óo]vel\b/i
 const ART_74_RE = /art(?:igo)?\.?\s*74/i
 const INEX_LOCACAO_RE = /inexigibilidade.*loca[çc][ãa]o/i
 
+// ── Filtros de exclusão (ADR-001 + Ciclo 2 padrões) ──────────────────────────
+// Estas regex rejeitam excerpts que mencionam "locação" em contextos que NÃO
+// são nova contratação por inexigibilidade — designação de fiscal, aditivo,
+// rescisão, programa social, cross-block matching, regime estatal etc.
+
+// (a) Rescisão / encerramento de contrato existente
+const RESCISAO_RE = /\b(extrato\s+de\s+)?rescis[ãa]o\b/i
+
+// (b) Portaria de designação de Gestor/Fiscal de Contrato (não é nova contratação)
+const DESIGNAR_FISCAL_RE = /\b(designar|nomear|nomeia|designa)\b[\s\S]{0,200}\b(gestor|fiscal)\b[\s\S]{0,300}\b(de\s+|do\s+)?contrato\b/i
+
+// (c) Termo Aditivo / aditamento / prorrogação / ratificação de renovação / apostilamento
+const TERMO_ADITIVO_RE = /\b(termo\s+aditivo|aditamento|prorrog\w+|ratific\w+\s+a\s+renova[çc][ãa]o|apostilamento)\b/i
+
+// (d) Aviso de procura/interesse / Edital de chamamento (fase pré-contratual ou modalidade competitiva)
+const AVISO_INTERESSE_RE = /\b(aviso\s+de\s+(?:procura|interesse|coleta|cota[çc][ãa]o)|edital\s+de\s+chamamento|chamamento\s+p[úu]blico)\b/i
+
+// (e) Decreto que regulamenta programa/tributo — município é regulador, não locatário
+const DECRETO_REGULAMENTA_RE = /\bdecreto\b[\s\S]{0,200}\bregulamenta\b/i
+
+// (f) Anexo de Portaria com rol "CONTRATO FORNECEDOR OBJETO" — listagem documental
+const ANEXO_ROL_CONTRATOS_RE = /\bANEXO\b[\s\S]{0,200}\bCONTRATO\s+FORNECEDOR\b/i
+
+// (g) Cross-block: SÚMULA DE CONTRATOS aparece em pdfs com múltiplos atos não relacionados
+const SUMULA_CONTRATOS_RE = /\bs[úu]mula\s+de\s+(conv[êe]nios?\s+e\s+)?contratos?\b/i
+
+// (h) Lei 13.303/2016 — empresas estatais (regime próprio, fora do escopo Lei 14.133)
+const LEI_13303_RE = /\bLei\s+(n[º°.]?\s*)?13[.,]?303\b/i
+
+// (i) Termo de Fomento / Colaboração (Lei 13.019/2014) confundido com locação
+const TERMO_FOMENTO_RE = /\b(termo\s+de\s+(fomento|colabora[çc][ãa]o)|parceria\s+(?:com\s+)?OSC)\b/i
+
+// (j) Rol documental — "cópia do contrato de locação" como item exigido em outro ato
+const ROL_DOCUMENTAL_RE = /\bc[óo]pia\s+(do\s+|de\s+)?(contrato\s+de\s+loca[çc][ãa]o|documento\s+similar)/i
+
+// (k) Cláusulas contratuais listadas (manutenção/obrigações com numeração romana)
+const CLAUSULA_CONTRATUAL_RE = /(^|\s)(I{1,3}V?|IV|VI{0,3}|IX|X{1,2})\s*[-–]\s+[\s\S]{0,80}\b(manuten[çc][ãa]o|obriga[çc][õo]es|cl[áa]usula|arcar\s+com)\b/im
+
+// (l) Modalidades competitivas — locação por inexigibilidade Art. 74 III tem regime próprio
+const MODALIDADE_COMPETITIVA_RE = /\b(preg[ãa]o\s+(eletr[ôo]nico|presencial)|concorr[êe]ncia|tomada\s+de\s+pre[çc]os)\b/i
+const MODALIDADE_PERMITIDA_RE = /\b(inexigibilidade|dispensa)\b/i
+
 // ── Termos de validação (Art. 74 III exige justificativa) ────────────────────
 
 const LAUDO_AVALIACAO_RE = /laudo\s+(de\s+)?avalia[çc][ãa]o/i
@@ -67,6 +109,39 @@ function temTermosValidacao(excerpt: string): boolean {
     JUSTIFICATIVA_RE.test(excerpt) ||
     RAZAO_ESCOLHA_RE.test(excerpt)
   )
+}
+
+/**
+ * Rejeita o excerpt quando ele cita "locação" mas o ato NÃO é nova contratação
+ * por inexigibilidade — designação de fiscal, aditivo, rescisão, programa
+ * social, cross-block, regime estatal, Termo de Fomento etc.
+ *
+ * Reduz overmatch sistemático identificado nos Ciclos 1-3 do golden set
+ * (precisão pré-patch: 16,0% sobre n=476).
+ */
+function isExcludedAct(excerpt: string): boolean {
+  if (RESCISAO_RE.test(excerpt)) return true
+  if (DESIGNAR_FISCAL_RE.test(excerpt)) return true
+  if (TERMO_ADITIVO_RE.test(excerpt)) return true
+  if (AVISO_INTERESSE_RE.test(excerpt)) return true
+  if (DECRETO_REGULAMENTA_RE.test(excerpt)) return true
+  if (ANEXO_ROL_CONTRATOS_RE.test(excerpt)) return true
+  if (SUMULA_CONTRATOS_RE.test(excerpt)) return true
+  if (LEI_13303_RE.test(excerpt)) return true
+  if (TERMO_FOMENTO_RE.test(excerpt)) return true
+  if (ROL_DOCUMENTAL_RE.test(excerpt)) return true
+  if (CLAUSULA_CONTRATUAL_RE.test(excerpt)) return true
+  return false
+}
+
+/**
+ * Locação por inexigibilidade Art. 74 III tem regime próprio. Excerpts que
+ * citam apenas modalidades competitivas (Pregão, Concorrência, Tomada de
+ * Preços) sem qualquer menção a inexigibilidade/dispensa não pertencem ao
+ * escopo deste Fiscal.
+ */
+function hasOnlyCompetingModality(excerpt: string): boolean {
+  return MODALIDADE_COMPETITIVA_RE.test(excerpt) && !MODALIDADE_PERMITIDA_RE.test(excerpt)
 }
 
 /**
@@ -131,11 +206,19 @@ export const fiscalLocacao: Fiscal = {
     const findings: Finding[] = []
 
     // Etapa 1 — Filtro regex (sem LLM): excerpts com indício de locação de imóvel
+    // que seja nova contratação por inexigibilidade. Rejeita designação de fiscal,
+    // aditivo, rescisão, programa social, cross-block, regime estatal etc.
     const relevantExcerpts = gazette.excerpts.filter(e => {
       const hasLocacao = LOCACAO_RE.test(e)
       const hasContextoImovel =
         IMOVEL_RE.test(e) || ART_74_RE.test(e) || INEX_LOCACAO_RE.test(e)
-      return hasLocacao && hasContextoImovel
+      if (!hasLocacao || !hasContextoImovel) return false
+
+      // Filtros de exclusão (ADR-001 fiscal-digital-evaluations + padrões Ciclo 2)
+      if (isExcludedAct(e)) return false
+      if (hasOnlyCompetingModality(e)) return false
+
+      return true
     })
 
     if (relevantExcerpts.length === 0) {
