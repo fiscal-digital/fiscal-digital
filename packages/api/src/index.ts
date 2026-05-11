@@ -67,10 +67,29 @@ async function queryFindingsByCity(cityId: string, type?: string): Promise<Findi
   return all
 }
 
+function normalizeSearchText(text: string): string {
+  return text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+}
+
+function matchesSearch(f: Finding, query: string, cityName: string): boolean {
+  if (!query) return true
+  const q = normalizeSearchText(query)
+  const fields = [
+    cityName,
+    f.cnpj ?? '',
+    f.contractNumber ?? '',
+    f.narrative ?? '',
+    f.secretaria ?? '',
+    f.type ?? '',
+  ]
+  return fields.some((v) => normalizeSearchText(String(v)).includes(q))
+}
+
 async function fetchFindings(filters: {
   cityId?: string
   state?: string
   type?: string
+  search?: string
   limit?: number
 }): Promise<Finding[]> {
   // cityId é mais específico que state — quando ambos passados, cityId ganha.
@@ -137,10 +156,20 @@ async function fetchFindings(filters: {
   // DDB como audit trail mas não aparecem em feed público. Ver publisher
   // markUnpublishable.
   const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
-  return all
+  const filtered = all
     .filter(f => f.type && f.riskScore >= riskThreshold && (f.confidence ?? 0) >= confidenceThreshold)
     .filter(f => !(f as Finding & { unpublishable?: boolean }).unpublishable)
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+
+  // Search livre — feito em memória no servidor por simplicidade. Filtra
+  // findings por substring em city, cnpj, contractNumber, narrative,
+  // secretaria, type. Performance OK pra base atual (~600 findings); se
+  // crescer ordens de magnitude, considerar índice DDB ou OpenSearch.
+  if (filters.search && filters.search.trim()) {
+    const q = filters.search.trim()
+    return filtered.filter((f) => matchesSearch(f, q, getCityOrFallback(f.cityId).name))
+  }
+  return filtered
 }
 
 // Scan completo de findings — usado por /stats. Sem filter de riskScore para
@@ -883,6 +912,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       cityId: qs.city,
       state: qs.state,
       type: qs.type,
+      search: qs.search,
     }
 
     if (path === '/rss' || path === '/rss/') {
