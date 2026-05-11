@@ -23,6 +23,27 @@ const CONVENIO_RE = /conv[êe]nio(?!\s+de\s+coopera[çc][ãa]o\s+t[ée]cnica)/i
 const OSC_RE = /\b(OSC|OSCIP|organiza[çc][ãa]o\s+(?:da\s+sociedade\s+civil|social))\b/i
 const REPASSE_RE = /repasse|transfer[êe]ncia\s+volunt[áa]ria/i
 
+// ── Filtros de exclusão (ADR-001 — patch 2026-05-10) ────────────────────────
+// Padrões identificados nos 10 FPs originais (universo n=75 esgotado em prod).
+
+// (a) Contrato de Repasse federal (Lei 8.666 + IN STN — NÃO é Lei 13.019)
+// Whitelist de siglas ministeriais que sempre indicam repasse União → Município.
+const CONTRATO_REPASSE_FEDERAL_RE =
+  /\bCONTRATO\s+(?:DE\s+)?REPASSE\b[\s\S]{0,80}\b(MTUR|MDR|MAPA|MS|MEC|MJ|MMA|MCID|MCIDADANIA|MIDR|MCTI|MTE|MESP|MINFRA|MCom|MAS|SUDENE|SUDAM)\b/i
+
+// (b) Contrapartes que NÃO são OSC: universidades, fundações públicas, hospitais
+//     públicos, autarquias, sociedades de economia mista, Santas Casas.
+const CONTRAPARTE_NAO_OSC_RE =
+  /\b(universidade|UFMG|UFR[A-Z]{1,3}|USP|PUC[CR]?|UF[A-Z]{2}|UNIRIO|UNB|UFCSPA|funda[çc][ãa]o\s+(municipal|estadual|federal|p[úu]blica|universit[áa]ria|de\s+apoio)|hospital\s+(metropolitano|universit[áa]rio|p[úu]blico|federal|estadual|municipal)|autarquia|sociedade\s+de\s+economia\s+mista|santa\s+casa|pio\s+sodal[íi]cio|miseric[óo]rdia)\b/i
+
+// (c) Decreto orçamentário / abertura de crédito suplementar (autorização contábil)
+const DECRETO_ORCAMENTARIO_RE =
+  /\b(CR[ÉE]DITO\s+(ADICIONAL\s+)?SUPLEMENTAR|abertura\s+de\s+cr[ée]dito|Lei\s+9\.?452\/97|fonte\s+\d+\s+de\s+conv[êe]nio|suba[çc][ãa]o\s+\d+|despesa\s+com\s+pagamento\s+de\s+aux[íi]lio)\b/i
+
+// (d) Polaridade negativa — ato afirma que algo NÃO ocorrerá
+const POLARIDADE_NEGATIVA_RE =
+  /\bn[ãa]o\s+(poder[áa]|ser[áa]|dever[áa]|haver[áa])\s+(?:ter|haver|ser|prosseguir|continuar|renov\w+)/i
+
 // ── Regex de evidência de regularidade — quando presentes, NÃO disparam ─────
 // Chamamento público é regra geral (Lei 13.019, Art. 24).
 const CHAMAMENTO_RE = /chamamento\s+p[úu]blico/i
@@ -30,6 +51,22 @@ const CHAMAMENTO_RE = /chamamento\s+p[úu]blico/i
 const DISPENSA_ART29_RE = /art(?:igo)?\.?\s*29[^0-9]|dispensa\s+de\s+chamamento/i
 // Inexigibilidade fundamentada em Art. 30 (singularidade do objeto).
 const INEXIGIBILIDADE_ART30_RE = /art(?:igo)?\.?\s*30[^0-9]|inexigibilidade\s+de\s+chamamento/i
+
+/**
+ * Rejeita excerpts que mencionam "convênio/repasse/OSC" em contextos fora do
+ * escopo da Lei 13.019/2014 — Contrato de Repasse federal, contraparte não-OSC,
+ * decreto orçamentário, polaridade negativa.
+ *
+ * Consolida ADR-001 (fiscal-digital-evaluations) após o Ciclo 2 confirmar 0%
+ * de precisão sobre n=75 (universo amostral esgotado em prod).
+ */
+function isOutOfScope(excerpt: string): boolean {
+  if (CONTRATO_REPASSE_FEDERAL_RE.test(excerpt)) return true
+  if (CONTRAPARTE_NAO_OSC_RE.test(excerpt)) return true
+  if (DECRETO_ORCAMENTARIO_RE.test(excerpt)) return true
+  if (POLARIDADE_NEGATIVA_RE.test(excerpt)) return true
+  return false
+}
 
 function formatBRL(value: number): string {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -126,15 +163,23 @@ export const fiscalConvenios: Fiscal = {
     const findings: Finding[] = []
 
     // Etapa 1 — Filtro regex (sem LLM)
-    const relevantExcerpts = gazette.excerpts.filter(
-      e =>
+    // Triagem em 2 níveis (ADR-001 fiscal-digital-evaluations):
+    //  (a) palavra-chave Lei 13.019 (fomento/colaboração/cooperação/convênio/OSC/repasse)
+    //  (b) excluir excerpts fora do escopo: Contrato de Repasse federal,
+    //      contraparte não-OSC (universidade/fundação pública/hospital público),
+    //      decreto orçamentário, polaridade negativa.
+    const relevantExcerpts = gazette.excerpts.filter(e => {
+      const hasKeyword =
         TERMO_FOMENTO_RE.test(e) ||
         TERMO_COLABORACAO_RE.test(e) ||
         ACORDO_COOPERACAO_RE.test(e) ||
         CONVENIO_RE.test(e) ||
         OSC_RE.test(e) ||
-        REPASSE_RE.test(e),
-    )
+        REPASSE_RE.test(e)
+      if (!hasKeyword) return false
+      if (isOutOfScope(e)) return false
+      return true
+    })
 
     if (relevantExcerpts.length === 0) {
       return []
