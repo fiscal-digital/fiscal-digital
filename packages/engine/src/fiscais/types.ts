@@ -2,6 +2,10 @@ import type { Finding, Gazette, SupplierProfile, SkillResult } from '../types'
 import type { extractEntities as _extractEntities } from '../skills/extract_entities'
 import type { saveMemory as _saveMemory } from '../skills/save_memory'
 import type { SanctionResult } from '../skills/check_sanctions'
+import type {
+  QuerySuppliersContractInput,
+  SupplierContractRecord,
+} from '../skills/query_suppliers_contract'
 
 /**
  * Contrato de injeção de dependências para todos os Fiscais.
@@ -34,6 +38,15 @@ export interface FiscalContext {
   saveMemory?: typeof _saveMemory                                                         // permite mock em teste
   validateCNPJ?: (input: { cnpj: string }) => Promise<SkillResult<Partial<SupplierProfile>>>  // Fiscal de Fornecedores
   checkSanctions?: (input: { cnpj: string }) => Promise<SkillResult<SanctionResult>>           // Fiscal de Fornecedores (CEIS/CNEP CGU)
+  /**
+   * Cross-reference de contrato original em `suppliers-prod` (EVO-002).
+   * Usado pelo FiscalContratos para calcular % de aditivo. Retorna null se
+   * o contrato original não está cadastrado (ex: contratos pré-2025 que
+   * antecedem a população da tabela).
+   */
+  querySuppliersContract?: (
+    input: QuerySuppliersContractInput,
+  ) => Promise<SkillResult<SupplierContractRecord | null>>
 }
 
 export interface AnalisarInput {
