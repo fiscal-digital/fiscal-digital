@@ -16,7 +16,51 @@ const DISPENSA_RE = /dispensa\s+(de\s+)?licita[çc][ãa]o/i
 const ART_75_RE = /art(?:igo)?\.?\s*75/i
 
 // Regex para classificação inciso I (obras/engenharia)
-const OBRA_RE = /(obra|engenharia|reforma|constru[çc][ãa]o|pavimenta[çc][ãa]o)/i
+const OBRA_RE = /(obra|engenharia|reforma|constru[çc][ãa]o|pavimenta[çc][ãa]o|edifica[çc][ãa]o|drenagem|terraplenagem|recupera[çc][ãa]o\s+estrutural)/i
+
+// ── Filtros de exclusão (ADR-001 + padrões Ciclo 2) ─────────────────────────
+// Atos que pertencem a OUTROS Fiscais (vazamento de escopo):
+//   - Locação de imóvel → FiscalLocação (Art. 74 III, sem teto)
+//   - Termo Aditivo → FiscalContratos (Art. 125, não nova dispensa)
+//   - Designação de Fiscal de Contrato → não é nova contratação
+
+const LOCACAO_IMOVEL_RE = /\bloca[çc][ãa]o\s+de\s+im[óo]vel\b/i
+const TERMO_ADITIVO_LICITACOES_RE = /\b(termo\s+aditivo|aditamento|prorrog\w+|apostilamento)\b/i
+const DESIGNAR_FISCAL_LICITACOES_RE = /\b(designar|nomear|nomeia|designa)\b[\s\S]{0,200}\b(gestor|fiscal)\b[\s\S]{0,300}\b(de\s+|do\s+)?contrato\b/i
+
+// ── Hipóteses sem teto da Lei 14.133 Art. 75 ────────────────────────────────
+// III: fornecedor exclusivo / única fornecedora (notória especialização)
+// IV: emergência / calamidade pública / urgência declarada / sanitária
+// VIII: insumos / medicamentos / produtos de saúde
+// IX: contratação entre entes da administração pública
+// XV: ciência/tecnologia (universidade pública, fundação de apoio)
+
+const HIPOTESE_FORNECEDOR_EXCLUSIVO_RE =
+  /\b(fornecedor\s+exclusivo|[úu]nica\s+(?:fornecedora|fabricante)|not[óo]ria\s+especializa[çc][ãa]o|exclusividade\s+comprovada)\b/i
+const HIPOTESE_EMERGENCIA_RE =
+  /\b(emerg[êe]ncia|calamidade(\s+p[úu]blica)?|urg[êe]ncia\s+(?:declarada|sanit[áa]ria)|estado\s+de\s+(?:emerg[êe]ncia|calamidade)\s+p[úu]blica|contrata[çc][ãa]o\s+emergencial)\b/i
+const HIPOTESE_INSUMOS_SAUDE_RE =
+  /\b(medicamento|insumo\s+(?:m[ée]dico|hospitalar|farmac[êe]utico|de\s+sa[úu]de)|[óo]rtese|pr[óo]tese|vacina|imunobiol[óo]gico|equipamento\s+hospitalar)\b/i
+const HIPOTESE_ENTES_PUBLICOS_RE =
+  /\b(?:art(?:igo)?\.?\s*75\s*(?:,|\s)?\s*(?:inciso\s+)?IX|Art\.\s*75\s+IX)\b|\bcontrata[çc][ãa]o\s+entre\s+entes\s+da\s+administra[çc][ãa]o\b/i
+const HIPOTESE_CIENCIA_TECNOLOGIA_RE =
+  /\b(?:art(?:igo)?\.?\s*75\s*(?:,|\s)?\s*(?:inciso\s+)?XV|Art\.\s*75\s+XV)\b|\b(?:universidade|funda[çc][ãa]o\s+de\s+(?:apoio|pesquisa|ensino))\b[\s\S]{0,80}\b(p[úu]blica|estadual|federal|municipal)\b/i
+
+function isVazamentoEscopo(excerpt: string): boolean {
+  if (LOCACAO_IMOVEL_RE.test(excerpt)) return true
+  if (TERMO_ADITIVO_LICITACOES_RE.test(excerpt)) return true
+  if (DESIGNAR_FISCAL_LICITACOES_RE.test(excerpt)) return true
+  return false
+}
+
+function isHipoteseSemTeto(excerpt: string): boolean {
+  if (HIPOTESE_FORNECEDOR_EXCLUSIVO_RE.test(excerpt)) return true
+  if (HIPOTESE_EMERGENCIA_RE.test(excerpt)) return true
+  if (HIPOTESE_INSUMOS_SAUDE_RE.test(excerpt)) return true
+  if (HIPOTESE_ENTES_PUBLICOS_RE.test(excerpt)) return true
+  if (HIPOTESE_CIENCIA_TECNOLOGIA_RE.test(excerpt)) return true
+  return false
+}
 
 function formatBRL(value: number): string {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -83,9 +127,15 @@ export const fiscalLicitacoes: Fiscal = {
     const findings: Finding[] = []
 
     // Etapa 1 — Filtro regex (sem LLM)
-    const relevantExcerpts = gazette.excerpts.filter(
-      e => DISPENSA_RE.test(e) || ART_75_RE.test(e),
-    )
+    // Triagem com filtros de vazamento de escopo (ADR-001):
+    //   - Locação de imóvel → FiscalLocação (Art. 74 III, sem teto)
+    //   - Termo Aditivo → FiscalContratos (Art. 125)
+    //   - Designação de Fiscal de Contrato → não é nova contratação
+    const relevantExcerpts = gazette.excerpts.filter(e => {
+      if (!(DISPENSA_RE.test(e) || ART_75_RE.test(e))) return false
+      if (isVazamentoEscopo(e)) return false
+      return true
+    })
 
     if (relevantExcerpts.length === 0) {
       return []
@@ -144,7 +194,9 @@ export const fiscalLicitacoes: Fiscal = {
       const hasAllFields = !!(cnpj && valor && gazette.date)
 
       // Etapa 4 — Detecção dispensa irregular
-      if (valor > teto) {
+      // ADR-001: pular se o ato cita hipótese sem teto (Art. 75 III/IV/VIII/IX/XV).
+      // Ex: emergência sanitária + agulhas hospitalares = legal mesmo acima de R$ 50k.
+      if (valor > teto && !isHipoteseSemTeto(excerpt)) {
         // Etapa 5 — RiskFactors
         const legalBasisCitada =
           (legalBasis?.includes('75') && legalBasis.includes('14.133')) ? 80 : 50
