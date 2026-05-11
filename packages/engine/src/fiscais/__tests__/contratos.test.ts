@@ -444,4 +444,109 @@ describe('fiscalContratos', () => {
     expect(narrativa).toMatch(/Lei 14\.133\/2021/)
     expect(narrativa).toMatch(/Art\. 125/)
   })
+
+  // ── Regression tests do golden set fiscal-digital-evaluations (Ciclo 1) ──
+  // ADR-001 — fiscal-contratos/ADR-001-missing-original-value.md
+  // FPs originais: GS-082..086, 088, 089 (instrumento errado/reajuste/valor <R$5k/percentual declarado).
+  // TP: GS-087 (deve continuar disparando).
+  describe('regression tests (golden set FPs — ADR-001)', () => {
+    function expectNoFinding(excerpt: string, label: string, values: number[]) {
+      return async () => {
+        const context: FiscalContext = {
+          alertsTable: 'fiscal-digital-alerts-test',
+          now: () => new Date('2026-05-10T10:00:00.000Z'),
+          extractEntities: makeExtractEntitiesMock({ values }),
+        }
+        const gazette = {
+          id: `gs-contratos-${label}`,
+          territory_id: '4305108',
+          date: '2026-04-10',
+          url: `https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=contratos-${label}`,
+          excerpts: [excerpt],
+          edition: '1',
+          is_extra: false,
+        }
+        const findings = await fiscalContratos.analisar({
+          gazette,
+          cityId: '4305108',
+          context,
+        })
+        const aditivo = findings.filter(f => f.type === 'aditivo_abusivo')
+        expect(aditivo).toHaveLength(0)
+      }
+    }
+
+    it('GS-082: Termo aditivo a Termo de Compromisso (instrumento fora escopo)', expectNoFinding(
+      'R$ 2.700.000,00. Modalidade: Inexigibilidade nº 2022/59. SEMMA – Contratante: Município. Contratado: MARCELO LISSOTT. Objeto: Termo aditivo n.º 01 ao TERMO DE COMPROMISSO firmado anteriormente.',
+      '082',
+      [2700000],
+    ))
+
+    it('GS-083: revisão anual (reajuste legal Art. 124)', expectNoFinding(
+      'Contratado: MARISOL TRANSPORTE LTDA. Objeto: Termo Aditivo nº 05 ao Contrato 2019/192, para revisão anual de valores contratuais do transporte escolar. Valor estimado: R$ 25.850,00.',
+      '083',
+      [25850],
+    ))
+
+    it('GS-084: percentual declarado 20,22% (abaixo do limite — texto explícito)', expectNoFinding(
+      'OBJETO: Alteração do valor do Contrato n. 388 de 28/9/2020. ALTERAÇÃO: Fica alterado o valor do contrato n. 388/2020. acréscimo de 20,22% no valor original conforme planilha anexa. Processo 136281/2019-21.',
+      '084',
+      [50000],
+    ))
+
+    it('GS-085: aditivo de R$ 2.200 (abaixo do floor R$ 5.000)', expectNoFinding(
+      'OBJETO: Termo Aditivo n.º 01 ao Contrato n.º 049/2022 de prestação de serviços de confecção de impressos diversos, para acréscimo de quantidade. VALOR: R$ 2.200,00.',
+      '085',
+      [2200],
+    ))
+
+    it('GS-086: prorrogação por 12 meses sem alterar valor unitário (apostilamento)', expectNoFinding(
+      'Objeto: Termo Aditivo nº 08 ao Contrato nº 2018/751 para prorrogar a vigência do contrato de 20/08/2023 até 19/08/2024. apostilamento de valor mensal. Valor: R$ 100.000,00.',
+      '086',
+      [100000],
+    ))
+
+    it('GS-088: aditivo de R$ 234,96 (abaixo do floor — ajuste operacional)', expectNoFinding(
+      'Objeto: Termo aditivo nº 09 ao contrato 2019/159 para redução de quilometragem roteiro 803 M/T e acréscimo de quilometragem roteiro 903 M/T. Valor Estimado: R$ 234,96.',
+      '088',
+      [234.96],
+    ))
+
+    it('GS-089: aditivo a Termo de Compromisso (instrumento fora escopo)', expectNoFinding(
+      'Modalidade de licitação: Termo de Compromisso. Processo 2020/23391. Contratado: FERNANDA PIVA. Objeto: Termo Aditivo nº 02 ao Termo de Compromisso. Valor estimado: R$ 10.752,00.',
+      '089',
+      [10752],
+    ))
+
+    // ── Padrões adicionais Ciclo 2 ──
+    it('C2-REPACTUACAO-CCT: repactuação por Convenção Coletiva', expectNoFinding(
+      'Termo Aditivo nº 03 ao Contrato 2024/100. Objeto: repactuação CCT 2024/2025 da categoria de vigilância. Reajuste por convenção coletiva. Valor: R$ 50.000,00.',
+      'c2-repactuacao',
+    [50000],
+    ))
+
+    it('C2-IPCA: reajuste anual pelo IPCA', expectNoFinding(
+      'Termo Aditivo nº 02. Objeto: reajuste anual pelo IPCA acumulado de 4,5% no período. Aditivo de valor: R$ 80.000,00.',
+      'c2-ipca',
+      [80000],
+    ))
+
+    it('C2-FOMENTO-ADITIVO: aditivo a Termo de Fomento (Lei 13.019)', expectNoFinding(
+      'Termo Aditivo nº 01 ao Termo de Fomento nº 005/2025. Objeto: prorrogação de parceria com OSC. Valor acrescido: R$ 100.000,00.',
+      'c2-fomento',
+      [100000],
+    ))
+
+    it('C2-SUPRESSAO: supressão de valor (negativo)', expectNoFinding(
+      'Termo Aditivo nº 03 ao Contrato 100/2024. Objeto: supressão de valor por não execução de etapas. Impactação financeira negativa. Valor de R$ 0,00.',
+      'c2-supressao',
+      [0],
+    ))
+
+    it('C2-SUMULA: SÚMULA DE CONVÊNIOS E CONTRATOS (cross-block)', expectNoFinding(
+      'SÚMULA DE CONVÊNIOS E CONTRATOS. Contratante: Município. Contratado: MITRA DIOCESANA. Objeto: Termo aditivo para prorrogação. Valor: R$ 80.000,00.',
+      'c2-sumula',
+      [80000],
+    ))
+  })
 })
