@@ -166,14 +166,30 @@ texto explícito > inferência de cross-reference. GS-084 (`20,22%` declarado).
 | `apostilamento` | Registro contábil, não aditivo material |
 | `supressão`, `retenção de valor`, `valor suprimido`, `impactação financeira negativa` | Decréscimo, não acréscimo |
 
-### Cross-reference suppliers-prod (follow-up)
+### Cross-reference suppliers-prod (implementado 2026-05-11)
 
-Cross-reference formal com a tabela `suppliers-prod` (GSI1-city-date) para
-buscar o valor original via `contractId` continua pendente — requer skill nova
-via `context.querySuppliersContract`. Sem ela, o Fiscal usa:
-1. `context.queryAlertsByCnpj` (busca por CNPJ em alerts-prod, registros do engine)
-2. `entities.valorOriginalContrato` (fallback do LLM)
-3. Skip silencioso se nenhuma fonte estiver disponível (não emite finding)
+Cross-reference com a tabela `suppliers-prod` via skill nova
+`querySuppliersContract` (`packages/engine/src/skills/query_suppliers_contract.ts`).
+Source canônica do valor original do contrato (resolve 89% dos FPs identificados
+no Ciclo 2/3).
+
+**Ordem de lookup do valor original:**
+1. **`context.querySuppliersContract`** → consulta `suppliers-prod` por
+   (cnpj, cityId, contractNumber). Schema: `pk = SUPPLIER#{cnpj}`,
+   `sk = {contractedAt}#{contractId}`. Source primária para contratos
+   cadastrados pelo MIT-02/EVO-002.
+2. **`context.queryAlertsByCnpj`** → consulta `alerts-prod` por CNPJ.
+   Fallback para contratos já registrados pelo engine (registros do MVP
+   antes do MIT-02 popular `suppliers-prod` completamente).
+3. **`entities.valorOriginalContrato`** → fallback LLM (Haiku extraiu valor
+   original do excerpt).
+4. **Skip silencioso** se nenhuma fonte estiver disponível — não emite
+   finding. Persiste aditivo no histórico de qualquer forma para análises
+   futuras.
+
+A skill `querySuppliersContract` é injetada via `FiscalContext` (campo
+opcional) — testes rodam com mock; prod injeta a implementação real via
+boot do Lambda analyzer.
 
 ---
 

@@ -203,11 +203,25 @@ export const fiscalContratos: Fiscal = {
           continue
         }
 
-        // Etapa 3 — Descoberta valor original (Opção C combo)
+        // Etapa 3 — Descoberta valor original (Opção C combo + suppliers-prod)
         let valorOriginal: number | undefined
 
-        // 3.a Lookup histórico em alerts-prod
-        if (contractNumber && cnpj && context.queryAlertsByCnpj) {
+        // 3.a Cross-reference em suppliers-prod (ADR-001 follow-up — EVO-002).
+        // Source canônica para valor original do contrato. Resolve 89% dos FPs
+        // identificados no Ciclo 2/3 (precisão pré-patch 10-11%).
+        if (contractNumber && cnpj && context.querySuppliersContract) {
+          const r = await context.querySuppliersContract({
+            cnpj,
+            cityId,
+            contractNumber,
+          })
+          if (r.data?.valueAmount && r.data.valueAmount > 0) {
+            valorOriginal = r.data.valueAmount
+          }
+        }
+
+        // 3.b Lookup histórico em alerts-prod (registros do próprio engine)
+        if (valorOriginal === undefined && contractNumber && cnpj && context.queryAlertsByCnpj) {
           const fiveYearsAgo = new Date(now)
           fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5)
           const sinceISO = fiveYearsAgo.toISOString().slice(0, 10)
@@ -224,7 +238,7 @@ export const fiscalContratos: Fiscal = {
           }
         }
 
-        // 3.b Fallback: valorOriginalContrato do LLM
+        // 3.c Fallback: valorOriginalContrato do LLM
         if (valorOriginal === undefined && entities.valorOriginalContrato !== undefined) {
           valorOriginal = entities.valorOriginalContrato
         }

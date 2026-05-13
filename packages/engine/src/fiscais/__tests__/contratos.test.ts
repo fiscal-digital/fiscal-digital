@@ -88,6 +88,27 @@ function makeQueryAlertsByCnpjMock(findings: Finding[] = []) {
   return jest.fn().mockResolvedValue(findings)
 }
 
+function makeQuerySuppliersContractMock(value?: number) {
+  if (value === undefined) {
+    return jest.fn().mockResolvedValue({
+      data: null,
+      source: 'dynamodb:fiscal-digital-suppliers-prod#NOTFOUND',
+      confidence: 1.0,
+    })
+  }
+  return jest.fn().mockResolvedValue({
+    data: {
+      cnpj: '12345678000190',
+      cityId: '4305108',
+      contractNumber: '042/2024',
+      contractedAt: '2024-01-15',
+      valueAmount: value,
+    },
+    source: 'dynamodb:fiscal-digital-suppliers-prod#mock',
+    confidence: 1.0,
+  })
+}
+
 function makeGenerateNarrativeMock(text = 'Narrativa mock gerada.') {
   return jest.fn().mockResolvedValue(text)
 }
@@ -548,5 +569,113 @@ describe('fiscalContratos', () => {
       'c2-sumula',
       [80000],
     ))
+  })
+
+  // ── Cross-reference via skill querySuppliersContract (EVO-002) ─────────────
+  // Resolve o ADR-001 follow-up: valor original via suppliers-prod GSI.
+  describe('cross-reference suppliers-prod (querySuppliersContract)', () => {
+    function makeAditivoExcerpt(valorAditivo: number, contractNum = '042/2024'): string {
+      return `EXTRATO DE TERMO ADITIVO Nº 01 ao Contrato nº ${contractNum}. Acréscimo no valor de R$ ${valorAditivo.toLocaleString('pt-BR')},00. Contratada: Tech Solutions LTDA, CNPJ 12.345.678/0001-90.`
+    }
+
+    it('dispara aditivo_abusivo quando suppliers-prod retorna valor original e aditivo excede 25%', async () => {
+      const querySuppliers = makeQuerySuppliersContractMock(100000)
+
+      const context: FiscalContext = {
+        alertsTable: 'fiscal-digital-alerts-test',
+        now: () => new Date('2026-05-10T10:00:00.000Z'),
+        extractEntities: makeExtractEntitiesMock({ values: [30000], contractNumbers: ['042/2024'] }),
+        querySuppliersContract: querySuppliers,
+        saveMemory: makeSaveMemoryMock(),
+        generateNarrative: makeGenerateNarrativeMock(),
+      }
+
+      const findings = await fiscalContratos.analisar({
+        gazette: {
+          id: 'g-supplier-1',
+          territory_id: '4305108',
+          date: '2026-04-10',
+          url: 'https://queridodiario.ok.org.br/test',
+          excerpts: [makeAditivoExcerpt(30000)],
+          edition: '1',
+          is_extra: false,
+        },
+        cityId: '4305108',
+        context,
+      })
+
+      expect(querySuppliers).toHaveBeenCalledWith({
+        cnpj: '12.345.678/0001-90',
+        cityId: '4305108',
+        contractNumber: '042/2024',
+      })
+
+      const aditivo = findings.filter(f => f.type === 'aditivo_abusivo')
+      expect(aditivo).toHaveLength(1)
+      expect(aditivo[0].value).toBe(30000)
+      expect(aditivo[0].riskScore).toBeGreaterThanOrEqual(60)
+    })
+
+    it('NÃO dispara quando suppliers-prod retorna valor original e aditivo está abaixo de 25%', async () => {
+      const querySuppliers = makeQuerySuppliersContractMock(200000)
+
+      const context: FiscalContext = {
+        alertsTable: 'fiscal-digital-alerts-test',
+        now: () => new Date('2026-05-10T10:00:00.000Z'),
+        extractEntities: makeExtractEntitiesMock({ values: [30000], contractNumbers: ['042/2024'] }),
+        querySuppliersContract: querySuppliers,
+        saveMemory: makeSaveMemoryMock(),
+        generateNarrative: makeGenerateNarrativeMock(),
+      }
+
+      const findings = await fiscalContratos.analisar({
+        gazette: {
+          id: 'g-supplier-2',
+          territory_id: '4305108',
+          date: '2026-04-10',
+          url: 'https://queridodiario.ok.org.br/test',
+          excerpts: [makeAditivoExcerpt(30000)],
+          edition: '1',
+          is_extra: false,
+        },
+        cityId: '4305108',
+        context,
+      })
+
+      expect(querySuppliers).toHaveBeenCalled()
+      expect(findings).toHaveLength(0)
+    })
+
+    it('skip silencioso quando suppliers-prod retorna null e sem fallback LLM nem alerts-prod', async () => {
+      const querySuppliers = makeQuerySuppliersContractMock(undefined)
+      const queryAlerts = makeQueryAlertsByCnpjMock([])
+
+      const context: FiscalContext = {
+        alertsTable: 'fiscal-digital-alerts-test',
+        now: () => new Date('2026-05-10T10:00:00.000Z'),
+        extractEntities: makeExtractEntitiesMock({ values: [30000], contractNumbers: ['042/2024'] }),
+        querySuppliersContract: querySuppliers,
+        queryAlertsByCnpj: queryAlerts,
+        saveMemory: makeSaveMemoryMock(),
+        generateNarrative: makeGenerateNarrativeMock(),
+      }
+
+      const findings = await fiscalContratos.analisar({
+        gazette: {
+          id: 'g-supplier-3',
+          territory_id: '4305108',
+          date: '2026-04-10',
+          url: 'https://queridodiario.ok.org.br/test',
+          excerpts: [makeAditivoExcerpt(30000)],
+          edition: '1',
+          is_extra: false,
+        },
+        cityId: '4305108',
+        context,
+      })
+
+      expect(querySuppliers).toHaveBeenCalled()
+      expect(findings).toHaveLength(0)
+    })
   })
 })
