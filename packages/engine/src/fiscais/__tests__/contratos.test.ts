@@ -579,7 +579,6 @@ describe('fiscalContratos', () => {
     }
 
     it('dispara aditivo_abusivo quando suppliers-prod retorna valor original e aditivo excede 25%', async () => {
-      // Original R$ 100k, aditivo R$ 30k = 30% > 25% (limite Art. 125 §1º I)
       const querySuppliers = makeQuerySuppliersContractMock(100000)
 
       const context: FiscalContext = {
@@ -588,6 +587,7 @@ describe('fiscalContratos', () => {
         extractEntities: makeExtractEntitiesMock({ values: [30000], contractNumbers: ['042/2024'] }),
         querySuppliersContract: querySuppliers,
         saveMemory: makeSaveMemoryMock(),
+        generateNarrative: makeGenerateNarrativeMock(),
       }
 
       const findings = await fiscalContratos.analisar({
@@ -617,7 +617,6 @@ describe('fiscalContratos', () => {
     })
 
     it('NÃO dispara quando suppliers-prod retorna valor original e aditivo está abaixo de 25%', async () => {
-      // Original R$ 200k, aditivo R$ 30k = 15% < 25% — não emite
       const querySuppliers = makeQuerySuppliersContractMock(200000)
 
       const context: FiscalContext = {
@@ -626,6 +625,7 @@ describe('fiscalContratos', () => {
         extractEntities: makeExtractEntitiesMock({ values: [30000], contractNumbers: ['042/2024'] }),
         querySuppliersContract: querySuppliers,
         saveMemory: makeSaveMemoryMock(),
+        generateNarrative: makeGenerateNarrativeMock(),
       }
 
       const findings = await fiscalContratos.analisar({
@@ -647,7 +647,7 @@ describe('fiscalContratos', () => {
     })
 
     it('skip silencioso quando suppliers-prod retorna null e sem fallback LLM nem alerts-prod', async () => {
-      const querySuppliers = makeQuerySuppliersContractMock(undefined) // null
+      const querySuppliers = makeQuerySuppliersContractMock(undefined)
       const queryAlerts = makeQueryAlertsByCnpjMock([])
 
       const context: FiscalContext = {
@@ -657,6 +657,7 @@ describe('fiscalContratos', () => {
         querySuppliersContract: querySuppliers,
         queryAlertsByCnpj: queryAlerts,
         saveMemory: makeSaveMemoryMock(),
+        generateNarrative: makeGenerateNarrativeMock(),
       }
 
       const findings = await fiscalContratos.analisar({

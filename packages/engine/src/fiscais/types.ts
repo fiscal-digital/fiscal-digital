@@ -41,8 +41,7 @@ export interface FiscalContext {
   /**
    * Cross-reference de contrato original em `suppliers-prod` (EVO-002).
    * Usado pelo FiscalContratos para calcular % de aditivo. Retorna null se
-   * o contrato original não está cadastrado (ex: contratos pré-2025 que
-   * antecedem a população da tabela).
+   * o contrato original não está cadastrado.
    */
   querySuppliersContract?: (
     input: QuerySuppliersContractInput,
