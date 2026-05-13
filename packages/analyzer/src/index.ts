@@ -16,6 +16,7 @@ import {
   createCachedExtractEntities,
   saveMemory,
   generateNarrative,
+  querySuppliersContract,
   gazetteKey,
   requireEnv,
   createLogger,
@@ -243,6 +244,9 @@ function buildContext(gazetteId: string): FiscalContext {
     },
     saveMemory,
     queryAlertsByCnpj,
+    // ADR-001 Contratos follow-up — cross-ref valor original em suppliers-prod.
+    // Skill consulta DDB Query por pk=SUPPLIER#{cnpj} + filtra contractNumber+cityId.
+    querySuppliersContract: input => querySuppliersContract.execute(input),
   }
 }
 
