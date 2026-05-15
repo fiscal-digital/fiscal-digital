@@ -73,6 +73,7 @@ Mapeamento canônico PT/EN: [`packages/engine/src/types/index.ts`](packages/engi
 | [fiscal-digital-web](https://github.com/fiscal-digital/fiscal-digital-web) | Site e dashboards públicos |
 | [fiscal-digital-collectors](https://github.com/fiscal-digital/fiscal-digital-collectors) | Coletores de fontes de dados |
 | [fiscal-digital-analytics](https://github.com/fiscal-digital/fiscal-digital-analytics) | Análises e relatórios |
+| [fiscal-digital-evaluations](https://github.com/fiscal-digital/fiscal-digital-evaluations) | Avaliação pública dos Fiscais: golden set rotulado, ADRs por Fiscal, baselines de precisão por release |
 
 ---
 
@@ -96,6 +97,68 @@ Este projeto é diretamente inspirado por:
 Leia o [Guia de Contribuição](CONTRIBUTING.md) e o [Código de Conduta](CODE_OF_CONDUCT.md).
 
 Para adicionar uma nova cidade ou um novo Fiscal, abra uma [Issue](https://github.com/fiscal-digital/fiscal-digital/issues/new/choose) primeiro — toda mudança em lógica de detecção precisa de referência legal + exemplo positivo + exemplo negativo (regra de [GOVERNANCA.md](docs/fiscais/GOVERNANCA.md)).
+
+---
+
+## 🇺🇸 English
+
+**Autonomous oversight agent of Brazilian municipal public spending.**
+
+Fiscal Digital monitors municipal official gazettes, detects irregularities, and publishes verifiable alerts to society, always citing the source.
+
+🌐 [fiscaldigital.org](https://fiscaldigital.org) · 🐦 [@FiscalDigitalBR](https://x.com/FiscalDigitalBR)
+
+### How it works
+
+A 3-layer pipeline turns raw gazettes into verifiable alerts:
+
+1. **Layer 1: Regex** extracts CNPJ, monetary values, and dates locally (free, deterministic).
+2. **Layer 2: Amazon Nova Lite via Bedrock** classifies acts, secretariats, and suppliers.
+3. **10 Fiscal Agents** run in parallel (Licitações, Contratos, Fornecedores, Pessoal, Convênios, Nepotismo, Publicidade, Locação, Diárias, and Geral as orchestrator) producing findings with risk score and confidence.
+4. **Layer 3: Claude Haiku 4.5 via Bedrock** generates the public-facing narrative for findings with riskScore ≥ 60 and confidence ≥ 0.70.
+
+### Cities monitored
+
+50 active cities plus 2 planned (effective coverage depends on Querido Diário having indexed the municipality). First coverage and MVP origin: Caxias do Sul (RS), Adiló Didomenico administration, 2021 to present.
+
+### Inspiration
+
+Fiscal Digital stands on the shoulders of two foundational Brazilian civic-tech projects:
+
+- **[Serenata de Amor](https://serenata.ai)** (OKFN Brazil): pioneered the use of AI for federal oversight (CEAP reimbursements of deputies and senators).
+- **[Querido Diário](https://queridodiario.ok.org.br)** (OKFN Brazil): the open-data infrastructure that digitized hundreds of municipal gazettes. Our primary data source.
+
+We don't compete. We extend. Serenata covers federal; Querido Diário provides municipal infrastructure; Fiscal Digital adds intelligence and alerts on top of municipal data.
+
+### Repositories
+
+| Repo | Description |
+|---|---|
+| **fiscal-digital** *(this)* | Engine: Fiscal agents, Skills, API, Terraform |
+| [fiscal-digital-web](https://github.com/fiscal-digital/fiscal-digital-web) | Public website and dashboards |
+| [fiscal-digital-collectors](https://github.com/fiscal-digital/fiscal-digital-collectors) | Data source collectors |
+| [fiscal-digital-analytics](https://github.com/fiscal-digital/fiscal-digital-analytics) | Analyses and reports |
+| [fiscal-digital-evaluations](https://github.com/fiscal-digital/fiscal-digital-evaluations) | Public evaluation of Fiscal agents: labeled golden set, per-Fiscal ADRs, precision baselines per release |
+
+### Transparency applied to ourselves
+
+The same verifiability standard we apply to public contracts, we apply to our own infrastructure costs. The **FiscalCustos** operational agent queries AWS Cost Explorer daily, persists results in DynamoDB, and publishes them at [fiscaldigital.org/transparencia/custos](https://fiscaldigital.org/transparencia/custos): month-to-date, linear projection, per-service breakdown, USD→BRL conversion via PTAX BCB.
+
+### Contributing
+
+See the [Contributing Guide](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Any PR that changes detection logic of a Fiscal agent must include:
+
+1. Legal basis (law and article).
+2. A triggering example (a gazette excerpt that should fire the alert).
+3. A non-triggering example (a similar excerpt that should NOT fire, to guard against false positives).
+
+This rule is enforced by the maintainers and documented in [GOVERNANCA.md](docs/fiscais/GOVERNANCA.md).
+
+### License
+
+Code: [MIT](LICENSE). Data and generated alerts: [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ---
 
