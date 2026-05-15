@@ -26,4 +26,4 @@ Casos graves resultam em bloqueio permanente do repositório.
 
 ## Contato
 
-contato@fiscaldigital.org
+lineu@fiscaldigital.org
