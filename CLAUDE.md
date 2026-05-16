@@ -114,6 +114,9 @@ ou copy de site, abrir sessão dedicada em `fiscal-digital-web/`.
 | `fiscal-digital-web` | Next.js — landing + dashboards por cidade | S3 + CloudFront via GH Actions |
 | `fiscal-digital-collectors` | Adaptadores de fontes de dados | Lambda agendado via GH Actions |
 | `fiscal-digital-analytics` | Notebooks, relatórios, exports CSV | Manual / GitHub Pages |
+| `fiscal-digital-evaluations` | Golden set rotulado, ADRs por Fiscal, baselines de precisão | Repo público de metodologia (sem deploy) |
+
+**Para sessões Claude tocando em lógica de Fiscal:** consultar `fiscal-digital-evaluations` antes de modificar regex/threshold/prompt — lá ficam as análises de FP recorrentes e patches sugeridos com regression tests.
 
 ---
 
