@@ -341,6 +341,26 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "*"
       },
       {
+        # CloudFront Origin Request + Cache Policies — AI SEO Onda 2 §5.1,
+        # módulo `api-domain` cria policies para a distribution de
+        # api.fiscaldigital.org (forward seletivo sem `Host` + pass-through TTL).
+        Sid    = "CloudFrontOriginAndCachePolicies"
+        Effect = "Allow"
+        Action = [
+          "cloudfront:CreateOriginRequestPolicy",
+          "cloudfront:UpdateOriginRequestPolicy",
+          "cloudfront:DeleteOriginRequestPolicy",
+          "cloudfront:GetOriginRequestPolicy",
+          "cloudfront:ListOriginRequestPolicies",
+          "cloudfront:CreateCachePolicy",
+          "cloudfront:UpdateCachePolicy",
+          "cloudfront:DeleteCachePolicy",
+          "cloudfront:GetCachePolicy",
+          "cloudfront:ListCachePolicies",
+        ]
+        Resource = "*"
+      },
+      {
         # iam:UpdateAssumeRolePolicy — necessário para o próprio Terraform
         # atualizar a trust policy de roles fiscal-digital-* (ex: adicionar
         # mais um repo no sub do OIDC).
