@@ -14,8 +14,9 @@ output "api_lambda_arn" {
   value = module.lambdas.api_arn
 }
 
-output "api_url" {
-  value = module.lambdas.api_url
+output "api_lambda_function_url" {
+  value       = module.lambdas.api_url
+  description = "URL crua da Lambda Function (interno; CloudFront aponta aqui)"
 }
 
 output "cloudfront_distribution_id" {
@@ -24,6 +25,16 @@ output "cloudfront_distribution_id" {
 
 output "web_url" {
   value = "https://fiscaldigital.org"
+}
+
+output "api_url" {
+  value       = module.api_domain.api_url
+  description = "URL canônica da API pública (https://api.fiscaldigital.org)"
+}
+
+output "api_cloudfront_distribution_id" {
+  value       = module.api_domain.cloudfront_distribution_id
+  description = "ID da distribution CloudFront da API — usar para invalidations"
 }
 
 output "gazettes_queue_url" {
