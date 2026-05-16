@@ -332,6 +332,96 @@ describe('fiscalDiarias', () => {
     expect(irregular[0].confidence).toBeLessThanOrEqual(0.6)
   })
 
+  // ── Regression tests do golden set fiscal-digital-evaluations (Ciclo 1+2) ──
+  // ADR-001 — fiscal-diarias/ADR-001-overmatch.md
+  // Padrões identificados nos 10 FPs originais (GS-014, 015, 046..049, 090..093)
+  // + padrões adicionais Ciclo 2 (polissemia "diária": jornada/multa/publicação/sessões).
+  // Todos devem retornar `no_finding`.
+  describe('regression tests (golden set FPs — ADR-001)', () => {
+    function expectNoFinding(excerpt: string, label: string, gazetteDate = '2026-05-12') {
+      return async () => {
+        const gazette = gazetteWith(`gs-${label}`, gazetteDate, excerpt)
+        const findings = await fiscalDiarias.analisar({
+          gazette,
+          cityId: '4305108',
+          context: makeContext(),
+        })
+        expect(findings).toHaveLength(0)
+      }
+    }
+
+    it('GS-014/GS-091: Técnicas de tiro (sem palavra-chave diária)', expectNoFinding(
+      'Técnicas de tiro: tiro duplo, acompanhamento do alvo. Panes/incidentes de tiro: identificação e saneamento. Identificação de meios de proteção. Curso de treinamento envolve deslocamento dos servidores.',
+      '014',
+    ))
+
+    it('GS-015/GS-048: ATA DE REGISTRO DE PREÇOS para Diária em Hotel (Pregão Eletrônico)', expectNoFinding(
+      'OBJETO: ATA DE REGISTRO DE PREÇOS PARA A PRESTAÇÃO DE SERVIÇO DE DIÁRIA EM HOTEL - APARTAMENTO SIMPLES. PRAZO: 12 MESES. VALOR: R$ 136.500,00. MODALIDADE: PREGAO ELETRONICO - 302/2023. Concede contratação.',
+      '015',
+    ))
+
+    it('GS-046: Despesas de Viagem em ata de Pregão (sem diária)', expectNoFinding(
+      'VIII- Despesas de Viagem: R$ 2.329,52. Pedro Mousinho Gomes. ATA DA SESSÃO PÚBLICA. PREGÃO ELETRÔNICO Nº 001/2022. Processo nº 01.010910.22.98.',
+      '046',
+    ))
+
+    it('GS-047: Aditivo de valor global da diária do contrato (locação de veículo)', expectNoFinding(
+      'Reajuste de 3,415370%, o valor global da diária do contrato passará de R$ 2.208,00 (dois mil, duzentos e oito reais), para R$ 2.283,48, gerando impactação financeira. Concede reajuste contratual de locação de veículo.',
+      '047',
+    ))
+
+    it('GS-049: Boa Viagem (proper noun)', expectNoFinding(
+      'Praça do Derby (nos sentidos Boa Viagem e Olinda) e Praça do Amorim - com distribuição de panfletos, faixas informativas e diálogo direto com motoristas, passageiros.',
+      '049',
+    ))
+
+    it('GS-090: "diaria-mente" com quebra de linha', expectNoFinding(
+      'A gente vai garantir que cerca de 60 mil pessoas, diaria-\nmente, sejam beneficiadas diretamente. A Prefeitura segue trabalhando aumentando muito o investimento e concede atenção integral.',
+      '090',
+    ))
+
+    it('GS-092: Boa Viagem (loja) — proper noun', expectNoFinding(
+      'Para a loja de Boa Viagem, a Prefeitura do Recife, através da Secretaria de Desenvolvimento Econômico, apoiou nas contratações, paga consultoria.',
+      '092',
+    ))
+
+    it('GS-093: Dotação orçamentária 3.3.90.14 (autorização contábil)', expectNoFinding(
+      '3.3.90.14.00.00.00.00.0500 DIÁRIAS - PESSOAL CIVIL R$ 1.000,00. Dotação Orçamentária. Crédito Suplementar. Concede dotação.',
+      '093',
+    ))
+
+    // ── Padrões adicionais Ciclo 2 (polissemia "diária") ──
+    it('C2-DIVISAO: "Divisão de Diárias e Passagens" (unidade administrativa)', expectNoFinding(
+      'Lotação: Divisão de Diárias e Passagens da Secretaria Municipal de Administração. Concede gratificação ao chefe da divisão.',
+      'c2-divisao',
+    ))
+
+    it('C2-JORNADA: "jornada diária" (carga horária)', expectNoFinding(
+      'Concede ao servidor José da Silva jornada diária de 6 horas, conforme regulamento. Valor da gratificação: R$ 200,00.',
+      'c2-jornada',
+    ))
+
+    it('C2-MULTA: "multa diária" (cláusula contratual)', expectNoFinding(
+      'CONTRATO Nº 045/2026. Cláusula 12: multa diária de R$ 500,00 em caso de descumprimento. Paga multa por atraso.',
+      'c2-multa',
+    ))
+
+    it('C2-SESSAO: "sessões diárias" (sessões de teatro)', expectNoFinding(
+      'Programação cultural com sessões diárias de teatro infantil na Casa de Cultura. Autoriza programação. Valor total: R$ 30.000,00.',
+      'c2-sessao',
+    ))
+
+    it('C2-PUBLICACAO: "publicação diária" (periodicidade do DO)', expectNoFinding(
+      'A publicação diária do diário oficial municipal será mantida. Autoriza renovação do contrato de impressão R$ 12.000,00 mensais.',
+      'c2-publicacao',
+    ))
+
+    it('C2-ALIMENTACAO: "alimentação diária" (programa social)', expectNoFinding(
+      'Programa Bom Prato fornece alimentação diária aos cidadãos em situação de vulnerabilidade. Paga subsídio R$ 5.000,00 mensais.',
+      'c2-alimentacao',
+    ))
+  })
+
   // Caso 12 — saveMemory recebe item sem campos NULL (LRN-019)
   it('12. saveMemory: item nunca contém NULL em campos opcionais (LRN-019)', async () => {
     const itensSalvos: Array<Record<string, unknown>> = []

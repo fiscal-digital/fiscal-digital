@@ -133,6 +133,66 @@ Novo prazo: até 31/12/2026.
 
 ---
 
+## Filtros de exclusão pré-LLM (ADR-001 — patch 2026-05-10)
+
+Após o patch P1 Contratos (precisão Ciclo 1 33,3% → Ciclo 2 11,3% sobre n=180,
+89% de FP por falta de cross-reference), 4 filtros defensivos são aplicados:
+
+### Floor de valor mínimo
+
+Aditivos < **R$ 5.000,00** são pulados (ajustes operacionais, correção de NF,
+rounding contábil). GS-085 (R$ 2.200), GS-088 (R$ 234,96).
+
+### Percentual declarado é fonte primária
+
+Quando o PDF cita `acréscimo de XX,YY%` explicitamente E o percentual está
+abaixo do limite legal (25% geral / 50% reforma), o finding é suprimido —
+texto explícito > inferência de cross-reference. GS-084 (`20,22%` declarado).
+
+### Instrumentos fora do escopo Art. 125
+
+| Padrão | Razão | GS |
+|---|---|---|
+| Termo de Compromisso/Cooperação/Fomento/Colaboração/Cessão de Uso | Não são contrato administrativo Lei 14.133 | GS-082, 089 |
+| Convênio, SÚMULA DE CONVÊNIOS E CONTRATOS | Cross-block matching | C2 |
+| Termo de Adesão, Edital de Capitação de Projetos | Fora de Lei 14.133 | C2 |
+
+### Reajuste legal (Art. 124, não Art. 125 §1º)
+
+| Padrão | Razão |
+|---|---|
+| `revisão anual`, `reajuste por índice`, `reajuste anual pelo IPCA`, `reajuste com base no IST`, `reajuste monetário` | Art. 124 — não é acréscimo abusivo |
+| `repactuação CCT/coletiva/por convenção` | Repactuação de mão de obra (Lei 14.133 Art. 135) |
+| `apostilamento` | Registro contábil, não aditivo material |
+| `supressão`, `retenção de valor`, `valor suprimido`, `impactação financeira negativa` | Decréscimo, não acréscimo |
+
+### Cross-reference suppliers-prod (implementado 2026-05-11)
+
+Cross-reference com a tabela `suppliers-prod` via skill nova
+`querySuppliersContract` (`packages/engine/src/skills/query_suppliers_contract.ts`).
+Source canônica do valor original do contrato (resolve 89% dos FPs identificados
+no Ciclo 2/3).
+
+**Ordem de lookup do valor original:**
+1. **`context.querySuppliersContract`** → consulta `suppliers-prod` por
+   (cnpj, cityId, contractNumber). Schema: `pk = SUPPLIER#{cnpj}`,
+   `sk = {contractedAt}#{contractId}`. Source primária para contratos
+   cadastrados pelo MIT-02/EVO-002.
+2. **`context.queryAlertsByCnpj`** → consulta `alerts-prod` por CNPJ.
+   Fallback para contratos já registrados pelo engine (registros do MVP
+   antes do MIT-02 popular `suppliers-prod` completamente).
+3. **`entities.valorOriginalContrato`** → fallback LLM (Haiku extraiu valor
+   original do excerpt).
+4. **Skip silencioso** se nenhuma fonte estiver disponível — não emite
+   finding. Persiste aditivo no histórico de qualquer forma para análises
+   futuras.
+
+A skill `querySuppliersContract` é injetada via `FiscalContext` (campo
+opcional) — testes rodam com mock; prod injeta a implementação real via
+boot do Lambda analyzer.
+
+---
+
 ## 5. Limitações conhecidas
 
 ### Cobertura de prorrogação nos primeiros meses de operação

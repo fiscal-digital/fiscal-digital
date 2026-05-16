@@ -5,6 +5,8 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 import crypto from 'node:crypto'
 import { CITIES, getCityOrFallback, pdfCacheUrl, pdfCacheS3Key, createLogger, getPublishThresholds } from '@fiscal-digital/engine'
 import type { Finding } from '@fiscal-digital/engine'
+import { citationHeaders, corsPreflightHeaders, computeEtag, notModified } from './headers'
+import { OPENAPI_SPEC } from './openapi'
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' })
 const GAZETTES_CACHE_BUCKET = process.env.GAZETTES_CACHE_BUCKET ?? 'fiscal-digital-gazettes-cache-prod'
@@ -67,10 +69,29 @@ async function queryFindingsByCity(cityId: string, type?: string): Promise<Findi
   return all
 }
 
+function normalizeSearchText(text: string): string {
+  return text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
+}
+
+function matchesSearch(f: Finding, query: string, cityName: string): boolean {
+  if (!query) return true
+  const q = normalizeSearchText(query)
+  const fields = [
+    cityName,
+    f.cnpj ?? '',
+    f.contractNumber ?? '',
+    f.narrative ?? '',
+    f.secretaria ?? '',
+    f.type ?? '',
+  ]
+  return fields.some((v) => normalizeSearchText(String(v)).includes(q))
+}
+
 async function fetchFindings(filters: {
   cityId?: string
   state?: string
   type?: string
+  search?: string
   limit?: number
 }): Promise<Finding[]> {
   // cityId é mais específico que state — quando ambos passados, cityId ganha.
@@ -137,10 +158,20 @@ async function fetchFindings(filters: {
   // DDB como audit trail mas não aparecem em feed público. Ver publisher
   // markUnpublishable.
   const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
-  return all
+  const filtered = all
     .filter(f => f.type && f.riskScore >= riskThreshold && (f.confidence ?? 0) >= confidenceThreshold)
     .filter(f => !(f as Finding & { unpublishable?: boolean }).unpublishable)
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+
+  // Search livre — feito em memória no servidor por simplicidade. Filtra
+  // findings por substring em city, cnpj, contractNumber, narrative,
+  // secretaria, type. Performance OK pra base atual (~600 findings); se
+  // crescer ordens de magnitude, considerar índice DDB ou OpenSearch.
+  if (filters.search && filters.search.trim()) {
+    const q = filters.search.trim()
+    return filtered.filter((f) => matchesSearch(f, q, getCityOrFallback(f.cityId).name))
+  }
+  return filtered
 }
 
 // Scan completo de findings — usado por /stats. Sem filter de riskScore para
@@ -549,16 +580,35 @@ async function handleNewsletter(event: APIGatewayProxyEventV2): Promise<APIGatew
 
 // ── Route handlers ──────────────────────────────────────────────────────────
 
-function ok(body: string, contentType: string, maxAge = 30): APIGatewayProxyResultV2 {
+function ok(
+  body: string,
+  contentType: string,
+  maxAge = 30,
+  event?: APIGatewayProxyEventV2,
+): APIGatewayProxyResultV2 {
+  // Headers de citação (CC-BY-4.0 + atribuição Querido Diário + Fiscal Digital),
+  // CORS explícito e ETag derivado do body. Ver packages/api/src/headers.ts.
+  //
+  // Cache TTL por endpoint (LRN-20260502-015):
+  //   /alerts e /rss: 30s (dashboard precisa frescor)
+  //   /stats: 60s (agregado mais caro, frescor menos crítico)
+  //   /cities: 300s (counts mudam pouco; cidade ativa é estável)
+  //
+  // If-None-Match: quando o cliente envia o ETag de uma resposta anterior e
+  // ele bate com o ETag atual, retornamos 304 sem corpo. Crawlers educados
+  // (GPTBot, ClaudeBot, CCBot) economizam payload com isso. Endpoints
+  // dinâmicos como /stats e /cities tipicamente nunca casam o ETag (agregados
+  // mudam a cada execução), mas /alerts/{slug} e /transparencia/costs/feed.xml
+  // estabilizam quando não há mudança upstream.
+  const headers = citationHeaders(body, contentType, maxAge)
+  const ifNoneMatch =
+    event?.headers?.['if-none-match'] ?? event?.headers?.['If-None-Match']
+  if (ifNoneMatch && ifNoneMatch === headers.etag) {
+    return notModified(headers.etag)
+  }
   return {
     statusCode: 200,
-    headers: {
-      'Content-Type': contentType,
-      // /alerts e /rss: 30s (LRN-20260502-015 — dashboard precisa frescor).
-      // /stats: 60s (agregado mais caro, frescor menos crítico).
-      // /cities: 300s (counts mudam pouco; cidade ativa é estável).
-      'Cache-Control': `public, max-age=${maxAge}, must-revalidate`,
-    },
+    headers,
     body,
   }
 }
@@ -862,6 +912,18 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   const qs = event.queryStringParameters ?? {}
   const method = event.requestContext?.http?.method?.toUpperCase() ?? 'GET'
 
+  // CORS preflight — qualquer endpoint. API é pública por design.
+  if (method === 'OPTIONS') {
+    return { statusCode: 204, headers: corsPreflightHeaders(), body: '' }
+  }
+
+  // If-None-Match handling: para endpoints GET cacheáveis, se o cliente envia
+  // o ETag de uma resposta anterior e ele bate com o ETag da resposta atual,
+  // retornamos 304 sem corpo. Crawlers educados (GPTBot, ClaudeBot, CCBot) usam
+  // isso para evitar re-download. Implementado interceptando a resposta de ok()
+  // via helper handleConditional abaixo. Endpoints com side effects (POST /newsletter,
+  // GET /pdf que faz upload) não suportam 304.
+
   try {
     // Newsletter — POST /newsletter
     if (path === '/newsletter' || path === '/newsletter/') {
@@ -883,6 +945,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       cityId: qs.city,
       state: qs.state,
       type: qs.type,
+      search: qs.search,
     }
 
     if (path === '/rss' || path === '/rss/') {
@@ -893,7 +956,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
           ? `Fiscal Digital — ${getCityOrFallback(filters.cityId).name}`
           : 'Fiscal Digital — Alertas de Gastos Públicos'
       const selfUrl = `${API_URL}/rss${Object.keys(qs).length ? '?' + new URLSearchParams(qs as Record<string, string>).toString() : ''}`
-      return ok(buildRss(findings, label, selfUrl), 'application/rss+xml; charset=UTF-8')
+      return ok(buildRss(findings, label, selfUrl), 'application/rss+xml; charset=UTF-8', 30, event)
     }
 
     // GET /alerts/{slug} — single finding por id base64url-encoded.
@@ -948,7 +1011,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         cachedPdfUrl: pdfCacheUrl(source),
         evidence: f.evidence,
         createdAt: f.createdAt,
-      }), 'application/json; charset=UTF-8', 60)
+      }), 'application/json; charset=UTF-8', 60, event)
     }
 
     if (path === '/alerts' || path === '/alerts/') {
@@ -1008,7 +1071,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
             createdAt: f.createdAt,
           }
         }),
-      }, null, 2), 'application/json; charset=UTF-8')
+      }, null, 2), 'application/json; charset=UTF-8', 30, event)
     }
 
     if (path === '/stats' || path === '/stats/') {
@@ -1024,7 +1087,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         f => f.type && f.riskScore >= thresholds.riskThreshold && (f.confidence ?? 0) >= thresholds.confidenceThreshold,
       )
       const stats = buildStats(findings, gazettesCount)
-      return ok(JSON.stringify(stats, null, 2), 'application/json; charset=UTF-8', 60)
+      return ok(JSON.stringify(stats, null, 2), 'application/json; charset=UTF-8', 60, event)
     }
 
     if (path === '/cities' || path === '/cities/') {
@@ -1033,7 +1096,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       // (3,5 MB → ~150 KB total). Mantém consistência com /alerts (mesmo
       // gate de publicação).
       const cities = await buildCitiesFromQueries()
-      return ok(JSON.stringify(cities, null, 2), 'application/json; charset=UTF-8', 300)
+      return ok(JSON.stringify(cities, null, 2), 'application/json; charset=UTF-8', 300, event)
     }
 
     // /transparencia/costs?days=30 — UH-OPS-001 (FiscalCustos)
@@ -1053,7 +1116,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
           byService: d.byService,
           ptaxBrl: d.ptaxBrl,
         })),
-      }, null, 2), 'application/json; charset=UTF-8', 600)
+      }, null, 2), 'application/json; charset=UTF-8', 600, event)
     }
 
     // /transparencia/costs/mtd — UH-OPS-002 (HeroStats)
@@ -1067,13 +1130,13 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
           body: JSON.stringify({ error: 'costs_not_yet_available' }),
         }
       }
-      return ok(JSON.stringify(mtd, null, 2), 'application/json; charset=UTF-8', 3600)
+      return ok(JSON.stringify(mtd, null, 2), 'application/json; charset=UTF-8', 3600, event)
     }
 
     // /transparencia/costs/feed.xml — RSS feed com valores mensais e total vitalício
     if (path === '/transparencia/costs/feed.xml' || path === '/transparencia/costs/feed.xml/') {
       const rss = await buildCostsRss()
-      return ok(rss, 'application/rss+xml; charset=UTF-8', 600)
+      return ok(rss, 'application/rss+xml; charset=UTF-8', 600, event)
     }
 
     // /cities/{cityId}/stats — UH-API-001 (Sprint 6)
@@ -1088,7 +1151,13 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         }
       }
       const stats = await buildCityStats(cityId)
-      return ok(JSON.stringify(stats, null, 2), 'application/json; charset=UTF-8', 300)
+      return ok(JSON.stringify(stats, null, 2), 'application/json; charset=UTF-8', 300, event)
+    }
+
+    // /openapi.json — OpenAPI 3.1 spec (AI SEO Onda 2)
+    // Consumida por LLMs com tool use, ai-plugin manifests, geradores de docs.
+    if (path === '/openapi.json' || path === '/openapi.json/') {
+      return ok(JSON.stringify(OPENAPI_SPEC, null, 2), 'application/json; charset=UTF-8', 3600, event)
     }
 
     if (path === '/' || path === '/health') {
@@ -1110,8 +1179,9 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
           'GET /transparencia/costs/feed.xml',
           'POST /newsletter',
           'GET /health',
+          'GET /openapi.json',
         ],
-      }), 'application/json')
+      }), 'application/json', 30, event)
     }
 
     return { statusCode: 404, body: JSON.stringify({ error: 'Not found' }), headers: { 'Content-Type': 'application/json' } }

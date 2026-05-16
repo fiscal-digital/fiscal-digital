@@ -85,6 +85,34 @@ Mesmo que R$ 125.000,00 > limite inciso II (R$ 65.492,11), a classificação cor
 
 ---
 
+## Filtros de exclusão pré-LLM (ADR-001 — patch 2026-05-10)
+
+Após o patch P2 Licitações (precisão Ciclo 1 viciada 88,9% → Ciclo 2 definitiva
+37,4% sobre n=150), o Fiscal aplica 2 grupos de filtros:
+
+### Vazamento de escopo (roteia para outro Fiscal)
+
+| Padrão | Roteamento | GS |
+|---|---|---|
+| `locação de imóvel` | FiscalLocação (Art. 74 III, sem teto) | GS-077, 081 |
+| `Termo Aditivo / aditamento / prorrogação / apostilamento` | FiscalContratos (Art. 125) | C2 |
+| `DESIGNA Fiscal de Contrato` | skip (não é nova contratação) | GS-081 |
+
+### Hipóteses sem teto da Lei 14.133 Art. 75 (pular dispensa_irregular)
+
+| Inciso | Padrão | GS |
+|---|---|---|
+| III "a" | "fornecedor exclusivo", "única fornecedora", "notória especialização", "exclusividade comprovada" | C2 |
+| IV | "emergência", "calamidade pública", "urgência declarada/sanitária", "estado de emergência" | GS-074 |
+| VIII | "medicamento", "insumo médico/hospitalar/farmacêutico", "órtese/prótese", "vacina" | GS-074 |
+| IX | "Art. 75 IX", "contratação entre entes da administração" | C2 |
+| XV | "Art. 75 XV", "universidade pública/estadual/federal", "fundação de apoio/pesquisa" | C2 |
+
+Vocabulário OBRA expandido (Art. 75 I, teto R$ 100k):
+`obra|reforma|engenharia|construção|pavimentação|edificação|drenagem|terraplenagem|recuperação estrutural`.
+
+---
+
 ## 5. Limitações Conhecidas
 
 ### 5.1. Classificação inciso I vs II via LLM (MIT-01)

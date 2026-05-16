@@ -473,6 +473,85 @@ describe('fiscalConvenios', () => {
     }
   })
 
+  // ── Regression tests do golden set fiscal-digital-evaluations (Ciclo 1+2) ──
+  // ADR-001 — fiscal-convenios/ADR-001-contrato-repasse.md
+  // 10 FPs originais (GS-017, GS-055..059, GS-094..097) sobre n=75 (universo
+  // amostral de Convênios totalmente esgotado em prod).
+  describe('regression tests (golden set FPs — ADR-001)', () => {
+    function expectNoFinding(excerpt: string, label: string) {
+      return async () => {
+        const gazette: Gazette = { ...BASE_GAZETTE, id: `gs-${label}`, excerpts: [excerpt] }
+        const findings = await fiscalConvenios.analisar({
+          gazette,
+          cityId: '4305108',
+          context: makeContext(),
+        })
+        expect(findings).toHaveLength(0)
+      }
+    }
+
+    it('GS-017: "convênio com a PUCC" (universidade — contraparte não-OSC)', expectNoFinding(
+      'R$ 66.215.000,00. Considerando a necessidade de ajustar a execução orçamentária para prorrogação do convênio com a PUCC, conforme informações constantes no processo SEI nº PMC.2025.00061252-07/SMS. Crédito Suplementar.',
+      '017',
+    ))
+
+    it('GS-055: "fonte: 0124 de convênio" (decreto orçamentário)', expectNoFinding(
+      'O valor orçado na subação 1047 esta incluso a fonte: 0124 de convênio no valor de R$ 2.397.000,00 que teve somente 2% da sua execução. SEMDEC - Reforma Administrativa (Lei 076/2020).',
+      '055',
+    ))
+
+    it('GS-056/GS-095: CONTRATO DE REPASSE Nº 909091/2020/MTUR/CAIXA', expectNoFinding(
+      '13.392.1006.1070 AQUISIÇÃO, CONSTRUÇÃO E REFORMA DE BENS MÓVEIS E IMÓVEIS. 449051 OBRAS E INSTALAÇÕES. 05.100.563 GERAL - CONTRATO DE REPASSE Nº909091/2020/MTUR/CAIXA R$ 5.000.000,00. SECRETÁRIA MUNICIPAL DE INFRA ESTRUTURA.',
+      '056',
+    ))
+
+    it('GS-057: CONTRATO DE REPASSE Nº 903505/2020/MDR/CAIXA', expectNoFinding(
+      '15.451.3012.1118 AMPLIAR A MALHA VIÁRIA. 449051 OBRAS E INSTALAÇÕES. 05.100.503 GERAL CONTRATO DE REPASSE N° 903505/2020/MDR/CAIXA R$ 723.352,00. II - nos termos do artigo 4º, § 1º, inciso.',
+      '057',
+    ))
+
+    it('GS-058: CONTRATO REPASSE Nº 903505/2020/MDR/CAIXA + crédito suplementar', expectNoFinding(
+      'OBRAS E INSTALAÇÕES. 05.100.503 GERAL - CONTRATO REPASSE Nº903505/2020/MDR/CAIXA R$ 723.352,00. Artigo 2º - O Crédito aberto pelo artigo anterior será coberto com recurso. Lei 4.320 de 17/03/64.',
+      '058',
+    ))
+
+    it('GS-059: Contrato de Repasse nº 907854/2020/MAPA/Caixa (texto narrativo)', expectNoFinding(
+      'Comunicamos que a Caixa Econômica Federal efetuou, em 15 de junho de 2022, liberação de recurso financeiro ao Município de Caxias do Sul, no âmbito do Contrato de Repasse nº 907854/2020/MAPA/Caixa, para execução de pavimentação asfáltica em CBUQ na Estrada Municipal.',
+      '059',
+    ))
+
+    it('GS-094: repasse em favor do Hospital Metropolitano Odilon Behrens (fundação pública)', expectNoFinding(
+      'Fundo Municipal de Saúde – FMS – R$7.944.525,00. Despesa com pagamento de auxílio transporte no terceiro trimestre de 2024. Gastos com os contratos administrativos (CADM) e repasse em favor do Hospital Metropolitano Odilon Behrens.',
+      '094',
+    ))
+
+    it('GS-096: "OSC que NÃO PODERÁ ter o Termo de Colaboração" (polaridade negativa)', expectNoFinding(
+      'CRÉDITO SUPLEMENTAR, NO VALOR DE R$ 1.145.800,00. Considerando a necessidade de realizar a contratação de empresa destinada ao acolhimento de usuários de uma OSC que não poderá ter o Termo de Colaboração renovado em virtude de inadimplência.',
+      '096',
+    ))
+
+    it('GS-097: CONTRATO REPASSE Nº 920231/2021/MCIDADANIA/CAIXA', expectNoFinding(
+      'ADMINISTRAÇÃO REGIONAIS E SUB PREFEITURAS. 15.452.3017.1162 AQUISIÇÃO E REFORMA DE BENS MÓVEIS E IMÓVEIS. 449051 OBRAS E INSTALAÇÕES. 05.800.684 TUDEPI - CONTRATO REPASSE Nº920231/2021/MCIDADANIA/CAIXA R$ 2.500.000,00.',
+      '097',
+    ))
+
+    // ── Padrões adicionais Ciclo 2 ──
+    it('C2-FUNDACAO: Fundação Pública Universitária (contraparte não-OSC)', expectNoFinding(
+      'Convênio entre o Município e a Fundação Universitária de Apoio ao Ensino - FUAE para programa de extensão acadêmica. Valor: R$ 800.000,00. Sem chamamento público (fundação pública está fora da Lei 13.019).',
+      'c2-fundacao',
+    ))
+
+    it('C2-SANTA-CASA: Santa Casa (entidade filantrópica histórica — não-OSC)', expectNoFinding(
+      'Convênio entre Município e Santa Casa de Misericórdia para apoio em saúde pública municipal. Valor: R$ 1.200.000,00. Pio Sodalício mantenedor.',
+      'c2-santa-casa',
+    ))
+
+    it('C2-AUTARQUIA: autarquia municipal (administração indireta)', expectNoFinding(
+      'Termo de Cooperação entre Município e autarquia municipal de água e saneamento para programa de regularização. Valor: R$ 500.000,00.',
+      'c2-autarquia',
+    ))
+  })
+
   // 12 — Persistência: convenio é salvo com pk = CONVENIO#... e SEM null em GSI fields
   it('12. persistência: salvar convenio com pk CONVENIO# e omitir cnpj quando ausente', async () => {
     const saveMock = makeSaveMemoryMock()

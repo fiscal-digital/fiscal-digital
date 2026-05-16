@@ -9,6 +9,16 @@ permissions:
   contents: read
   pull-requests: write
 
+# Serializa runs que tocam o terraform state remoto.
+# Sem isso, múltiplos PRs com update-branch em paralelo competem pelo lock
+# DynamoDB (`fiscal-digital-terraform-state`) e ~50% dos plans falham com
+# `Error acquiring the state lock / ConditionalCheckFailedException`.
+# Ver LRN-20260510-003. `cancel-in-progress: false` preserva runs em fila
+# (não cancelados) — cada PR roda seu plan, só não simultâneo.
+concurrency:
+  group: terraform-state-prod
+  cancel-in-progress: false
+
 jobs:
   validate:
     runs-on: ubuntu-latest

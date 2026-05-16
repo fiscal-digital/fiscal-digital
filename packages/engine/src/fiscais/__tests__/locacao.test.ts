@@ -392,6 +392,99 @@ describe('fiscalLocacao', () => {
     expect(finding.narrative).toMatch(/Art\.\s*74/)
   })
 
+  // ── Regression tests do golden set fiscal-digital-evaluations (Ciclo 1+2) ──
+  // ADR-001 — fiscal-locacao/ADR-001-overmatch.md
+  // Padrões identificados nos 10 FPs originais (GS-018, GS-060..064, GS-098..101)
+  // + padrões adicionais descobertos no Ciclo 2 (n=250) e Ciclo 3 (n=476).
+  // Todos devem retornar `no_finding` sem invocar a Camada 2 (extract_entities).
+
+  describe('regression tests (golden set FPs — ADR-001)', () => {
+    function expectNoFinding(excerpt: string, label: string) {
+      return async () => {
+        const context = makeContext()
+        const findings = await fiscalLocacao.analisar({
+          gazette: { ...BASE_GAZETTE, id: `gs-${label}`, excerpts: [excerpt] },
+          cityId: '4305108',
+          context,
+        })
+        expect(findings).toHaveLength(0)
+        const execMock = context.extractEntities?.execute as jest.Mock | undefined
+        expect(execMock?.mock.calls ?? []).toHaveLength(0)
+      }
+    }
+
+    it('GS-018: Termo Aditivo nº 2 prorrogando contrato existente', expectNoFinding(
+      'Interveniente: IMOBILIÁRIA BASSANESI LTDA. Objeto: Termo Aditivo nº 2 ao Contrato nº 2019/747, celebrado para prorrogar o prazo de vigência contratual de 20/03/2021 até 31/12/2021, tendo por objeto a locação de imóvel para a Secretaria.',
+      '018',
+    ))
+
+    it('GS-060: cláusulas contratuais listadas (manutenção do imóvel)', expectNoFinding(
+      'III - manutenção do imóvel nas condições em que foi recebido. IV - arcar com todas as despesas decorrentes de eventuais danos causados ao imóvel objeto do contrato de locação; V - adequar a data do vencimento do pagamento do aluguel à data do recebimento.',
+      '060',
+    ))
+
+    it('GS-061: EXTRATO DE RESCISÃO de locação', expectNoFinding(
+      'EXTRATO DE RESCISÃO PROCESSO: 4/5311/2013 CONTRATO: 001/SEMAD/2014 LOCATÁRIO: Sr. JOÃO LUIZ GONÇALVES GATTO OBJETO: Locação do Imóvel na Avenida Florípes Rocha, nº 380, Loja 02 e 03, Centro, Belford Roxo. FUNDAMENTAÇÃO LEGAL: As partes acordam em rescindir.',
+      '061',
+    ))
+
+    it('GS-062: Portaria designando Gestor/Fiscal de Contrato de Locação', expectNoFinding(
+      'DESIGNAR Servidor matrícula nº 9.902-6, GESTOR, e MARILEIDE PONTES DA SILVA, matrícula nº 17.226-0, FISCAL, lotados na Secretaria da Administração, para acompanhar e fiscalizar o contrato de Locação de Imóvel para funcionamento da Junta Médica.',
+      '062',
+    ))
+
+    it('GS-063: Decreto regulamenta apresentação de cópia do contrato de locação', expectNoFinding(
+      'Art. 5º O contribuinte deverá obedecer ao cronograma constante do Anexo deste Decreto e apresentar os seguintes documentos perante a Plataforma de Atendimento: I – cópia do contrato de locação ou de documento similar que comprove a utilização do imóvel por terceiro; II – comprovante de pagamento. Este decreto regulamenta o IPTU.',
+      '063',
+    ))
+
+    it('GS-064: designação de Gestor/Fiscal de Contrato de Locação existente', expectNoFinding(
+      'designar o servidor LUIZ CARLOS, matrícula nº 30.999, como Gestor de Contrato e Rosângela Pereira Marvila, matrícula nº 41.112, Coordenadora de Proteção de Média Complexidade, para atuar como Fiscal de Contrato, no que se refere a Locação de Imóvel referente ao Contrato nº 006L/2022.',
+      '064',
+    ))
+
+    it('GS-098: Aviso de Procura / Edital de Chamamento para locação', expectNoFinding(
+      'AVISO DE PROCURA — A Prefeitura comunica interesse em proposta para locação de imóvel devidamente transcrito pelo Registro de Imóveis, assim como os demais elementos necessários a aprovação de sua proposta e formalização de contrato de locação quais sejam: RG, CPF, comprovante de residência atualizado, como também CND.',
+      '098',
+    ))
+
+    it('GS-099: Pregão Eletrônico para locação (modalidade competitiva)', expectNoFinding(
+      'CONTRATO Nº 558/23 DATA: 17/10/2023 PARTES: MUNICÍPIO DE SÃO JOSÉ DOS CAMPOS. Modalidade: Pregão Eletrônico nº 045/2023. Objeto: locação de imóvel residencial. Assinatura do proprietário do imóvel da CGEE — Divisão de Formalização e Atos.',
+      '099',
+    ))
+
+    it('GS-100: RATIFICO a renovação do contrato de locação', expectNoFinding(
+      'à vista das manifestações da Secretaria de Justiça (docs. 3241406 e 3243676), RATIFICO a renovação do contrato de locação celebrado entre o Município de Campinas e o Sr. Edson Luiz Del Grande Silva, vigente até 31/12/2024.',
+      '100',
+    ))
+
+    it('GS-101: ANEXO de Portaria com rol CONTRATO FORNECEDOR (cross-block)', expectNoFinding(
+      'Art. 3º Esta Portaria entra em vigor na data de sua publicação, revogadas as disposições em contrário. ANEXO CONTRATO FORNECEDOR OBJETO 036/2020 T.L.S EMPREENDIMENTOS IMOBILIÁRIOS LTDA LOCAÇÃO DE IMÓVEL para arquivo.',
+      '101',
+    ))
+
+    // ── Padrões adicionais Ciclo 2 (n=250) ──
+    it('C2-LEI-13303: estatal (Lei 13.303/2016 regime próprio)', expectNoFinding(
+      'A COMPANHIA MUNICIPAL DE TRANSPORTES, com base na Lei 13.303/2016 Art. 29, contrata locação de imóvel para garagem operacional. Valor mensal: R$ 18.000,00. Fundamentação: regulamento próprio da empresa pública.',
+      'c2-13303',
+    ))
+
+    it('C2-FOMENTO: Termo de Fomento Lei 13.019 confundido com locação', expectNoFinding(
+      'EXTRATO DE TERMO DE FOMENTO Nº 014/2026. OBJETO: parceria com OSC para apoio a famílias em situação de vulnerabilidade que precisem de locação de imóvel emergencial. Base legal: Lei 13.019/2014.',
+      'c2-fomento',
+    ))
+
+    it('C2-SUMULA: SÚMULA DE CONTRATOS (cross-block matching)', expectNoFinding(
+      'SÚMULA DE CONVÊNIOS E CONTRATOS — Contratante: Município. Contratado: MITRA DIOCESANA. Objeto: Termo de Cooperação para uso de espaço — referência genérica a locação de imóvel parcial.',
+      'c2-sumula',
+    ))
+
+    it('C2-COMPETITIVA: Pregão Eletrônico para locação de imóvel (modalidade fora de escopo)', expectNoFinding(
+      'AVISO DE LICITAÇÃO — Pregão Eletrônico nº 215/2026. Modalidade: Pregão Eletrônico. Objeto: locação de imóvel para depósito de materiais escolares. Cidade: Caxias do Sul.',
+      'c2-competitiva',
+    ))
+  })
+
   it('12. GSI keys: nunca grava NULL em cnpj/secretaria — campos omitidos quando ausentes (LRN-019)', async () => {
     const saveMemoryMock = makeSaveMemoryMock()
     const context = makeContext({

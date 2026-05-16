@@ -24,6 +24,48 @@ const ART_107_RE = /art(?:igo)?\.?\s*107/i
 // Regex para classificação reforma (Art. 125 §1º II)
 const REFORMA_RE = /reforma|edif[íi]cio|equipamento/i
 
+// ── Filtros de exclusão (ADR-001 — patch 2026-05-10) ────────────────────────
+// Padrões identificados nos 12 FPs originais + 157 FPs do Ciclo 2 (universo n=204).
+
+// (a) Instrumentos que NÃO são contrato administrativo sob Lei 14.133 Art. 125
+const INSTRUMENTOS_FORA_ESCOPO_RE =
+  /\b(termo\s+de\s+(?:compromisso|coopera[çc][ãa]o|fomento|colabora[çc][ãa]o|cess[ãa]o\s+de\s+uso|parceria)|conv[êe]nio|s[úu]mula\s+de\s+conv[êe]nios?\s+e\s+contratos|termo\s+de\s+ades[ãa]o|edital\s+de\s+capita[çc][ãa]o\s+de\s+projetos)\b/i
+
+// (b) Reajuste/repactuação por índice (legal — Art. 124, não Art. 125 §1º)
+const REAJUSTE_LEGAL_RE =
+  /\b(revis[ãa]o\s+anual|reajuste\s+(?:por\s+[íi]ndice|anual\s+pelo\s+IPCA|com\s+base\s+no\s+IST|monet[áa]rio)|repactua[çc][ãa]o\s+(?:CCT|coletiva|por\s+conven[çc][ãa]o)|apostilamento)\b/i
+
+// (c) Supressão de valor (valor R$ 0,00 ou negativo)
+const SUPRESSAO_RE =
+  /\b(supress[ãa]o|reten[çc][ãa]o\s+de\s+valor|valor\s+suprimido|impacta[çc][ãa]o\s+financeira\s+negativa)\b/i
+
+function isInstrumentoForaEscopo(excerpt: string): boolean {
+  if (INSTRUMENTOS_FORA_ESCOPO_RE.test(excerpt)) return true
+  if (REAJUSTE_LEGAL_RE.test(excerpt)) return true
+  if (SUPRESSAO_RE.test(excerpt)) return true
+  return false
+}
+
+// ── Captura de percentual declarado no texto ────────────────────────────────
+// Quando o PDF diz "acréscimo de 20,22%" — texto explícito é fonte primária.
+// Se < 25% (ou < 50% para reforma), suprimir finding (texto explícito > inferência).
+const PERCENTUAL_DECLARADO_RE =
+  /\b(?:acr[ée]scimo|decr[ée]scimo|aditivo|reajuste)\s+de\s+(\d{1,3}(?:[.,]\d{1,4})?)\s*%/i
+
+function extrairPercentualDeclarado(excerpt: string): number | undefined {
+  const m = PERCENTUAL_DECLARADO_RE.exec(excerpt)
+  if (!m) return undefined
+  const raw = m[1].replace(',', '.')
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0 || n > 500) return undefined
+  return n
+}
+
+// ── Floor de valor mínimo para evitar aditivos triviais ─────────────────────
+// Aditivos < R$ 5.000 são quase sempre ajustes operacionais (correção de NF,
+// rounding contábil). ADR-001 item 2.
+const ADITIVO_VALOR_MINIMO = 5_000
+
 function formatBRL(value: number | null | undefined): string {
   // Defensivo contra cache hit com valorOriginalContrato null/undefined (LRN-021)
   if (value == null || isNaN(value)) return '—'
@@ -101,13 +143,19 @@ export const fiscalContratos: Fiscal = {
     const findings: Finding[] = []
 
     // Etapa 1 — Filtro regex (sem LLM)
-    const relevantExcerpts = gazette.excerpts.filter(
-      e =>
-        ADITIVO_RE.test(e) ||
-        PRORROG_RE.test(e) ||
-        ART_125_RE.test(e) ||
-        ART_107_RE.test(e),
-    )
+    // Triagem com filtros de instrumento fora de escopo (ADR-001):
+    //   - Termo de Compromisso/Cooperação/Fomento/Colaboração/Cessão de Uso
+    //   - Convênio, Súmula de Convênios e Contratos (cross-block)
+    //   - Termo de Adesão, Edital de Capitação de Projetos
+    //   - Reajuste por índice/IPCA, repactuação CCT, apostilamento (legal Art. 124)
+    //   - Supressão de valor (negativa, não acréscimo)
+    const relevantExcerpts = gazette.excerpts.filter(e => {
+      if (!(ADITIVO_RE.test(e) || PRORROG_RE.test(e) || ART_125_RE.test(e) || ART_107_RE.test(e))) {
+        return false
+      }
+      if (isInstrumentoForaEscopo(e)) return false
+      return true
+    })
 
     if (relevantExcerpts.length === 0) {
       return []
@@ -134,11 +182,46 @@ export const fiscalContratos: Fiscal = {
 
         const valorAditivo = values[0]
 
-        // Etapa 3 — Descoberta valor original (Opção C combo)
+        // ADR-001 item 2: floor de valor mínimo R$ 5.000 (ajustes operacionais).
+        if (valorAditivo < ADITIVO_VALOR_MINIMO) continue
+
+        // ADR-001 item 3: percentual declarado no texto é fonte primária —
+        // se PDF diz "acréscimo de 20,22%", suprimir finding mesmo que
+        // suppliers-prod estime acima do limite. Texto explícito > inferência.
+        const percentualDeclarado = extrairPercentualDeclarado(excerpt)
+        const reformaPreFiltro = isReformaEdificio(excerpt, entities.subtype)
+        const limitePreFiltro = reformaPreFiltro
+          ? LEI_14133_ART_125_LIMITE_REFORMA * 100
+          : LEI_14133_ART_125_LIMITE_GERAL * 100
+        if (percentualDeclarado !== undefined && percentualDeclarado < limitePreFiltro) {
+          // Percentual declarado abaixo do limite legal — não emite finding.
+          // Ainda persiste para histórico de aditivos.
+          await persistAditivo({
+            context, alertsTable, gazette, cityId, now,
+            cnpj, contractNumber, secretaria, supplier, valorAditivo,
+          })
+          continue
+        }
+
+        // Etapa 3 — Descoberta valor original (Opção C combo + suppliers-prod)
         let valorOriginal: number | undefined
 
-        // 3.a Lookup histórico em alerts-prod
-        if (contractNumber && cnpj && context.queryAlertsByCnpj) {
+        // 3.a Cross-reference em suppliers-prod (ADR-001 follow-up — EVO-002).
+        // Source canônica para valor original do contrato. Resolve 89% dos FPs
+        // identificados no Ciclo 2/3 (precisão pré-patch 10-11%).
+        if (contractNumber && cnpj && context.querySuppliersContract) {
+          const r = await context.querySuppliersContract({
+            cnpj,
+            cityId,
+            contractNumber,
+          })
+          if (r.data?.valueAmount && r.data.valueAmount > 0) {
+            valorOriginal = r.data.valueAmount
+          }
+        }
+
+        // 3.b Lookup histórico em alerts-prod (registros do próprio engine)
+        if (valorOriginal === undefined && contractNumber && cnpj && context.queryAlertsByCnpj) {
           const fiveYearsAgo = new Date(now)
           fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5)
           const sinceISO = fiveYearsAgo.toISOString().slice(0, 10)
@@ -155,7 +238,7 @@ export const fiscalContratos: Fiscal = {
           }
         }
 
-        // 3.b Fallback: valorOriginalContrato do LLM
+        // 3.c Fallback: valorOriginalContrato do LLM
         if (valorOriginal === undefined && entities.valorOriginalContrato !== undefined) {
           valorOriginal = entities.valorOriginalContrato
         }

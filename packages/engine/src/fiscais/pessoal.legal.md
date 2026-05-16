@@ -30,6 +30,30 @@ violação ao princípio da impessoalidade (CF, Art. 37, caput).
 
 ---
 
+## Filtros de exclusão pré-LLM (ADR-001 — patch 2026-05-10)
+
+Após o patch P2 Pessoal (precisão pré-patch 67,6% C2 → 36,9% C3 sobre n=572),
+o Fiscal rejeita **antes** de contar atos os contextos identificados como FP
+sistemático no
+[`fiscal-digital-evaluations/analyses/fiscal-pessoal/ADR-001-regex-conjugacao.md`](https://github.com/fiscal-digital/evaluations/blob/main/analyses/fiscal-pessoal/ADR-001-regex-conjugacao.md):
+
+| Categoria | Padrão | Ciclo |
+|---|---|---|
+| Comunicado de convocação | "COMUNICADO – NOMEAÇÃO SEM VÍNCULO EFETIVO", "comunicado de convocação" | C3 (GS-1289) |
+| Vaga decorrente substituição individual | "Vaga decorrente da exoneração de X" | C3 (GS-1290) |
+| Texto normativo | "VEDA A NOMEAÇÃO PELA ADMINISTRAÇÃO", "Lei Maria da Penha", "Código X veda nomeação" | C3 (GS-1291) |
+| Ratificação retroativa | "ratificação retroativa", "ratificação a contar de DD/MM/AAAA" (>2 anos antes) | C1 (GS-071) |
+| Lei Complementar criando quadro | "Lei Complementar nº X dispõe sobre quadro de servidores" | C3 |
+| "Tornar sem efeito" em massa | "tornar sem efeito as nomeações constantes das Portarias" | C3 |
+| FG / GIP | "cargo de Função Gratificada", "FG-3", "GIP" (não comissionado) | C3 |
+| Concurso público regular | "Concurso Público nº X homologação", "nomeação em caráter efetivo" | C3 |
+| Exoneração individual a pedido | "EXONERAR, a pedido, do servidor X" | C2 |
+
+Exceção temporal: **janeiro de ano pós-eleição municipal** (2025, 2029, 2033)
+dobra o threshold do `pico_nomeacoes` por volume legítimo de transição de mandato.
+
+---
+
 ## Padrões detectados no MVP
 
 ### 1. Pico de nomeações em período eleitoral (`pico_nomeacoes`)

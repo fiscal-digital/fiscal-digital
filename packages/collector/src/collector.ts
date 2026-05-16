@@ -69,8 +69,15 @@ export async function runCollector(config: CollectorConfig): Promise<{ processed
       const text = gazette.excerpts.join('\n')
       const entities = extractAll(text)
 
-      // Cache PDF no S3 antes de enfileirar
+      // Archive permanente em S3 — 3 camadas independentes:
+      //   L1 (PDF): cachePdf
+      //   L2 (texto): cacheTxt — usado para treinamento futuro de modelos
+      //   L3' (excerpts JSON): cacheExcerpts — backup imutável do que vai pro DDB
+      // Cada camada pode ser regenerada da camada anterior em fallback, mas a
+      // persistência redundante elimina round-trips ao QD para reprocessamento.
       const cachedPdfUrl = await cachePdf(gazette.territory_id, gazette.id, gazette.url)
+      await cacheTxt(gazette.url, text)
+      await cacheExcerptsJson(gazette.url, gazette.date, gazette.excerpts)
 
       const msg: CollectorMessage = {
         gazetteId: gazette.id,
@@ -186,6 +193,88 @@ async function s3ObjectExists(key: string): Promise<boolean> {
     return true
   } catch {
     return false
+  }
+}
+
+/**
+ * Salva o texto (excerpts concatenados) como arquivo .txt no S3.
+ *
+ * Chave: `txt/<pdf-key-sem-extensao>.txt` — espelha a hierarquia do PDF.
+ * Idempotente: HEAD antes de PUT.
+ *
+ * Uso futuro: treino de modelos de extração, embeddings, busca full-text
+ * sobre o corpus. Hoje é apenas archive — analyzer continua lendo excerpts
+ * direto da SQS message.
+ *
+ * Falha não-crítica: archive é redundância (DDB tem excerpts). Logamos
+ * warning e seguimos.
+ */
+async function cacheTxt(originalUrl: string, text: string): Promise<void> {
+  const pdfKey = pdfCacheS3Key(originalUrl)
+  if (!pdfKey || !text || text.length === 0) return
+  const key = `txt/${pdfKey.replace(/\.pdf$/i, '')}.txt`
+
+  if (await s3ObjectExists(key)) return
+
+  try {
+    await s3.send(new PutObjectCommand({
+      Bucket: GAZETTES_CACHE_BUCKET,
+      Key: key,
+      Body: Buffer.from(text, 'utf-8'),
+      ContentType: 'text/plain; charset=utf-8',
+      CacheControl: 'public, max-age=31536000, immutable',
+      Metadata: {
+        originalUrl,
+        chars: String(text.length),
+        archivedAt: new Date().toISOString(),
+      },
+    }))
+    logger.info('txt cached', { key, chars: text.length })
+  } catch (err) {
+    logger.warn('txt cache error', { key, err })
+  }
+}
+
+/**
+ * Salva o array de excerpts como JSON no S3 — archive imutável do que foi
+ * extraído do QD. Permite reprocessamento sem novas chamadas ao QD.
+ *
+ * Chave: `excerpts/<pdf-key-sem-extensao>.json`
+ * Idempotente: HEAD antes de PUT.
+ *
+ * Diferença do DDB excerpts: S3 é write-once cold storage (Glacier após 181d
+ * via lifecycle), DDB é hot path. Redundância vale o custo: ~80GB cold = R$ 4/mês.
+ */
+async function cacheExcerptsJson(originalUrl: string, date: string, excerpts: string[]): Promise<void> {
+  const pdfKey = pdfCacheS3Key(originalUrl)
+  if (!pdfKey || !excerpts || excerpts.length === 0) return
+  const key = `excerpts/${pdfKey.replace(/\.pdf$/i, '')}.json`
+
+  if (await s3ObjectExists(key)) return
+
+  const body = {
+    originalUrl,
+    date,
+    excerpts,
+    archivedAt: new Date().toISOString(),
+    schemaVersion: 1,
+  }
+
+  try {
+    await s3.send(new PutObjectCommand({
+      Bucket: GAZETTES_CACHE_BUCKET,
+      Key: key,
+      Body: Buffer.from(JSON.stringify(body), 'utf-8'),
+      ContentType: 'application/json; charset=utf-8',
+      CacheControl: 'public, max-age=31536000, immutable',
+      Metadata: {
+        originalUrl,
+        count: String(excerpts.length),
+      },
+    }))
+    logger.info('excerpts json cached', { key, count: excerpts.length })
+  } catch (err) {
+    logger.warn('excerpts json cache error', { key, err })
   }
 }
 
