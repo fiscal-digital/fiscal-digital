@@ -6,6 +6,7 @@ import crypto from 'node:crypto'
 import { CITIES, getCityOrFallback, pdfCacheUrl, pdfCacheS3Key, createLogger, getPublishThresholds } from '@fiscal-digital/engine'
 import type { Finding } from '@fiscal-digital/engine'
 import { citationHeaders, corsPreflightHeaders, computeEtag, notModified } from './headers'
+import { OPENAPI_SPEC } from './openapi'
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' })
 const GAZETTES_CACHE_BUCKET = process.env.GAZETTES_CACHE_BUCKET ?? 'fiscal-digital-gazettes-cache-prod'
@@ -1153,6 +1154,12 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       return ok(JSON.stringify(stats, null, 2), 'application/json; charset=UTF-8', 300, event)
     }
 
+    // /openapi.json — OpenAPI 3.1 spec (AI SEO Onda 2)
+    // Consumida por LLMs com tool use, ai-plugin manifests, geradores de docs.
+    if (path === '/openapi.json' || path === '/openapi.json/') {
+      return ok(JSON.stringify(OPENAPI_SPEC, null, 2), 'application/json; charset=UTF-8', 3600, event)
+    }
+
     if (path === '/' || path === '/health') {
       return ok(JSON.stringify({
         status: 'ok',
@@ -1172,6 +1179,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
           'GET /transparencia/costs/feed.xml',
           'POST /newsletter',
           'GET /health',
+          'GET /openapi.json',
         ],
       }), 'application/json', 30, event)
     }
