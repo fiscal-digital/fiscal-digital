@@ -80,6 +80,23 @@ module "gazettes_cache" {
   hosted_zone_id = "Z0950975SSMZZW5DEN8A"
 }
 
+# AI SEO Onda 2 §5.1 — subdomain api.fiscaldigital.org via CloudFront na frente
+# da Lambda Function URL. Habilita LLMs/agentes referenciarem URL estável
+# (OpenAPI servers, ai-plugin manifest, etc).
+#
+# Substituir a função URL crua (`...lambda-url.us-east-1.on.aws`) pelo
+# subdomain após apply:
+#   - Atualizar `fiscal-digital-web/lib/api.ts` (NEXT_PUBLIC_API_URL fallback)
+#   - Atualizar `messages/*.json` se houver referência hardcoded
+#   - Validar com `curl -I https://api.fiscaldigital.org/health`
+module "api_domain" {
+  source         = "./modules/api-domain"
+  hosted_zone_id = "Z0950975SSMZZW5DEN8A"
+  # Lambda Function URL retorna `https://<id>.lambda-url.<region>.on.aws/`.
+  # Removemos protocolo e trailing slash para CloudFront origin domain_name.
+  lambda_function_url_domain = replace(replace(module.lambdas.api_url, "https://", ""), "/", "")
+}
+
 # ─── SSM Parameters — publish thresholds (TEC-ENG-002) ───────────────────────
 # Alterar thresholds sem redeploy: aws ssm put-parameter --overwrite --name X --value Y
 
