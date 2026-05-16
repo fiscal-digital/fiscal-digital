@@ -458,7 +458,9 @@ describe('AI SEO — citation headers em /alerts', () => {
     expect(res.headers['x-source']).toBe('queridodiario.ok.org.br')
     expect(res.headers['x-license']).toBe('CC-BY-4.0')
     expect(res.headers['x-attribution']).toBe('Fiscal Digital (fiscaldigital.org)')
-    expect(res.headers['access-control-allow-origin']).toBe('*')
+    // access-control-allow-origin NÃO é gerenciado aqui — Lambda Function URL
+    // adiciona automaticamente (LRN-20260516-002). Adicionar duplicaria.
+    expect(res.headers['access-control-allow-origin']).toBeUndefined()
     expect(res.headers['link']).toContain('rel="canonical"')
     expect(res.headers['link']).toContain('rel="license"')
   })
@@ -510,12 +512,14 @@ describe('AI SEO — If-None-Match retorna 304', () => {
 })
 
 describe('AI SEO — CORS preflight', () => {
-  it('responde 204 ao OPTIONS com headers de CORS', async () => {
+  it('responde 204 ao OPTIONS com headers de CORS (sem ACAO — Function URL adiciona)', async () => {
     const event = makeEvent('/alerts')
     event.requestContext.http.method = 'OPTIONS'
     const res = asResult(await handler(event))
     expect(res.statusCode).toBe(204)
-    expect(res.headers['access-control-allow-origin']).toBe('*')
+    // access-control-allow-origin NÃO está aqui — Function URL adiciona
+    // automaticamente. Duplicação quebra CORS no browser (LRN-20260516-002).
+    expect(res.headers['access-control-allow-origin']).toBeUndefined()
     expect(res.headers['access-control-allow-methods']).toContain('GET')
     expect(res.headers['access-control-allow-headers']).toContain('If-None-Match')
   })

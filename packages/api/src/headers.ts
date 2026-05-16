@@ -26,14 +26,18 @@ export function computeEtag(body: string): string {
 }
 
 /**
- * Headers de citação + cache. Inclui CORS permissivo (`*`) porque a API é
- * pública por design e já é consumida por browsers (site fiscaldigital.org)
- * e por agentes server-side. ETag derivado do body via computeEtag.
+ * Headers de citação + cache. ETag derivado do body via computeEtag.
  *
  * Last-Modified usa o instante atual da resposta — não casa com ETag para
- * fins de revalidação. O Last-Modified está aqui apenas como sinal informativo
+ * fins de revalidação. Last-Modified está aqui apenas como sinal informativo
  * para readers RSS e crawlers que preferem essa heurística; revalidação real
  * usa If-None-Match.
+ *
+ * CORS NÃO é gerenciado aqui (LRN-20260516-002). Lambda Function URL com
+ * `cors { allow_origins = ["*"] }` já adiciona `Access-Control-Allow-Origin`
+ * automaticamente, refletindo o `Origin` header da request. Adicionar `*`
+ * aqui causava duplicação no wire ("*, https://fiscaldigital.org"); browser
+ * rejeitava com CORS error. Resultado: site não conseguia carregar /alerts.
  */
 export function citationHeaders(
   body: string,
@@ -45,8 +49,6 @@ export function citationHeaders(
     'cache-control': `public, max-age=${maxAge}, must-revalidate`,
     etag: computeEtag(body),
     'last-modified': new Date().toUTCString(),
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET, OPTIONS',
     'x-source': 'queridodiario.ok.org.br',
     'x-license': 'CC-BY-4.0',
     'x-attribution': 'Fiscal Digital (fiscaldigital.org)',
@@ -55,13 +57,13 @@ export function citationHeaders(
 }
 
 /**
- * Headers para preflight CORS (OPTIONS). Permite que browsers chamem qualquer
- * endpoint da API sem proxy. Lista métodos suportados + qualquer header de
- * request comum.
+ * Headers para OPTIONS preflight quando a request chega no handler. Em prática,
+ * a Lambda Function URL responde preflight sem invocar a Lambda (LRN-20260503-027);
+ * este handler é fallback. Não inclui `access-control-allow-origin` para
+ * evitar duplicação (LRN-20260516-002) — Function URL já adiciona.
  */
 export function corsPreflightHeaders(): Record<string, string> {
   return {
-    'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET, OPTIONS',
     'access-control-allow-headers': 'Content-Type, If-None-Match, If-Modified-Since',
     'access-control-max-age': '86400',
