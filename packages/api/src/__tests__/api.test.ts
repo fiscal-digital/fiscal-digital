@@ -242,7 +242,7 @@ describe('GET /stats', () => {
     expect(typeof body.uptimeDays).toBe('number')
 
     // Cache 60s
-    expect(res.headers['Cache-Control']).toContain('max-age=60')
+    expect(res.headers['cache-control']).toContain('max-age=60')
   })
 
   it('retorna stats zerados quando não há findings nem gazettes (estado vazio)', async () => {
@@ -337,7 +337,7 @@ describe('GET /cities', () => {
     expect(semFindings.lastFindingAt).toBeNull()
 
     // Cache 300s
-    expect(res.headers['Cache-Control']).toContain('max-age=300')
+    expect(res.headers['cache-control']).toContain('max-age=300')
   })
 })
 
@@ -371,7 +371,7 @@ describe('GET /cities/{cityId}/stats', () => {
     expect(body.periodCovered).toEqual({ from: '2026-01-15', to: '2026-04-10' })
 
     // Cache 300s
-    expect(res.headers['Cache-Control']).toContain('max-age=300')
+    expect(res.headers['cache-control']).toContain('max-age=300')
   })
 
   it('retorna 404 para cityId desconhecido (não está em CITIES)', async () => {
@@ -440,5 +440,149 @@ describe('error handling', () => {
     expect(res.statusCode).toBe(500)
     const body = JSON.parse(res.body)
     expect(body.error).toBe('Internal server error')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AI SEO Onda 1 — citation headers + ETag/304 + CORS
+// ---------------------------------------------------------------------------
+
+describe('AI SEO — citation headers em /alerts', () => {
+  it('inclui ETag, X-Source, X-License, X-Attribution, CORS e Link header', async () => {
+    mockDdbSend.mockResolvedValueOnce({ Items: [makeFinding()] })
+    const res = asResult(await handler(makeEvent('/alerts')))
+
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['etag']).toMatch(/^"[a-f0-9]{16}"$/)
+    expect(res.headers['last-modified']).toBeTruthy()
+    expect(res.headers['x-source']).toBe('queridodiario.ok.org.br')
+    expect(res.headers['x-license']).toBe('CC-BY-4.0')
+    expect(res.headers['x-attribution']).toBe('Fiscal Digital (fiscaldigital.org)')
+    // access-control-allow-origin NÃO é gerenciado aqui — Lambda Function URL
+    // adiciona automaticamente (LRN-20260516-002). Adicionar duplicaria.
+    expect(res.headers['access-control-allow-origin']).toBeUndefined()
+    expect(res.headers['link']).toContain('rel="canonical"')
+    expect(res.headers['link']).toContain('rel="license"')
+  })
+
+  it('retorna ETag estável quando o body não muda entre chamadas', async () => {
+    mockDdbSend.mockResolvedValueOnce({ Items: [makeFinding()] })
+    const a = asResult(await handler(makeEvent('/alerts')))
+    mockDdbSend.mockResolvedValueOnce({ Items: [makeFinding()] })
+    const b = asResult(await handler(makeEvent('/alerts')))
+    expect(a.headers['etag']).toBe(b.headers['etag'])
+  })
+
+  it('retorna ETag diferente quando o body muda', async () => {
+    mockDdbSend.mockResolvedValueOnce({ Items: [makeFinding()] })
+    const a = asResult(await handler(makeEvent('/alerts')))
+    mockDdbSend.mockResolvedValueOnce({
+      Items: [makeFinding({ value: 99999, narrative: 'narrativa diferente' })],
+    })
+    const b = asResult(await handler(makeEvent('/alerts')))
+    expect(a.headers['etag']).not.toBe(b.headers['etag'])
+  })
+})
+
+describe('AI SEO — If-None-Match retorna 304', () => {
+  it('retorna 304 sem body quando If-None-Match bate o ETag atual', async () => {
+    mockDdbSend.mockResolvedValueOnce({ Items: [makeFinding()] })
+    const first = asResult(await handler(makeEvent('/alerts')))
+    expect(first.statusCode).toBe(200)
+    const etag = first.headers['etag']
+
+    mockDdbSend.mockResolvedValueOnce({ Items: [makeFinding()] })
+    const event = makeEvent('/alerts')
+    event.headers = { 'if-none-match': etag }
+    const second = asResult(await handler(event))
+
+    expect(second.statusCode).toBe(304)
+    expect(second.body).toBe('')
+    expect(second.headers['etag']).toBe(etag)
+  })
+
+  it('retorna 200 + body normal quando If-None-Match não bate', async () => {
+    mockDdbSend.mockResolvedValueOnce({ Items: [makeFinding()] })
+    const event = makeEvent('/alerts')
+    event.headers = { 'if-none-match': '"stale-etag-9999999"' }
+    const res = asResult(await handler(event))
+    expect(res.statusCode).toBe(200)
+    expect(res.body.length).toBeGreaterThan(0)
+  })
+})
+
+describe('AI SEO — CORS preflight', () => {
+  it('responde 204 ao OPTIONS com headers de CORS (sem ACAO — Function URL adiciona)', async () => {
+    const event = makeEvent('/alerts')
+    event.requestContext.http.method = 'OPTIONS'
+    const res = asResult(await handler(event))
+    expect(res.statusCode).toBe(204)
+    // access-control-allow-origin NÃO está aqui — Function URL adiciona
+    // automaticamente. Duplicação quebra CORS no browser (LRN-20260516-002).
+    expect(res.headers['access-control-allow-origin']).toBeUndefined()
+    expect(res.headers['access-control-allow-methods']).toContain('GET')
+    expect(res.headers['access-control-allow-headers']).toContain('If-None-Match')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AI SEO Onda 2 — GET /openapi.json
+// ---------------------------------------------------------------------------
+
+describe('GET /openapi.json', () => {
+  it('retorna OpenAPI 3.1 spec válido com info, servers, paths e components', async () => {
+    const res = asResult(await handler(makeEvent('/openapi.json')))
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('application/json')
+    const spec = JSON.parse(res.body)
+    expect(spec.openapi).toBe('3.1.0')
+    expect(spec.info?.title).toBe('Fiscal Digital API')
+    expect(spec.info?.license?.name).toBe('CC-BY-4.0')
+    expect(Array.isArray(spec.servers)).toBe(true)
+    expect(spec.servers[0]?.url).toContain('api.fiscaldigital.org')
+    expect(typeof spec.paths).toBe('object')
+  })
+
+  it('documenta todos os endpoints públicos da API', async () => {
+    const res = asResult(await handler(makeEvent('/openapi.json')))
+    const spec = JSON.parse(res.body)
+    // 10 endpoints públicos esperados (newsletter é POST, omitido por design)
+    expect(spec.paths['/alerts']).toBeDefined()
+    expect(spec.paths['/alerts/{slug}']).toBeDefined()
+    expect(spec.paths['/cities']).toBeDefined()
+    expect(spec.paths['/cities/{cityId}/stats']).toBeDefined()
+    expect(spec.paths['/stats']).toBeDefined()
+    expect(spec.paths['/rss']).toBeDefined()
+    expect(spec.paths['/transparencia/costs']).toBeDefined()
+    expect(spec.paths['/transparencia/costs/mtd']).toBeDefined()
+    expect(spec.paths['/transparencia/costs/feed.xml']).toBeDefined()
+    expect(spec.paths['/health']).toBeDefined()
+    expect(spec.paths['/openapi.json']).toBeDefined()
+  })
+
+  it('declara schemas para Finding, City, Stats, CostsResponse', async () => {
+    const res = asResult(await handler(makeEvent('/openapi.json')))
+    const spec = JSON.parse(res.body)
+    expect(spec.components?.schemas?.Finding).toBeDefined()
+    expect(spec.components?.schemas?.City).toBeDefined()
+    expect(spec.components?.schemas?.Stats).toBeDefined()
+    expect(spec.components?.schemas?.CostsResponse).toBeDefined()
+    expect(spec.components?.schemas?.AlertsResponse).toBeDefined()
+  })
+
+  it('inclui headers de citação na resposta (CC-BY-4.0 + atribuição)', async () => {
+    const res = asResult(await handler(makeEvent('/openapi.json')))
+    expect(res.headers['x-license']).toBe('CC-BY-4.0')
+    expect(res.headers['x-source']).toBe('queridodiario.ok.org.br')
+    expect(res.headers['etag']).toMatch(/^"[a-f0-9]{16}"$/)
+  })
+
+  it('suporta If-None-Match → 304 (cache eficiente para crawlers)', async () => {
+    const first = asResult(await handler(makeEvent('/openapi.json')))
+    const etag = first.headers['etag']
+    const event = makeEvent('/openapi.json')
+    event.headers = { 'if-none-match': etag }
+    const second = asResult(await handler(event))
+    expect(second.statusCode).toBe(304)
   })
 })
