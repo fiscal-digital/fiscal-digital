@@ -42,6 +42,26 @@ Quando catalogados, devem alimentar a constante `DIARIA_VALOR_LIMITE` por cidade
 
 ---
 
+## Filtros de exclusão pré-LLM (ADR-001 — patch 2026-05-10)
+
+Após o patch P0 Diárias (precisão pré-patch 0% sobre n=37 amostras / universo
+esgotado), o Fiscal rejeita **antes** de chamar a Camada 2 (Nova Lite) os
+seguintes contextos identificados como FP sistemático no
+[`fiscal-digital-evaluations/analyses/fiscal-diarias/ADR-001-overmatch.md`](https://github.com/fiscal-digital/fiscal-digital-evaluations/blob/main/analyses/fiscal-diarias/ADR-001-overmatch.md):
+
+| Categoria | Padrão | Exemplo (GS) |
+|---|---|---|
+| Trigger restrito | Apenas `\bdi[áa]rias?\b` (removido `viagem`/`deslocamento`) | "Boa Viagem" não dispara |
+| Advérbio com quebra de linha | `diaria-\nmente` | GS-090 |
+| ARP / Pregão para hospedagem | ATA RP, Pregão Eletrônico, hotel, apartamento, pernoite | GS-015, GS-048 |
+| Locação de veículo | "locação de veículo", "valor global da diária do contrato" | GS-047 |
+| Unidade de medida | `Unid./diária`, `m²/diária` | tarifa unitária |
+| Dotação orçamentária | `3.3.90.14`, "crédito suplementar", "dotação orçamentária" | GS-093 |
+| Polissemia "diária" | Divisão de Diárias e Passagens, jornada/multa/publicação/circulação/sessões/alimentação diária | C2 novos |
+
+Além disso, exige verbo de autorização explícita (`concede`, `paga`, `autoriza`,
+`reembolsa`, `ressarci`, `empenho`) — ato meramente descritivo é rejeitado.
+
 ## Padrões detectados no MVP
 
 ### 1. Diária em fim de semana / feriado sem justificativa (`diaria_irregular`)
