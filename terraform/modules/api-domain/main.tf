@@ -78,13 +78,15 @@ resource "aws_cloudfront_origin_request_policy" "api" {
     headers {
       items = [
         "Accept",
-        "Accept-Encoding",
         "Accept-Language",
         "Origin",
         "If-None-Match",
         "If-Modified-Since",
         "User-Agent",
         # Host explicitamente OMITIDO (LRN-20260503-028)
+        # Accept-Encoding OMITIDO — CloudFront gerencia compressão via
+        # `compress = true` + enable_accept_encoding_gzip/brotli no cache
+        # policy. Adicionar manualmente causa InvalidArgument 400.
       ]
     }
   }
