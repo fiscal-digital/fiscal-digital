@@ -233,9 +233,8 @@ describe('fiscalLicitacoes', () => {
         narrative: '',
         legalBasis: 'Lei 14.133/2021, Art. 75, II',
         cnpj: cnpjFracionamento,
-        value: 25000,
-        // actType como campo extra — simula o item DynamoDB
-        ...(({ actType: 'dispensa' }) as unknown as Record<string, unknown>),
+        // actType/valor como campos extras — simula o item DynamoDB DISPENSA
+        ...(({ actType: 'dispensa', valor: 25000 }) as unknown as Record<string, unknown>),
       },
       {
         fiscalId: FISCAL_ID,
@@ -247,8 +246,7 @@ describe('fiscalLicitacoes', () => {
         narrative: '',
         legalBasis: 'Lei 14.133/2021, Art. 75, II',
         cnpj: cnpjFracionamento,
-        value: 25000,
-        ...(({ actType: 'dispensa' }) as unknown as Record<string, unknown>),
+        ...(({ actType: 'dispensa', valor: 25000 }) as unknown as Record<string, unknown>),
       },
     ]
 
@@ -273,6 +271,60 @@ describe('fiscalLicitacoes', () => {
     expect(fracionamentos[0].value).toBe(75000) // soma total
   })
 
+  it('8a. fracionamento: dispensa atual só entra no histórico depois da consulta', async () => {
+    const cnpjAtual = '89.982.037/0001-76'
+    const savedDispensas: Finding[] = []
+
+    const saveMemoryMock = {
+      name: 'save_memory',
+      description: 'mock',
+      execute: jest.fn().mockImplementation(async ({ item }: { item: Record<string, unknown> }) => {
+        savedDispensas.push({
+          fiscalId: FISCAL_ID,
+          cityId: item.cityId as string,
+          type: 'dispensa_irregular',
+          riskScore: 0,
+          confidence: 0.85,
+          evidence: [{ source: item.gazetteUrl as string, excerpt: 'dispensa atual', date: item.gazetteDate as string }],
+          narrative: '',
+          legalBasis: 'Lei 14.133/2021, Art. 75, II',
+          cnpj: item.cnpj as string,
+          ...(({ actType: item.actType, valor: item.valor }) as unknown as Record<string, unknown>),
+        })
+
+        return {
+          data: undefined,
+          source: 'dynamodb:fiscal-digital-alerts-test#mock',
+          confidence: 1.0,
+        }
+      }),
+    }
+
+    const queryAlertsByCnpj = jest.fn().mockResolvedValue(savedDispensas)
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        cnpjs: [cnpjAtual],
+        values: [68100],
+        legalBasis: 'Lei 14.133/2021, Art. 75, II',
+      }),
+      queryAlertsByCnpj,
+      saveMemory: saveMemoryMock,
+    })
+
+    const findings = await fiscalLicitacoes.analisar({
+      gazette: gazetteDispensaServicoAcimaTeto,
+      cityId: '4305108',
+      context,
+    })
+
+    expect(queryAlertsByCnpj).toHaveBeenCalledWith(cnpjAtual, '2025-03-15')
+    expect(queryAlertsByCnpj.mock.invocationCallOrder[0]).toBeLessThan(
+      saveMemoryMock.execute.mock.invocationCallOrder[0],
+    )
+    expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(1)
+    expect(findings.filter(f => f.type === 'fracionamento')).toHaveLength(0)
+  })
+
   // Caso 9 — Não-fracionamento: 1 dispensa anterior R$ 25k + atual R$ 25k = R$ 50k < teto II
   it('9. não-fracionamento: 1 dispensa anterior R$ 25k + atual R$ 25k = R$ 50k → sem fracionamento', async () => {
     const cnpjNaoFracionamento = '88.999.000/0001-22'
@@ -288,8 +340,7 @@ describe('fiscalLicitacoes', () => {
         narrative: '',
         legalBasis: 'Lei 14.133/2021, Art. 75, II',
         cnpj: cnpjNaoFracionamento,
-        value: 25000,
-        ...(({ actType: 'dispensa' }) as unknown as Record<string, unknown>),
+        ...(({ actType: 'dispensa', valor: 25000 }) as unknown as Record<string, unknown>),
       },
     ]
 
