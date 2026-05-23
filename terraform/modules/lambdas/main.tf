@@ -135,7 +135,11 @@ resource "aws_lambda_function_url" "api" {
     # POST necessario para /newsletter; restricao anterior a ["GET","HEAD"]
     # bloqueava navegador no preflight, impedindo coleta de e-mails.
     allow_methods = ["*"]
-    allow_headers = ["content-type"]
+    # cache-control entra para destravar `fetch(url, { cache: 'no-store' })`,
+    # que adiciona Cache-Control: no-cache no request e forca preflight.
+    # if-none-match + if-modified-since para preservar ETag/304 client-driven.
+    # LRN-20260523-002.
+    allow_headers = ["content-type", "cache-control", "if-none-match", "if-modified-since"]
     max_age       = 86400
   }
 }
