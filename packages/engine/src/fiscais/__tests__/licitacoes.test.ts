@@ -325,6 +325,106 @@ describe('fiscalLicitacoes', () => {
     expect(findings.filter(f => f.type === 'fracionamento')).toHaveLength(0)
   })
 
+  it('8c. reanalyze: dispensa da gazette atual no histórico (self-history) não vira fracionamento (#53)', async () => {
+    // Cenário: gazette G1 já foi processada uma vez. DISPENSA#<G1key>#<cnpj>#<valor>
+    // persistiu em DDB. Em reanalyze posterior sobre G1, queryAlertsByCnpj retorna
+    // essa mesma DISPENSA (gazetteUrl === G1.url). Engine deve filtrar e NÃO
+    // contar a gazette atual como histórico. Sem outras dispensas reais, não há
+    // fracionamento.
+    const cnpjReanalyze = '89.982.037/0001-76'
+
+    const selfDispensa: Finding[] = [
+      {
+        fiscalId: FISCAL_ID,
+        cityId: '4305108',
+        type: 'dispensa_irregular',
+        riskScore: 0,
+        confidence: 0.85,
+        evidence: [{
+          source: gazetteDispensaServicoAcimaTeto.url,
+          excerpt: 'mesma gazette G1 (self-history pos reanalyze)',
+          date: '2026-03-15',
+        }],
+        narrative: '',
+        legalBasis: 'Lei 14.133/2021, Art. 75, II',
+        cnpj: cnpjReanalyze,
+        ...(({
+          actType: 'dispensa',
+          valor: 68100,
+          gazetteUrl: gazetteDispensaServicoAcimaTeto.url,
+          gazetteDate: '2026-03-15',
+        }) as unknown as Record<string, unknown>),
+      },
+    ]
+
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        cnpjs: [cnpjReanalyze],
+        values: [68100],
+        legalBasis: 'Lei 14.133/2021, Art. 75, II',
+      }),
+      queryAlertsByCnpj: makeQueryAlertsByCnpjMock(selfDispensa),
+    })
+
+    const findings = await fiscalLicitacoes.analisar({
+      gazette: gazetteDispensaServicoAcimaTeto,
+      cityId: '4305108',
+      context,
+    })
+
+    expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(1)
+    expect(findings.filter(f => f.type === 'fracionamento')).toHaveLength(0)
+  })
+
+  it('8d. reanalyze: dispensa de OUTRA gazette no histórico continua disparando fracionamento (regressão #53)', async () => {
+    // Complemento do 8c: garante que o filtro de self-history não impede
+    // detecção legítima quando há dispensa real de outra gazette do mesmo CNPJ.
+    const cnpjMisto = '11.222.333/0001-44'
+
+    const dispensaOutraGazette: Finding[] = [
+      {
+        fiscalId: FISCAL_ID,
+        cityId: '4305108',
+        type: 'dispensa_irregular',
+        riskScore: 0,
+        confidence: 0.85,
+        evidence: [{
+          source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=outra',
+          excerpt: 'dispensa REAL de gazette anterior',
+          date: '2026-01-10',
+        }],
+        narrative: '',
+        legalBasis: 'Lei 14.133/2021, Art. 75, II',
+        cnpj: cnpjMisto,
+        ...(({
+          actType: 'dispensa',
+          valor: 68100,
+          gazetteUrl: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=outra',
+          gazetteDate: '2026-01-10',
+        }) as unknown as Record<string, unknown>),
+      },
+    ]
+
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        cnpjs: [cnpjMisto],
+        values: [68100],
+        legalBasis: 'Lei 14.133/2021, Art. 75, II',
+      }),
+      queryAlertsByCnpj: makeQueryAlertsByCnpjMock(dispensaOutraGazette),
+    })
+
+    const findings = await fiscalLicitacoes.analisar({
+      gazette: gazetteDispensaServicoAcimaTeto,
+      cityId: '4305108',
+      context,
+    })
+
+    const fracionamentos = findings.filter(f => f.type === 'fracionamento')
+    expect(fracionamentos).toHaveLength(1)
+    expect(fracionamentos[0].value).toBe(136200) // soma 2 dispensas reais
+  })
+
   // Caso 9 — Não-fracionamento: 1 dispensa anterior R$ 25k + atual R$ 25k = R$ 50k < teto II
   it('9. não-fracionamento: 1 dispensa anterior R$ 25k + atual R$ 25k = R$ 50k → sem fracionamento', async () => {
     const cnpjNaoFracionamento = '88.999.000/0001-22'
