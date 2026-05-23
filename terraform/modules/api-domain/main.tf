@@ -104,7 +104,7 @@ resource "aws_cloudfront_origin_request_policy" "api" {
 
 resource "aws_cloudfront_cache_policy" "api" {
   name        = "fiscal-digital-api-cache-policy"
-  comment     = "Pass-through; Lambda controla cache-control"
+  comment     = "Pass-through; Lambda controla cache-control. Origin no cache key (LRN-20260523-001)."
   default_ttl = 0
   max_ttl     = 31536000
   min_ttl     = 0
@@ -113,9 +113,20 @@ resource "aws_cloudfront_cache_policy" "api" {
     cookies_config {
       cookie_behavior = "none"
     }
+
+    # Origin DEVE entrar na cache key. Lambda Function URL com
+    # `cors { allow_origins = ["*"] }` reflete o Origin recebido em
+    # `Access-Control-Allow-Origin`. Sem Origin no cache key, CloudFront
+    # serve a primeira versao cacheada para todos os clients. Se a primeira
+    # request veio sem Origin (warmer, bot), a versao cacheada nao tem ACAO
+    # e o browser bloqueia cross-origin. LRN-20260523-001.
     headers_config {
-      header_behavior = "none"
+      header_behavior = "whitelist"
+      headers {
+        items = ["Origin"]
+      }
     }
+
     query_strings_config {
       query_string_behavior = "all"
     }
