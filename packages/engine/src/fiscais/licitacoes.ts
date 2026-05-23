@@ -181,15 +181,6 @@ export const fiscalLicitacoes: Fiscal = {
         createdAt: now.toISOString(),
       }
 
-      const dispensaPk = `DISPENSA#${gazetteKey(gazette.url) ?? gazette.id}#${cnpj ?? 'NOCNPJ'}#${valor}`
-
-      const saveMemoryFn = context.saveMemory ?? saveMemory
-      await saveMemoryFn.execute({
-        pk: dispensaPk,
-        table: alertsTable,
-        item: dispensaItem,
-      })
-
       // Etapa 9 — Confidence final (calculado aqui para uso em ambos os blocos abaixo)
       const hasAllFields = !!(cnpj && valor && gazette.date)
 
@@ -277,7 +268,10 @@ export const fiscalLicitacoes: Fiscal = {
         )
 
         // Fracionamento requer pelo menos 1 dispensa anterior para o mesmo CNPJ
-        const somaHistorico = dispensasHistorico.reduce((s, f) => s + (f.value ?? 0), 0)
+        const somaHistorico = dispensasHistorico.reduce((s, f) => {
+          const item = f as unknown as { valor?: number; value?: number }
+          return s + (item.valor ?? item.value ?? 0)
+        }, 0)
         const somaTotal = somaHistorico + valor
 
         // TODO: analisar fracionamento por inciso I também (atualmente só compara com teto II)
@@ -354,6 +348,15 @@ export const fiscalLicitacoes: Fiscal = {
           findings.push(findingFrac)
         }
       }
+
+      const dispensaPk = `DISPENSA#${gazetteKey(gazette.url) ?? gazette.id}#${cnpj ?? 'NOCNPJ'}#${valor}`
+
+      const saveMemoryFn = context.saveMemory ?? saveMemory
+      await saveMemoryFn.execute({
+        pk: dispensaPk,
+        table: alertsTable,
+        item: dispensaItem,
+      })
     }
 
     return findings
