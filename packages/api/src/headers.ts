@@ -65,7 +65,7 @@ export function citationHeaders(
 export function corsPreflightHeaders(): Record<string, string> {
   return {
     'access-control-allow-methods': 'GET, OPTIONS',
-    'access-control-allow-headers': 'Content-Type, If-None-Match, If-Modified-Since',
+    'access-control-allow-headers': 'Content-Type, Cache-Control, If-None-Match, If-Modified-Since',
     'access-control-max-age': '86400',
   }
 }
