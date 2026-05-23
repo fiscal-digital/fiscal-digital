@@ -66,39 +66,52 @@ jobs:
           NODE_OPTIONS: --experimental-vm-modules
         run: npm test
 
+      # ─── Pipeline de infra (precisa de secrets) ──────────────────────────
+      # Steps abaixo NAO rodam em PR de fork: secrets nao sao expostos a
+      # forks por design de seguranca do GitHub Actions. PR de fork passa
+      # com lint + test (acima); pipeline terraform fica para PR interno.
+      # Ver LRN-20260523-003.
       - name: Configure AWS credentials (OIDC)
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: Setup Terraform
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: hashicorp/setup-terraform@v4
 
       - name: Terraform fmt check
+        if: github.event.pull_request.head.repo.full_name == github.repository
         working-directory: terraform
         run: terraform fmt -check -recursive
 
       - name: Terraform Init
+        if: github.event.pull_request.head.repo.full_name == github.repository
         working-directory: terraform
         run: terraform init
 
       - name: Terraform Validate
+        if: github.event.pull_request.head.repo.full_name == github.repository
         working-directory: terraform
         run: terraform validate
 
       - name: Setup tflint
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: terraform-linters/setup-tflint@v6
         with:
           tflint_version: latest
 
       - name: Run tflint
+        if: github.event.pull_request.head.repo.full_name == github.repository
         working-directory: terraform
         run: |
           tflint --init
           tflint --recursive --format=compact --minimum-failure-severity=error
 
       - name: Run checkov
+        if: github.event.pull_request.head.repo.full_name == github.repository
         # TODO: revisar e endereçar checks pulados em PR de hardening de infra.
         # Lista atual reflete o estado de prod ao introduzir o gate (PR #1).
         # Resources afetados: gazettes-cache (S3+CF), iam roles, lambdas.
@@ -144,10 +157,12 @@ jobs:
             CKV2_AWS_75
 
       - name: AWS quota check (LRN-20260503-020)
+        if: github.event.pull_request.head.repo.full_name == github.repository
         run: node scripts/aws-quota-check.mjs
 
       - name: Terraform Plan
         id: plan
+        if: github.event.pull_request.head.repo.full_name == github.repository
         working-directory: terraform
         run: |
           set -o pipefail
@@ -159,7 +174,7 @@ jobs:
           echo "exitcode=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
       - name: Upload plan artifact
-        if: always()
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/upload-artifact@v7
         with:
           name: tfplan
@@ -167,7 +182,7 @@ jobs:
           retention-days: 7
 
       - name: Comment Plan on PR
-        if: always()
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v9
         env:
           PLAN_PATH: terraform/plan.txt
@@ -211,7 +226,7 @@ jobs:
             }
 
       - name: Fail if plan errored
-        if: steps.plan.outputs.exitcode != '0'
+        if: github.event.pull_request.head.repo.full_name == github.repository && steps.plan.outputs.exitcode != '0'
         run: |
           echo "Terraform plan failed (exit=${{ steps.plan.outputs.exitcode }})"
           exit 1
