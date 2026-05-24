@@ -56,6 +56,7 @@ export const OPENAPI_SPEC = {
     { name: 'stats', description: 'Agregados gerais do corpus' },
     { name: 'feeds', description: 'Feeds RSS para leitores e crawlers' },
     { name: 'transparency', description: 'Transparência operacional (custos)' },
+    { name: 'suppliers', description: 'Visão consolidada por CNPJ (profile + contratos + findings) — Suppliers consolidated view by CNPJ' },
     { name: 'meta', description: 'Health check e descoberta' },
   ],
   paths: {
@@ -263,6 +264,109 @@ export const OPENAPI_SPEC = {
           '503': {
             description: 'Custos ainda não disponíveis (collector não rodou)',
           },
+        },
+      },
+    },
+    '/suppliers/{cnpj}': {
+      get: {
+        operationId: 'getSupplier',
+        tags: ['suppliers'],
+        summary: 'Visão consolidada por CNPJ (PT) / Consolidated supplier view by CNPJ (EN)',
+        description: [
+          'PT-BR: Retorna o perfil de um fornecedor (CNPJ), seus contratos públicos cruzados',
+          'em múltiplas cidades e os findings (alertas) que envolveram esse CNPJ. Aplica',
+          'o mesmo publish gate de `/alerts` (`riskScore >= 60`, `confidence >= 0.70`).',
+          'Pré-backfill, profile pode ser `null` e contracts/findings vazios — não retorna 404.',
+          '',
+          'EN: Returns a supplier profile by CNPJ with cross-city contracts and matching',
+          'public findings. Applies the same publish gate as `/alerts`. Pre-backfill,',
+          '`profile` may be `null` and arrays empty — never 404 for valid CNPJ.',
+        ].join('\n'),
+        parameters: [
+          {
+            name: 'cnpj',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+            description: [
+              'PT-BR: CNPJ do fornecedor — aceita 14 dígitos crus ou com máscara',
+              'XX.XXX.XXX/XXXX-XX (URL-encoded).',
+              'EN: Supplier CNPJ — 14-digit raw or masked XX.XXX.XXX/XXXX-XX (URL-encoded).',
+            ].join(' '),
+            example: '12345678000199',
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Supplier view consolidada (profile + contracts + findings)',
+            headers: { $ref: '#/components/headers/StandardCitationHeaders' },
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/SupplierResponse' },
+                example: {
+                  cnpj: '12.345.678/0001-99',
+                  cnpjRaw: '12345678000199',
+                  profile: {
+                    razaoSocial: 'EMPRESA EXEMPLO LTDA',
+                    situacaoCadastral: 'ATIVA',
+                    dataAbertura: '2018-03-12',
+                    socios: [{ nome: 'Fulano de Tal', qual: 'Sócio-Administrador' }],
+                    sancoes: [],
+                    rfbCapturedAt: '2026-05-10T03:00:00.000Z',
+                    cguCapturedAt: '2026-05-10T03:00:00.000Z',
+                    cguEnabled: true,
+                    lastLookupAt: '2026-05-10T03:00:00.000Z',
+                    rfbStatus: 'ok',
+                  },
+                  contracts: [
+                    {
+                      contractedAt: '2025-09-30',
+                      contractNumber: 'CT-042/2025',
+                      valueAmount: 78500,
+                      secretaria: 'SMS',
+                      cityId: '4305108',
+                      city: 'Caxias do Sul',
+                      state: 'RS',
+                      sourceFindingId: 'FINDING#fiscal-licitacoes#4305108#dispensa_irregular#2025-09-30T00:00:00.000Z',
+                    },
+                  ],
+                  findings: [
+                    {
+                      id: 'FINDING#fiscal-licitacoes#4305108#dispensa_irregular#2025-09-30T00:00:00.000Z',
+                      type: 'dispensa_irregular',
+                      riskScore: 72,
+                      narrative: 'Identificamos dispensa de licitação no valor de R$ 78.500,00 em Caxias do Sul.',
+                      source: 'https://queridodiario.ok.org.br/gazettes/g-001',
+                      createdAt: '2025-09-30T03:14:00.000Z',
+                      cityId: '4305108',
+                      city: 'Caxias do Sul',
+                      state: 'RS',
+                    },
+                  ],
+                  stats: {
+                    totalContracts: 1,
+                    totalValueBrl: 78500,
+                    cities: ['Caxias do Sul/RS'],
+                  },
+                },
+              },
+            },
+          },
+          '400': {
+            description: 'CNPJ inválido (não normaliza para 14 dígitos)',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    error: { type: 'string', example: 'cnpj inválido' },
+                    received: { type: 'string', example: 'abc' },
+                  },
+                },
+              },
+            },
+          },
+          '405': { description: 'Método não permitido (apenas GET)' },
         },
       },
     },
@@ -573,6 +677,103 @@ export const OPENAPI_SPEC = {
           cities: { type: 'integer' },
           lastDeployedAt: { type: 'string', format: 'date-time' },
           endpoints: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      SupplierProfile: {
+        type: 'object',
+        nullable: true,
+        description: 'PT: Perfil do fornecedor (RFB + CGU). EN: Supplier profile (RFB + CGU).',
+        properties: {
+          razaoSocial: { type: 'string', nullable: true },
+          situacaoCadastral: { type: 'string', nullable: true, description: 'RFB situação cadastral (ATIVA, INAPTA, SUSPENSA, BAIXADA, NULA)' },
+          dataAbertura: { type: 'string', format: 'date', nullable: true },
+          socios: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                nome: { type: 'string' },
+                qual: { type: 'string', description: 'Qualificação do sócio' },
+              },
+            },
+          },
+          sancoes: {
+            type: 'array',
+            description: 'Sanções CGU (CEIS/CNEP)',
+            items: {
+              type: 'object',
+              properties: {
+                tipo: { type: 'string' },
+                descricao: { type: 'string' },
+                orgao: { type: 'string' },
+                dataInicio: { type: 'string', format: 'date' },
+                dataFim: { type: 'string', format: 'date' },
+              },
+            },
+          },
+          rfbCapturedAt: { type: 'string', format: 'date-time', nullable: true },
+          cguCapturedAt: { type: 'string', format: 'date-time', nullable: true },
+          cguEnabled: { type: 'boolean', nullable: true },
+          lastLookupAt: { type: 'string', format: 'date-time', nullable: true },
+          rfbStatus: { type: 'string', nullable: true },
+        },
+      },
+      SupplierContract: {
+        type: 'object',
+        description: 'PT: Contrato cross-city associado ao CNPJ. EN: Cross-city contract linked to the CNPJ.',
+        properties: {
+          contractedAt: { type: 'string', nullable: true, description: 'Data do contrato (YYYY-MM-DD ou ISO datetime)' },
+          contractNumber: { type: 'string', nullable: true },
+          valueAmount: { type: 'number', nullable: true, description: 'Valor do contrato em BRL' },
+          secretaria: { type: 'string', nullable: true },
+          cityId: { type: 'string', nullable: true, description: 'IBGE 7-digit' },
+          city: { type: 'string', nullable: true },
+          state: { type: 'string', nullable: true, description: 'UF (2 letras) — null se cityId desconhecido' },
+          sourceFindingId: { type: 'string', nullable: true, description: 'ID do finding que originou o registro' },
+        },
+      },
+      SupplierFinding: {
+        type: 'object',
+        description: 'PT: Finding (alerta) envolvendo o CNPJ. EN: Finding involving the CNPJ.',
+        properties: {
+          id: { type: 'string' },
+          type: { type: 'string' },
+          riskScore: { type: 'number', minimum: 0, maximum: 100 },
+          narrative: { type: 'string' },
+          source: { type: 'string', format: 'uri', nullable: true, description: 'URL do diário oficial' },
+          createdAt: { type: 'string', format: 'date-time' },
+          cityId: { type: 'string', nullable: true },
+          city: { type: 'string', nullable: true },
+          state: { type: 'string', nullable: true },
+        },
+      },
+      SupplierResponse: {
+        type: 'object',
+        required: ['cnpj', 'cnpjRaw', 'profile', 'contracts', 'findings', 'stats'],
+        description: 'PT: Visão consolidada por CNPJ. EN: Consolidated supplier view by CNPJ.',
+        properties: {
+          cnpj: { type: 'string', description: 'CNPJ formatado XX.XXX.XXX/XXXX-XX' },
+          cnpjRaw: { type: 'string', description: '14 dígitos crus' },
+          profile: { $ref: '#/components/schemas/SupplierProfile' },
+          contracts: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/SupplierContract' },
+          },
+          findings: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/SupplierFinding' },
+          },
+          stats: {
+            type: 'object',
+            properties: {
+              totalContracts: { type: 'integer' },
+              totalValueBrl: { type: 'number' },
+              cities: {
+                type: 'array',
+                items: { type: 'string', description: 'Formato NomeCidade/UF' },
+              },
+            },
+          },
         },
       },
       Error: {
