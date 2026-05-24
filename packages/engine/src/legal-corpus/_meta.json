@@ -1,0 +1,77 @@
+{
+  "sources": {
+    "lei-14133-2021": {
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm",
+      "fetchedAt": "2026-05-24T13:22:45.790Z",
+      "checksum": "66611bcde031b3fc9c01607ab4fd38d1a7f4a20cd6dc1a5c18369eab56c6dc66",
+      "bytes": 276655
+    },
+    "lei-13019-2014": {
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2014/lei/l13019.htm",
+      "fetchedAt": "2026-05-24T13:22:46.134Z",
+      "checksum": "e9d4969d8c9633bf12c6aeec62fd66dcc229ec90dc2a3d92e0572116d713aa8b",
+      "bytes": 154271
+    },
+    "lei-9504-1997": {
+      "url": "https://www.planalto.gov.br/ccivil_03/leis/l9504.htm",
+      "fetchedAt": "2026-05-24T13:22:46.413Z",
+      "checksum": "7bb3386e3e2fe0e277412016ac26fec19b75061e5136c2c5ed6342817253c58e",
+      "bytes": 250629
+    },
+    "lei-8112-1990": {
+      "url": "https://www.planalto.gov.br/ccivil_03/leis/l8112cons.htm",
+      "fetchedAt": "2026-05-24T13:22:46.723Z",
+      "checksum": "7830e79a4c3edf6fb109cf25222417a2f33c4a009caccf83d564b7200808e43b",
+      "bytes": 221709
+    },
+    "lei-12846-2013": {
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2013/lei/l12846.htm",
+      "fetchedAt": "2026-05-24T13:22:46.793Z",
+      "checksum": "8c2e2086afd931e52db900b4e53ffe081db69bbb7dce16e6b9d12cde58050859",
+      "bytes": 33592
+    },
+    "lei-8666-1993": {
+      "url": "https://www.planalto.gov.br/ccivil_03/leis/l8666cons.htm",
+      "fetchedAt": "2026-05-24T13:22:47.051Z",
+      "checksum": "83834203165617eba98b0e866fd8087a13b0fca24674eb5f8a6946396c548ad0",
+      "bytes": 199490
+    },
+    "lei-14759-2023": {
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14759.htm",
+      "fetchedAt": "2026-05-24T13:22:47.100Z",
+      "checksum": "3008194a49ecd20665f23fc57468acd2cc5303fa8399cb96f3236d3aa9adc1a2",
+      "bytes": 764
+    },
+    "lei-14973-2024": {
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2024/lei/l14973.htm",
+      "fetchedAt": "2026-05-24T13:22:47.209Z",
+      "checksum": "d1298ef5fc628228fac8f4bf6afcf0cc02c9dbe581ea5ef203be2af61501cf71",
+      "bytes": 58019
+    },
+    "cf-1988": {
+      "url": "https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm",
+      "fetchedAt": "2026-05-24T13:22:47.992Z",
+      "checksum": "f0745e25eee2128bbbd8beb3278f580275aa1e20dd338edea3127ce7bd7ebd92",
+      "bytes": 870096
+    },
+    "decreto-12807-2025": {
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2025/decreto/d12807.htm",
+      "fetchedAt": "2026-05-24T13:22:48.049Z",
+      "checksum": "329242eaf111348b8eb6d44e5c9425e7de386b11c620dd6c0fbec593bf84c023",
+      "bytes": 2506
+    },
+    "decreto-8726-2016": {
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2016/decreto/d8726.htm",
+      "fetchedAt": "2026-05-24T13:22:48.230Z",
+      "checksum": "929bbe67b2cba1445bc134a5a0ea77e477102a5b7d6136f57f6281b6ecb5ed0f",
+      "bytes": 146734
+    },
+    "stf-sv-13": {
+      "url": "https://portal.stf.jus.br/jurisprudencia/sumariosumulas.asp?base=26&sumula=1227",
+      "fetchedAt": "2026-05-24T13:22:49.295Z",
+      "checksum": "e81d5f2e669f96d763eee97daeb91513dce7da52f86f4857e3029c5d164a1e34",
+      "bytes": 33598
+    }
+  },
+  "lastRun": "2026-05-24T13:22:49.296Z"
+}
