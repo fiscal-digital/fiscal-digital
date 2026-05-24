@@ -140,8 +140,8 @@ function makeContext(overrides: Partial<FiscalContext> = {}): FiscalContext {
 // ─── Testes ───────────────────────────────────────────────────────────────────
 
 describe('fiscalContratos', () => {
-  // Caso 1 — Aditivo R$ 30k sobre contrato R$ 100k (lookup) → excede 25% → aditivo_abusivo Art. 125 §1º I
-  it('1. positivo geral: aditivo R$ 30k sobre contrato R$ 100k → aditivo_abusivo, legalBasis Art. 125 §1º I', async () => {
+  // Caso 1 — Aditivo R$ 30k sobre contrato R$ 100k (lookup) → excede 25% → aditivo_abusivo Art. 125 caput (regra geral)
+  it('1. positivo geral: aditivo R$ 30k sobre contrato R$ 100k → aditivo_abusivo, legalBasis Art. 125 caput (regra geral)', async () => {
     const cnpj = '12.345.678/0001-90'
     const contractNumber = '042/2024'
 
@@ -166,7 +166,7 @@ describe('fiscalContratos', () => {
 
     const aditivoFindings = findings.filter(f => f.type === 'aditivo_abusivo')
     expect(aditivoFindings).toHaveLength(1)
-    expect(aditivoFindings[0].legalBasis).toBe('Lei 14.133/2021, Art. 125, §1º, I')
+    expect(aditivoFindings[0].legalBasis).toBe('Lei 14.133/2021, Art. 125, caput (regra geral)')
     expect(aditivoFindings[0].riskScore).toBeGreaterThanOrEqual(60)
     expect(aditivoFindings[0].value).toBe(30000)
   })
@@ -280,8 +280,8 @@ describe('fiscalContratos', () => {
     expect(aditivoFindings).toHaveLength(0)
   })
 
-  // Caso 6 — Reforma de edifício R$ 51k sobre contrato R$ 100k → 51% > 50% → aditivo_abusivo Art. 125 §1º II
-  it('6. reforma 51%: subtype=obra_engenharia, excerpt "reforma do edifício", aditivo R$ 51k → aditivo_abusivo Art. 125 §1º II', async () => {
+  // Caso 6 — Reforma de edifício R$ 51k sobre contrato R$ 100k → 51% > 50% → aditivo_abusivo Art. 125 caput (reforma)
+  it('6. reforma 51%: subtype=obra_engenharia, excerpt "reforma do edifício", aditivo R$ 51k → aditivo_abusivo Art. 125 caput (reforma)', async () => {
     const cnpj = '66.777.888/0001-99'
     const contractNumber = '047/2024'
 
@@ -306,7 +306,7 @@ describe('fiscalContratos', () => {
 
     const aditivoFindings = findings.filter(f => f.type === 'aditivo_abusivo')
     expect(aditivoFindings).toHaveLength(1)
-    expect(aditivoFindings[0].legalBasis).toBe('Lei 14.133/2021, Art. 125, §1º, II')
+    expect(aditivoFindings[0].legalBasis).toBe('Lei 14.133/2021, Art. 125, caput (reforma)')
   })
 
   // Caso 7 — Gazette de nomeação (sem aditivo nem prorrogação) → filtro etapa 1 retorna []
@@ -464,6 +464,36 @@ describe('fiscalContratos', () => {
     expect(narrativa).toMatch(/limite legal/)
     expect(narrativa).toMatch(/Lei 14\.133\/2021/)
     expect(narrativa).toMatch(/Art\. 125/)
+  })
+
+  // ── Regression test #55 — Art. 125 caput, sem §1º com incisos ──
+  // Fix em legalBasis: trocou citacao incorreta "Art. 125, §1º, I/II" pela canonica
+  // "Art. 125, caput (regra geral|reforma)". Garante que nenhum finding aditivo_abusivo
+  // emite legalBasis contendo §1º (dispositivo inexistente na Lei 14.133/2021).
+  // Issue: https://github.com/fiscal-digital/fiscal-digital/issues/55
+  // Fonte canonica: packages/engine/src/legal-corpus/lei-14133-2021/art-125.md
+  describe('regression #55 — Art. 125 sem §1º', () => {
+    it('legalBasis de aditivo_abusivo nao contem §1º (dispositivo inexistente)', async () => {
+      const cnpj = '12.345.678/0001-90'
+      const contractNumber = '042/2024'
+      const context = makeContext({
+        extractEntities: makeExtractEntitiesMock({
+          cnpjs: [cnpj], values: [30000], contractNumbers: [contractNumber], subtype: null,
+        }),
+        queryAlertsByCnpj: makeQueryAlertsByCnpjMock([
+          makeContratoOriginalFinding(cnpj, contractNumber, 100000),
+        ]),
+      })
+      const findings = await fiscalContratos.analisar({
+        gazette: gazetteAditivo30kContrato100k, cityId: '4305108', context,
+      })
+      const aditivos = findings.filter(f => f.type === 'aditivo_abusivo')
+      expect(aditivos.length).toBeGreaterThan(0)
+      for (const f of aditivos) {
+        expect(f.legalBasis).not.toMatch(/§\s*1/i)
+        expect(f.legalBasis).toMatch(/Art\. 125, caput/)
+      }
+    })
   })
 
   // ── Regression tests do golden set fiscal-digital-evaluations (Ciclo 1) ──
