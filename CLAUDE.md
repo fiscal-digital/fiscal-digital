@@ -258,6 +258,23 @@ Razão: dados de teste em prod poluem feeds RSS, API pública, métricas. Site/l
 
 - **Plan.yml gate exige Build engine antes de Test + NODE_OPTIONS=--experimental-vm-modules:** workspaces que importam `@fiscal-digital/engine` falham com `Cannot find module` se o engine não foi compilado (TypeScript precisa de `dist/index.d.ts`). AWS SDK v3 usa dynamic `import()` para deps optional → Jest sem `--experimental-vm-modules` falha com `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG`. Ambos cobertos no `plan.yml` da Fase 0. *(LRN-20260509-002)*
 
+### Citação jurídica em artefatos públicos (enforcement via hook)
+
+Aplicação do Princípio Inegociável **"Sempre citar a fonte"** ao output deste agente em Issues, PRs, docs públicos, copy de site, ROADMAP e README:
+
+- **Nunca citar** lei, decreto, súmula, artigo, inciso, parágrafo ou jurisprudência sem ter LIDO a fonte na sessão atual:
+  - código canônico do repo (ex: `packages/engine/src/fiscais/legal-constants.ts`), OU
+  - texto original da Issue/doc sendo editada (sem inferência), OU
+  - WebFetch da fonte oficial (planalto.gov.br, stf.jus.br, tse.jus.br)
+- **"Corrigir X" significa SÓ X.** Sem expansão por iniciativa em texto técnico-jurídico. Se ver Z fraco, mencionar na resposta — não editar de quebra.
+- **Bypass quando validação já foi feita:** incluir `[legal-verified: <fonte>]` no body de `gh issue|pr` OU `<!-- legal-verified -->` em qualquer linha do markdown.
+
+**Enforcement:** [`.claude/hooks/check-legal-citation.js`](.claude/hooks/check-legal-citation.js) bloqueia (PreToolUse) `gh issue|pr create|edit|comment` e `Edit|Write` em `docs/**/*.md`, `**/messages/*.json`, `.github/ISSUE_TEMPLATE/**`, `ROADMAP.md`, `README.md` se detectar padrão regulatório (Lei N/AAAA, Decreto N/AAAA, Art. N, §N, Súmula, STF/STJ/TSE/TCU/CGU/RFB) sem o marcador de bypass.
+
+**Por quê este gate existe:** incidente 2026-05-24 em Issue #42 — confabulação de lista de decretos plausíveis e troca de número de parágrafo de lei sem fonte. O hook é defesa que não depende de memória do agente.
+
+**Replicação cross-repo:** copiar `.claude/hooks/check-legal-citation.js` + entrada em `.claude/settings.json` para `fiscal-digital-web/` ao trabalhar em sessão dedicada lá (copy do site também é artefato público).
+
 ## Convenção de Nomenclatura AWS
 
 `kebab-case` minúsculas em todos os recursos.

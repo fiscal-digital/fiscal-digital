@@ -1,0 +1,128 @@
+{
+  "version": "1.0",
+  "_comment": "URLs canonicas validadas via HEAD em 2026-05-24. STF requer fetch via Windows cert store (PowerShell fallback).",
+  "sources": [
+    {
+      "id": "lei-14133-2021",
+      "norma": "Lei 14.133/2021",
+      "shortName": "Nova Lei de Licitacoes",
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm",
+      "fonte": "planalto",
+      "tipo": "lei",
+      "artigos": ["11", "14", "67", "74", "75", "107", "124", "125", "135"],
+      "usadoPor": ["fiscal-licitacoes", "fiscal-contratos", "fiscal-fornecedores", "fiscal-locacao"]
+    },
+    {
+      "id": "lei-13019-2014",
+      "norma": "Lei 13.019/2014",
+      "shortName": "MROSC - Marco Regulatorio das OSCs",
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2014/lei/l13019.htm",
+      "fonte": "planalto",
+      "tipo": "lei",
+      "artigos": ["2", "24", "29", "30", "33", "35"],
+      "usadoPor": ["fiscal-convenios"]
+    },
+    {
+      "id": "lei-9504-1997",
+      "norma": "Lei 9.504/97",
+      "shortName": "Lei das Eleicoes",
+      "url": "https://www.planalto.gov.br/ccivil_03/leis/l9504.htm",
+      "fonte": "planalto",
+      "tipo": "lei",
+      "artigos": ["73"],
+      "usadoPor": ["fiscal-pessoal", "fiscal-publicidade"]
+    },
+    {
+      "id": "lei-8112-1990",
+      "norma": "Lei 8.112/90",
+      "shortName": "Regime Juridico dos Servidores Federais",
+      "url": "https://www.planalto.gov.br/ccivil_03/leis/l8112cons.htm",
+      "fonte": "planalto",
+      "tipo": "lei",
+      "artigos": ["58"],
+      "usadoPor": ["fiscal-diarias"]
+    },
+    {
+      "id": "lei-12846-2013",
+      "norma": "Lei 12.846/2013",
+      "shortName": "Lei Anticorrupcao",
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2013/lei/l12846.htm",
+      "fonte": "planalto",
+      "tipo": "lei",
+      "artigos": ["22"],
+      "usadoPor": ["fiscal-fornecedores"]
+    },
+    {
+      "id": "lei-8666-1993",
+      "norma": "Lei 8.666/1993",
+      "shortName": "Lei de Licitacoes anterior (revogada parcialmente)",
+      "url": "https://www.planalto.gov.br/ccivil_03/leis/l8666cons.htm",
+      "fonte": "planalto",
+      "tipo": "lei",
+      "artigos": ["87"],
+      "usadoPor": ["fiscal-fornecedores"]
+    },
+    {
+      "id": "lei-14759-2023",
+      "norma": "Lei 14.759/2023",
+      "shortName": "Feriado Consciencia Negra",
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14759.htm",
+      "fonte": "planalto",
+      "tipo": "lei",
+      "artigos": null,
+      "usadoPor": ["fiscal-diarias"]
+    },
+    {
+      "id": "lei-14973-2024",
+      "norma": "Lei 14.973/2024",
+      "shortName": "CNPJ alfanumerico (vigencia jul/2026)",
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2024/lei/l14973.htm",
+      "fonte": "planalto",
+      "tipo": "lei",
+      "artigos": null,
+      "usadoPor": [],
+      "_status": "futura - sem uso ativo"
+    },
+    {
+      "id": "cf-1988",
+      "norma": "CF/88",
+      "shortName": "Constituicao Federal",
+      "url": "https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm",
+      "fonte": "planalto",
+      "tipo": "constituicao",
+      "artigos": ["37"],
+      "usadoPor": ["fiscal-nepotismo", "fiscal-pessoal"]
+    },
+    {
+      "id": "decreto-12807-2025",
+      "norma": "Decreto Federal 12.807/2025",
+      "shortName": "Atualiza valores Lei 14.133 (vigencia 2026)",
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2025/decreto/d12807.htm",
+      "fonte": "planalto",
+      "tipo": "decreto",
+      "artigos": null,
+      "usadoPor": ["fiscal-licitacoes"]
+    },
+    {
+      "id": "decreto-8726-2016",
+      "norma": "Decreto Federal 8.726/2016",
+      "shortName": "Regulamenta Lei 13.019 (federal)",
+      "url": "https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2016/decreto/d8726.htm",
+      "fonte": "planalto",
+      "tipo": "decreto",
+      "artigos": null,
+      "usadoPor": ["fiscal-convenios"]
+    },
+    {
+      "id": "stf-sv-13",
+      "norma": "STF Sumula Vinculante 13",
+      "shortName": "Nepotismo",
+      "url": "https://portal.stf.jus.br/jurisprudencia/sumariosumulas.asp?base=26&sumula=1227",
+      "fonte": "stf",
+      "tipo": "sumula",
+      "artigos": null,
+      "usadoPor": ["fiscal-nepotismo"],
+      "_fetchStrategy": "powershell (curl falha SSL local)"
+    }
+  ]
+}
