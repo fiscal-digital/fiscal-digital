@@ -1,3 +1,5 @@
+<!-- legal-verified: este doc inventaria os Fiscais e cita as leis que cada um aplica; referencias mapeiam para legal-corpus/ ou sao mencoes a orgaos (TSE, CGU, RFB) como fontes -->
+
 # Backlog de Fiscais — Refinamento e Roadmap
 
 > Status canônico de cada Fiscal: existente, em desenvolvimento, planejado.
@@ -109,9 +111,12 @@
 
 ---
 
+<!-- legal-verified: TSE como fonte de dados publica, nao citacao juridica substantiva -->
 ## Próximos passos (não-Fiscais)
 
-- **Cache S3 PDFs do Querido Diário** — bucket `fiscal-digital-gazettes-cache-prod` + CloudFront `gazettes.fiscaldigital.org`. Resolve PDF inline + resiliência + reprocessamento gratuito.
-- **Idempotência de findings** — adicionar dedup no `saveMemory` para evitar duplicates em reanalyze (pattern descoberto 2026-05-02).
-- **Lookup de parentesco TSE/CPF** — desbloqueia FiscalNepotismo de heurística para evidência forte.
-- **Lookup IPTU** — desbloqueia FiscalLocacao para preço justo de mercado.
+Cada item tem Issue pública para tracking — refinamento técnico, plano de execução e critérios de aceite migrados para lá:
+
+- **Cache S3 PDFs do Querido Diário** → [#56](https://github.com/fiscal-digital/fiscal-digital/issues/56) — bucket `fiscal-digital-gazettes-cache-prod` + CloudFront `gazettes.fiscaldigital.org`.
+- **Idempotência de findings** → [#57](https://github.com/fiscal-digital/fiscal-digital/issues/57) — dedup determinístico em `saveMemory` (pattern descoberto 2026-05-02).
+- **Lookup de parentesco TSE/CPF** → [#58](https://github.com/fiscal-digital/fiscal-digital/issues/58) — desbloqueia FiscalNepotismo de heurística para evidência forte.
+- **Lookup IPTU** → [#59](https://github.com/fiscal-digital/fiscal-digital/issues/59) — desbloqueia FiscalLocacao para preço justo de mercado.

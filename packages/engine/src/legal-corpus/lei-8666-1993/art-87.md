@@ -1,0 +1,40 @@
+---
+norma: Lei 8.666/1993
+artigo: Art. 87
+urlFonte: https://www.planalto.gov.br/ccivil_03/leis/l8666cons.htm#art87
+syncEm: 2026-05-24T13:22:47.051Z
+fonte: planalto
+usadoPor: [fiscal-fornecedores]
+---
+Art. 87. Pela inexecução total ou parcial do contrato a Administração
+poderá, garantida a prévia defesa, aplicar ao contratado as seguintes sanções:
+
+I - advertência;
+
+II - multa, na forma prevista no instrumento convocatório ou no contrato;
+
+III - suspensão temporária de participação em licitação e impedimento de
+contratar com a Administração, por prazo não superior a 2 (dois) anos;
+
+IV - declaração de inidoneidade para licitar ou contratar com a
+Administração Pública enquanto perdurarem os motivos determinantes da punição ou até
+que seja promovida a reabilitação perante a própria autoridade que aplicou a
+penalidade, que será concedida sempre que o contratado ressarcir a Administração pelos
+prejuízos resultantes e após decorrido o prazo da sanção aplicada com base no inciso
+anterior.
+
+§ 1o Se a multa aplicada for superior ao valor da
+garantia prestada, além da perda desta, responderá o contratado pela sua diferença, que
+será descontada dos pagamentos eventualmente devidos pela Administração ou cobrada
+judicialmente.
+
+§ 2o As sanções previstas nos incisos I, III e IV
+deste artigo poderão ser aplicadas juntamente com a do inciso II, facultada a defesa
+prévia do interessado, no respectivo processo, no prazo de 5 (cinco) dias úteis.
+
+§ 3o A sanção
+estabelecida no inciso IV deste artigo é de competência exclusiva do Ministro de Estado,
+do Secretário Estadual ou Municipal, conforme o caso, facultada a defesa do interessado
+no respectivo processo, no prazo de 10 (dez) dias da abertura de vista, podendo a
+reabilitação ser requerida após 2 (dois) anos de sua aplicação.
+(Vide art 109 inciso III)
