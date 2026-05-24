@@ -21,7 +21,7 @@ const PRORROG_RE = /\bprorroga[çc][ãa]o(?:\s+contratual)?/i
 const ART_125_RE = /art(?:igo)?\.?\s*125/i
 const ART_107_RE = /art(?:igo)?\.?\s*107/i
 
-// Regex para classificação reforma (Art. 125 §1º II)
+// Regex para classificação reforma (segunda hipótese do caput do Art. 125)
 const REFORMA_RE = /reforma|edif[íi]cio|equipamento/i
 
 // ── Filtros de exclusão (ADR-001 — patch 2026-05-10) ────────────────────────
@@ -31,7 +31,7 @@ const REFORMA_RE = /reforma|edif[íi]cio|equipamento/i
 const INSTRUMENTOS_FORA_ESCOPO_RE =
   /\b(termo\s+de\s+(?:compromisso|coopera[çc][ãa]o|fomento|colabora[çc][ãa]o|cess[ãa]o\s+de\s+uso|parceria)|conv[êe]nio|s[úu]mula\s+de\s+conv[êe]nios?\s+e\s+contratos|termo\s+de\s+ades[ãa]o|edital\s+de\s+capita[çc][ãa]o\s+de\s+projetos)\b/i
 
-// (b) Reajuste/repactuação por índice (legal — Art. 124, não Art. 125 §1º)
+// (b) Reajuste/repactuação por índice (legal — Art. 124, não Art. 125 caput)
 const REAJUSTE_LEGAL_RE =
   /\b(revis[ãa]o\s+anual|reajuste\s+(?:por\s+[íi]ndice|anual\s+pelo\s+IPCA|com\s+base\s+no\s+IST|monet[áa]rio)|repactua[çc][ãa]o\s+(?:CCT|coletiva|por\s+conven[çc][ãa]o)|apostilamento)\b/i
 
@@ -78,10 +78,25 @@ function formatDate(iso: string): string {
   return `${day}/${month}/${year}`
 }
 
-/** Retorna true se o aditivo for de reforma de edifício ou equipamento (inciso II do Art. 125 §1º) */
+/**
+ * Retorna true se o aditivo for de reforma de edifício ou equipamento
+ * (segunda hipótese do caput do Art. 125 — limite 50%).
+ * Fonte canônica: legal-corpus/lei-14133-2021/art-125.md
+ */
 function isReformaEdificio(excerpt: string, subtype?: string | null): boolean {
   if (subtype === 'obra_engenharia' && REFORMA_RE.test(excerpt)) return true
   return false
+}
+
+type AditivoTipo = 'geral' | 'reforma'
+
+/**
+ * Citação canônica do Art. 125 — texto único no caput cobre as duas hipóteses
+ * (25% regra geral e 50% reforma de edifício/equipamento). Sem §1º com incisos.
+ * Fonte: legal-corpus/lei-14133-2021/art-125.md
+ */
+function legalBasisArt125(tipo: AditivoTipo): string {
+  return `Lei 14.133/2021, Art. 125, caput (${tipo === 'reforma' ? 'reforma' : 'regra geral'})`
 }
 
 function narrativaAditivo(
@@ -90,13 +105,13 @@ function narrativaAditivo(
   valorOriginal: number,
   ratioPercent: number,
   limitePercent: number,
-  inciso: 'I' | 'II',
+  tipo: AditivoTipo,
 ): string {
   return (
     `Identificamos aditivo publicado em ${formatDate(gazetteDate)} no valor de ` +
     `R$ ${formatBRL(valorAditivo)} (${ratioPercent.toFixed(1)}% do contrato original de ` +
     `R$ ${formatBRL(valorOriginal)}), acima do limite legal de ${limitePercent}% ` +
-    `(Lei 14.133/2021, Art. 125, §1º, ${inciso}).`
+    `(${legalBasisArt125(tipo)}).`
   )
 }
 
@@ -131,9 +146,9 @@ async function generateNarrativaFinding(
 export const fiscalContratos: Fiscal = {
   id: FISCAL_ID,
   description:
-    'Detecta aditivos abusivos (Lei 14.133/2021, Art. 125, §1º: excede 25% do valor original ' +
+    'Detecta aditivos abusivos (Lei 14.133/2021, Art. 125, caput: excede 25% do valor original ' +
     'em geral ou 50% em reforma de edifício/equipamento) e prorrogações excessivas ' +
-    '(Art. 107: vigência total acima de 10 anos).',
+    '(Art. 107, caput: vigência total acima de 10 anos).',
 
   async analisar(input: AnalisarInput): Promise<Finding[]> {
     const { gazette, cityId, context = {} } = input
@@ -253,11 +268,11 @@ export const fiscalContratos: Fiscal = {
           continue
         }
 
-        // Etapa 4 — Classificação reforma (Art. 125 §1º II)
+        // Etapa 4 — Classificação reforma (segunda hipótese do caput do Art. 125)
         const reforma = isReformaEdificio(excerpt, subtype)
         const limite = reforma ? LEI_14133_ART_125_LIMITE_REFORMA : LEI_14133_ART_125_LIMITE_GERAL
-        const inciso: 'I' | 'II' = reforma ? 'II' : 'I'
-        const legalBasisStr = `Lei 14.133/2021, Art. 125, §1º, ${inciso}`
+        const tipo: AditivoTipo = reforma ? 'reforma' : 'geral'
+        const legalBasisStr = legalBasisArt125(tipo)
 
         // Persistir aditivo para histórico (independente se é abusivo ou não)
         await persistAditivo({
@@ -281,7 +296,7 @@ export const fiscalContratos: Fiscal = {
               type: 'excede_limite',
               weight: 0.6,
               value: excessoValue,
-              description: `Aditivo de ${(ratio * 100).toFixed(1)}% excede limite Art. 125 ${inciso} de ${limitePercent}%`,
+              description: `Aditivo de ${(ratio * 100).toFixed(1)}% excede limite Art. 125 (${tipo}) de ${limitePercent}%`,
             },
             {
               type: 'confianca_extracao',
@@ -302,7 +317,7 @@ export const fiscalContratos: Fiscal = {
 
           const ratioPercent = ratio * 100
           const fallbackNarr = narrativaAditivo(
-            gazette.date, valorAditivo, valorOriginal, ratioPercent, limitePercent, inciso,
+            gazette.date, valorAditivo, valorOriginal, ratioPercent, limitePercent, tipo,
           )
 
           const finding: Finding = {
