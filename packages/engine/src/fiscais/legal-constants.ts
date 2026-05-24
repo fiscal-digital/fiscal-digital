@@ -8,18 +8,20 @@ export const DECRETO_REFERENCIA = '12.807/2025'
 export const VIGENCIA_DESDE = '2026-01-01'
 
 /**
- * Lei 14.133/2021, Art. 125, §1º, I — Limite de aditivo para obras, serviços e compras em geral.
+ * Lei 14.133/2021, Art. 125, caput (regra geral) — Limite de aditivo para obras, serviços e compras.
  * 25% do valor original do contrato.
+ * Fonte canônica: legal-corpus/lei-14133-2021/art-125.md (texto único do caput, sem §1º com incisos).
  * TODO(legal-constants): verificar se decreto futuro altera este limite (Art. 125 não indexado ao IPCA-E).
  */
-export const LEI_14133_ART_125_LIMITE_GERAL = 0.25   // 25% — obras, serviços e compras (inciso I)
+export const LEI_14133_ART_125_LIMITE_GERAL = 0.25   // 25% — obras, serviços e compras
 
 /**
- * Lei 14.133/2021, Art. 125, §1º, II — Limite de aditivo para reforma de edifícios ou equipamentos.
+ * Lei 14.133/2021, Art. 125, caput (reforma) — Limite de aditivo para reforma de edifícios ou equipamentos.
  * 50% do valor original do contrato.
+ * Fonte canônica: legal-corpus/lei-14133-2021/art-125.md (mesmo caput, segunda hipótese).
  * TODO(legal-constants): verificar se decreto futuro altera este limite.
  */
-export const LEI_14133_ART_125_LIMITE_REFORMA = 0.50 // 50% — reforma de edifício/equipamento (inciso II)
+export const LEI_14133_ART_125_LIMITE_REFORMA = 0.50 // 50% — reforma de edifício/equipamento
 
 /**
  * Lei 14.133/2021, Art. 107, caput — Vigência máxima de contratos de serviços contínuos.

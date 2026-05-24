@@ -2,17 +2,19 @@
 
 ## 1. Base legal
 
-### Aditivo abusivo — Lei 14.133/2021, Art. 125, §1º
+### Aditivo abusivo — Lei 14.133/2021, Art. 125, caput
 
-O Art. 125 da Lei 14.133/2021 (Nova Lei de Licitações) regula as alterações unilaterais e
-consensuais dos contratos administrativos. O §1º fixa os limites percentuais para acréscimos:
+O Art. 125 da Lei 14.133/2021 (Nova Lei de Licitações) regula as alterações unilaterais dos
+contratos administrativos. O **caput** (texto único, sem §1º com incisos — ver
+[fonte canônica](../legal-corpus/lei-14133-2021/art-125.md) e Issue #55) fixa os
+limites percentuais para acréscimos em **duas hipóteses** dentro da mesma sentença:
 
-- **Inciso I (regra geral):** obras, serviços e compras em geral — limite de **25%** do valor
+- **Regra geral:** obras, serviços e compras em geral — limite de **25%** do valor
   original do contrato.
-- **Inciso II (reforma de edifícios e equipamentos):** acréscimos em contratos exclusivos de
-  reforma de edifício ou de equipamento — limite de **50%** do valor original do contrato.
+- **Reforma de edifício ou equipamento:** acréscimos em contratos exclusivos de reforma
+  — limite de **50%** do valor original do contrato.
 
-Referência: Lei 14.133, de 1º de abril de 2021, Art. 125, §1º, I e II.
+Referência: Lei 14.133, de 1º de abril de 2021, Art. 125, caput.
 
 ### Prorrogação excessiva — Lei 14.133/2021, Art. 107, caput
 
@@ -32,8 +34,8 @@ Referência: Lei 14.133, de 1º de abril de 2021, Art. 107, caput.
 Detectado quando um Termo Aditivo publicado no diário oficial apresenta valor percentual
 acima do limite legal em relação ao valor original do contrato:
 
-- **Regra geral (Art. 125 §1º I):** aditivo > 25% do valor original.
-- **Reforma de edifício/equipamento (Art. 125 §1º II):** aditivo > 50% do valor original.
+- **Regra geral (Art. 125, caput — regra geral):** aditivo > 25% do valor original.
+- **Reforma de edifício/equipamento (Art. 125, caput — reforma):** aditivo > 50% do valor original.
 
 O Fiscal classifica a natureza do objeto (reforma ou geral) combinando o `subtype` extraído
 pelo Haiku com a presença de termos como "reforma", "edifício" ou "equipamento" no excerpt.
@@ -72,8 +74,8 @@ Secretaria Municipal de Administração.
 ```
 
 **Contexto:** contrato original R$ 100.000,00 (registro em `alerts-prod`).
-**Razão:** R$ 30.000 / R$ 100.000 = 30% > 25% (limite Art. 125 §1º I).
-**Finding gerado:** `aditivo_abusivo`, legalBasis: `Lei 14.133/2021, Art. 125, §1º, I`.
+**Razão:** R$ 30.000 / R$ 100.000 = 30% > 25% (limite Art. 125, caput — regra geral).
+**Finding gerado:** `aditivo_abusivo`, legalBasis: `Lei 14.133/2021, Art. 125, caput (regra geral)`.
 
 ### Prorrogação excessiva
 
@@ -103,7 +105,7 @@ Secretaria Municipal de Saúde.
 ```
 
 **Contexto:** contrato original R$ 100.000,00.
-**Razão:** R$ 20.000 / R$ 100.000 = 20% ≤ 25% (limite Art. 125 §1º I).
+**Razão:** R$ 20.000 / R$ 100.000 = 20% ≤ 25% (limite Art. 125, caput — regra geral).
 **Resultado:** nenhum finding.
 
 ### Aditivo de reforma dentro do limite especial
@@ -116,7 +118,7 @@ Contratada: Construtora Caxias LTDA.
 ```
 
 **Contexto:** contrato original R$ 100.000,00, `subtype='obra_engenharia'`, excerpt contém "reforma do edifício".
-**Razão:** R$ 40.000 / R$ 100.000 = 40% ≤ 50% (limite Art. 125 §1º II — reforma).
+**Razão:** R$ 40.000 / R$ 100.000 = 40% ≤ 50% (limite Art. 125, caput — reforma).
 **Resultado:** nenhum finding.
 
 ### Prorrogação dentro do prazo
@@ -157,7 +159,7 @@ texto explícito > inferência de cross-reference. GS-084 (`20,22%` declarado).
 | Convênio, SÚMULA DE CONVÊNIOS E CONTRATOS | Cross-block matching | C2 |
 | Termo de Adesão, Edital de Capitação de Projetos | Fora de Lei 14.133 | C2 |
 
-### Reajuste legal (Art. 124, não Art. 125 §1º)
+### Reajuste legal (Art. 124, não Art. 125 caput)
 
 | Padrão | Razão |
 |---|---|
@@ -220,13 +222,15 @@ como acréscimo de escopo. Refinamento futuro via campo `actSubtype` no Haiku.
 **TODO próximo sprint:** adicionar campo `actSubtype: reajuste | acrescimo | supressao | null`
 na extração e filtrar reajustes antes da comparação percentual.
 
-### Outros incisos do Art. 125 não cobertos no MVP
+### Outras hipóteses do Art. 125 não cobertas no MVP
 
-O Art. 125 abrange outras hipóteses de alteração contratual (unilateral qualitativa, supressão,
-etc.) que **não são detectadas** neste MVP. Cobertos: acréscimo de valor (§1º I e II).
+O Art. 125 e os artigos seguintes abrangem outras hipóteses de alteração contratual
+(unilateral qualitativa, supressão, alterações sem aumento de valor, etc.) que **não são
+detectadas** neste MVP. Cobertos: acréscimo de valor (regra geral 25% e reforma 50%, ambos
+do caput do Art. 125).
 
-**TODO próximo sprint:** cobertura de supressão abusiva (§1º, limite 25%/50%) e
-alteração unilateral qualitativa sem justificativa.
+**TODO próximo sprint:** cobertura de supressão abusiva (mesmos limites do caput, sentido
+inverso) e alteração unilateral qualitativa sem justificativa.
 
 ---
 
