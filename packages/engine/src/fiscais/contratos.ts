@@ -280,6 +280,16 @@ export const fiscalContratos: Fiscal = {
           cnpj, contractNumber, secretaria, supplier, valorAditivo,
         })
 
+        // Guard: aditivo abusivo SEM CNPJ nao vira finding publicavel.
+        // Aditivos comumente citam "Termo de Aditivo X ao Contrato Y" sem
+        // repetir CNPJ. Bedrock retorna cnpjs[0]=undefined mas valor + ratio
+        // fecham. Sem CNPJ o finding nao e auditavel (sem cross-ref CGU/Receita,
+        // usuario nao identifica o fornecedor). Aditivo ja foi persistido para
+        // historico acima; apenas a emissao do finding publicavel e suprimida.
+        if (!cnpj) {
+          continue
+        }
+
         // Etapa 5 — Detecção aditivo abusivo
         const ratio = valorAditivo / valorOriginal
         if (ratio > limite) {

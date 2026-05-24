@@ -325,6 +325,35 @@ describe('fiscalContratos', () => {
     expect(execMock?.mock.calls ?? []).toHaveLength(0)
   })
 
+  // Caso 8b — Aditivo SEM CNPJ (Bedrock retorna cnpjs vazio) e valorOriginalContrato presente → não emite finding publicável
+  // Garantia: finding sem CNPJ não é publicável (não é auditável pelo usuário).
+  // Audit em 2026-05-24 encontrou 10/10 fiscal-contratos publicados sem CNPJ — bug raiz coberto aqui.
+  it('8b. sem cnpj: bedrock cnpjs=[] + valorOriginalContrato=R$ 100k + aditivo R$ 30k → 0 findings emitidos', async () => {
+    const contractNumber = '999/2024'
+
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        cnpjs: [], // <-- sem CNPJ
+        values: [30000],
+        contractNumbers: [contractNumber],
+        valorOriginalContrato: 100000, // valor original conhecido via LLM (fallback 3.c)
+        legalBasis: 'Lei 14.133/2021, Art. 125',
+        subtype: null,
+      }),
+      queryAlertsByCnpj: makeQueryAlertsByCnpjMock([]),
+    })
+
+    const findings = await fiscalContratos.analisar({
+      gazette: gazetteAditivo30kContrato100k,
+      cityId: '4305108',
+      context,
+    })
+
+    // Mesmo com ratio = 30k/100k = 30% (> 25% limite Art. 125) e tudo o mais OK,
+    // sem CNPJ não dá pra emitir finding publicável.
+    expect(findings.filter(f => f.type === 'aditivo_abusivo')).toHaveLength(0)
+  })
+
   // Caso 8 — Aditivo sem valor original (lookup vazio + valorOriginalContrato ausente) → skip silencioso []
   it('8. sem valor original: lookup vazio + valorOriginalContrato ausente → skip silencioso []', async () => {
     const cnpj = '77.888.999/0001-11'
