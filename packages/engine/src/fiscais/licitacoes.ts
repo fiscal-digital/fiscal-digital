@@ -262,10 +262,17 @@ export const fiscalLicitacoes: Fiscal = {
 
         const historico = await context.queryAlertsByCnpj(cnpj, sinceISO)
 
-        // Filtrar por mesma cidade e actType=dispensa
-        const dispensasHistorico = historico.filter(
-          f => f.cityId === cityId && (f as unknown as Record<string, unknown>)['actType'] === 'dispensa',
-        )
+        // Filtrar por mesma cidade, actType=dispensa, e EXCLUIR a propria
+        // gazette atual. Reanalyze sobre gazette ja processada antes traz
+        // DISPENSA#<gazetteKey atual>#... como historico, gerando contagem
+        // dobrada (a atual conta como ela mesma + historico). Issue #53.
+        const dispensasHistorico = historico.filter(f => {
+          const item = f as unknown as Record<string, unknown>
+          if (f.cityId !== cityId) return false
+          if (item.actType !== 'dispensa') return false
+          if (item.gazetteUrl === gazette.url) return false
+          return true
+        })
 
         // Fracionamento requer pelo menos 1 dispensa anterior para o mesmo CNPJ
         const somaHistorico = dispensasHistorico.reduce((s, f) => {
