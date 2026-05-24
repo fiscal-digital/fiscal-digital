@@ -18,6 +18,14 @@ const ALERTS_TABLE = process.env.ALERTS_TABLE ?? 'fiscal-digital-alerts-prod'
 const GAZETTES_TABLE = process.env.GAZETTES_TABLE ?? 'fiscal-digital-gazettes-prod'
 const NEWSLETTER_TABLE = process.env.NEWSLETTER_TABLE ?? 'fiscal-digital-newsletter-prod'
 const COSTS_TABLE = process.env.COSTS_TABLE ?? 'fiscal-digital-costs-prod'
+// MIT-02/EVO-002 PR 6: read-only endpoint sobre suppliers-prod (profile + contracts).
+// SUPPLIERS_TABLE precisa estar declarado na env var da Lambda API (terraform
+// modules/lambdas/main.tf aws_lambda_function "api" environment.variables) —
+// PR de IaC separado. Fallback para o nome canônico cobre dev local.
+const SUPPLIERS_TABLE = process.env.SUPPLIERS_TABLE ?? 'fiscal-digital-suppliers-prod'
+// GSI da alerts-prod indexado por cnpj (hash) + createdAt (range, DESC).
+// Schema declarado em terraform/modules/dynamodb/main.tf.
+const ALERTS_CNPJ_INDEX = 'GSI2-cnpj-date'
 const SITE_URL = 'https://fiscaldigital.org'
 const API_URL = process.env.API_URL ?? 'https://api.fiscaldigital.org'
 // Build timestamp injetado no bundle pelo deploy. Fallback = boot da Lambda.
@@ -905,6 +913,207 @@ ${items}
 </rss>`
 }
 
+// ── Supplier endpoint (MIT-02/EVO-002 PR 6) ─────────────────────────────────
+//
+// GET /suppliers/{cnpj} — view consolidada para um CNPJ.
+//
+// Lê 3 fontes em paralelo (Promise.all):
+//   - GetItem profile        suppliers-prod, sk=PROFILE
+//   - Query contracts        suppliers-prod, pk=SUPPLIER#cnpj, sk <> PROFILE
+//   - Query findings         alerts-prod GSI2-cnpj-date, hash=cnpj
+//
+// Sem escrita. Sem chamadas externas (RFB/CGU/BrasilAPI). Read-only sobre o
+// estado já populado pelo collector + analyzer (PR 1) e pelo extract-contracts
+// (PR 5). Pré-backfill, retorna 200 com nulls/arrays vazios — não 404.
+
+interface SupplierProfileItem {
+  pk: string
+  sk: 'PROFILE'
+  razaoSocial?: string
+  situacaoCadastral?: string
+  dataAbertura?: string
+  socios?: Array<{ nome?: string; qual?: string }>
+  sancoes?: Array<{ tipo?: string; descricao?: string; orgao?: string; dataInicio?: string; dataFim?: string }>
+  rfbCapturedAt?: string
+  cguCapturedAt?: string
+  cguEnabled?: boolean
+  lastLookupAt?: string
+  rfbStatus?: string
+}
+
+interface SupplierContractItem {
+  pk: string
+  sk: string
+  cnpj?: string
+  cityId?: string
+  contractedAt?: string
+  contractedAtIso?: string
+  contractId?: string
+  contractNumber?: string
+  valueAmount?: number
+  secretaria?: string
+  sourceFindingId?: string
+  capturedAt?: string
+}
+
+function formatCnpj14(cnpj14: string): string {
+  // XX.XXX.XXX/XXXX-XX
+  return `${cnpj14.slice(0, 2)}.${cnpj14.slice(2, 5)}.${cnpj14.slice(5, 8)}/${cnpj14.slice(8, 12)}-${cnpj14.slice(12, 14)}`
+}
+
+function enrichCity(cityId: string | undefined): { city: string | null; state: string | null } {
+  if (!cityId) return { city: null, state: null }
+  const c = CITIES[cityId]
+  if (!c) return { city: null, state: null }
+  return { city: c.name, state: c.uf }
+}
+
+async function handleSupplier(
+  rawInput: string,
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResultV2> {
+  // Aceita cnpj com máscara (XX.XXX.XXX/XXXX-XX) ou 14 dígitos crus.
+  const cnpj14 = rawInput.replace(/\D/g, '')
+  if (cnpj14.length !== 14) {
+    return {
+      statusCode: 400,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ error: 'cnpj inválido', received: rawInput }),
+    }
+  }
+
+  const pk = `SUPPLIER#${cnpj14}`
+
+  // Três queries paralelas. As 3 falham de forma independente — se a tabela
+  // suppliers-prod estiver vazia (pré-backfill), Query e GetItem retornam
+  // vazio sem erro. Throw só em erros de infra (KMS, throttling, etc.).
+  const [profileOut, contractsOut, findingsOut] = await Promise.all([
+    ddb.send(new GetCommand({
+      TableName: SUPPLIERS_TABLE,
+      Key: { pk, sk: 'PROFILE' },
+    })),
+    ddb.send(new QueryCommand({
+      TableName: SUPPLIERS_TABLE,
+      KeyConditionExpression: 'pk = :pk',
+      FilterExpression: 'sk <> :profileSk',
+      ExpressionAttributeValues: {
+        ':pk': pk,
+        ':profileSk': 'PROFILE',
+      },
+      ScanIndexForward: false,
+      Limit: 100,
+    })),
+    ddb.send(new QueryCommand({
+      TableName: ALERTS_TABLE,
+      IndexName: ALERTS_CNPJ_INDEX,
+      KeyConditionExpression: 'cnpj = :c',
+      ExpressionAttributeValues: { ':c': cnpj14 },
+      ScanIndexForward: false,
+      Limit: 50,
+    })),
+  ])
+
+  const profileItem = profileOut.Item as SupplierProfileItem | undefined
+  const contractItems = (contractsOut.Items ?? []) as SupplierContractItem[]
+  const allFindings = (findingsOut.Items ?? []) as Finding[]
+
+  // Publish gate — paridade com /alerts. Só findings com riskScore >= rt
+  // e confidence >= ct entram na resposta pública. SSM TEC-ENG-002 dá
+  // thresholds dinâmicos (default 60 / 0.70).
+  const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
+  const findings = allFindings
+    .filter(f => f.type && f.riskScore >= riskThreshold && (f.confidence ?? 0) >= confidenceThreshold)
+    .filter(f => !(f as Finding & { unpublishable?: boolean }).unpublishable)
+
+  // Sanitiza profile para o shape público — não vaza sk nem pk.
+  const profile = profileItem
+    ? {
+      razaoSocial: profileItem.razaoSocial ?? null,
+      situacaoCadastral: profileItem.situacaoCadastral ?? null,
+      dataAbertura: profileItem.dataAbertura ?? null,
+      socios: profileItem.socios ?? [],
+      sancoes: profileItem.sancoes ?? [],
+      rfbCapturedAt: profileItem.rfbCapturedAt ?? null,
+      cguCapturedAt: profileItem.cguCapturedAt ?? null,
+      cguEnabled: profileItem.cguEnabled ?? null,
+      lastLookupAt: profileItem.lastLookupAt ?? null,
+      rfbStatus: profileItem.rfbStatus ?? null,
+    }
+    : null
+
+  const contracts = contractItems.map(c => {
+    const { city, state } = enrichCity(c.cityId)
+    return {
+      contractedAt: c.contractedAtIso ?? c.contractedAt ?? null,
+      contractNumber: c.contractNumber ?? null,
+      valueAmount: c.valueAmount ?? null,
+      secretaria: c.secretaria ?? null,
+      cityId: c.cityId ?? null,
+      city,
+      state,
+      sourceFindingId: c.sourceFindingId ?? null,
+    }
+  })
+
+  const findingsResponse = findings.map(f => {
+    const { city, state } = enrichCity(f.cityId)
+    return {
+      id: f.id,
+      type: f.type,
+      riskScore: f.riskScore,
+      narrative: f.narrative,
+      source: f.evidence?.[0]?.source ?? null,
+      createdAt: f.createdAt,
+      cityId: f.cityId,
+      city,
+      state,
+    }
+  })
+
+  // Stats — valores agregados sobre o conjunto de contracts (não findings).
+  // totalValueBrl mantém a mesma unidade que `valueAmount` no item (centavos
+  // ou reais — depende de como PR 5 persiste). API só soma sem converter.
+  const totalValueBrl = contractItems.reduce((sum, c) => sum + (typeof c.valueAmount === 'number' ? c.valueAmount : 0), 0)
+  const citiesSet = new Set<string>()
+  for (const c of contractItems) {
+    if (!c.cityId) continue
+    const known = CITIES[c.cityId]
+    if (known) citiesSet.add(`${known.name}/${known.uf}`)
+  }
+
+  const body = JSON.stringify({
+    cnpj: formatCnpj14(cnpj14),
+    cnpjRaw: cnpj14,
+    profile,
+    contracts,
+    findings: findingsResponse,
+    stats: {
+      totalContracts: contractItems.length,
+      totalValueBrl,
+      cities: Array.from(citiesSet).sort(),
+    },
+  }, null, 2)
+
+  // Headers: citação padrão + X-Citation específico apontando as 2 tabelas
+  // consultadas (CC-BY-4.0 já está em citationHeaders).
+  const headers = citationHeaders(body, 'application/json; charset=utf-8', 600)
+  // Override cache-control com max-age curto (browser) + s-maxage longo (CDN).
+  headers['cache-control'] = 'public, s-maxage=600, max-age=300'
+  headers['x-citation'] = `dynamodb:suppliers-prod#${pk}+dynamodb:alerts-prod#${ALERTS_CNPJ_INDEX}`
+
+  // If-None-Match handling — endpoint cacheável.
+  const ifNoneMatch = event.headers?.['if-none-match'] ?? event.headers?.['If-None-Match']
+  if (ifNoneMatch && ifNoneMatch === headers.etag) {
+    return notModified(headers.etag)
+  }
+
+  return {
+    statusCode: 200,
+    headers,
+    body,
+  }
+}
+
 // ── Lambda handler ──────────────────────────────────────────────────────────
 
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
@@ -1154,6 +1363,22 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       return ok(JSON.stringify(stats, null, 2), 'application/json; charset=UTF-8', 300, event)
     }
 
+    // /suppliers/{cnpj} — MIT-02/EVO-002 PR 6
+    // Endpoint público read-only que une 3 fontes para um CNPJ:
+    //  1. PROFILE (suppliers-prod sk=PROFILE) — dados RFB + CGU
+    //  2. Contratos (suppliers-prod sk=YYYY-MM-DD#contractId) — cross-city
+    //  3. Findings (alerts-prod GSI2-cnpj-date) — achados envolvendo o CNPJ
+    //
+    // Comportamento sem dados (pré-backfill MIT-02/PR1+PR5): retorna 200 com
+    // profile=null, contracts=[], findings=[]. 404 só se cnpj inválido (não-14 dígitos).
+    const supplierMatch = path.match(/^\/suppliers\/([^/]+)\/?$/)
+    if (supplierMatch) {
+      if (method !== 'GET') {
+        return { statusCode: 405, body: JSON.stringify({ error: 'method_not_allowed' }), headers: { 'Content-Type': 'application/json' } }
+      }
+      return await handleSupplier(decodeURIComponent(supplierMatch[1]), event)
+    }
+
     // /openapi.json — OpenAPI 3.1 spec (AI SEO Onda 2)
     // Consumida por LLMs com tool use, ai-plugin manifests, geradores de docs.
     if (path === '/openapi.json' || path === '/openapi.json/') {
@@ -1172,6 +1397,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
           'GET /cities',
           'GET /cities/{cityId}/stats',
           'GET /stats',
+          'GET /suppliers/{cnpj}',
           'GET /rss',
           'GET /pdf?source=...',
           'GET /transparencia/costs?days=30',
