@@ -157,23 +157,38 @@ const SUPPLIERS_TABLE = process.env.SUPPLIERS_TABLE ?? 'fiscal-digital-suppliers
  */
 async function maybeWriteSupplier(finding: Finding, createdAt: string): Promise<void> {
   if (!finding.cnpj) return
+  // Normaliza CNPJ removendo máscara — alinha write com leitura da
+  // `querySuppliersContract` (que também normaliza com `replace(/\D/g, '')`).
+  // Sem isso, writes ficavam órfãos: pk gravado com máscara, leitura com 14 dígitos.
+  const cnpjN = finding.cnpj.replace(/\D/g, '')
+  if (cnpjN.length !== 14) return
   if (!(await isFeatureEnabled('enable-supplier-write'))) return
   try {
-    // sk: {contractedAt}#{contractId} — cronológico + dedupe por contractId.
-    // Fallback contractedAt = createdAt do finding (não temos contract date no Finding hoje).
-    const contractedAt = createdAt
+    // sk: {contractedAtDay YYYY-MM-DD}#{contractId} — granularidade diária
+    // garante idempotência em reanalyze: o mesmo finding processado de novo
+    // no mesmo dia sobrescreve o item ao invés de criar duplicata. O timestamp
+    // completo preserva-se em `contractedAtIso`.
+    const contractedAtDay = createdAt.slice(0, 10)
     const contractId = finding.contractNumber ?? finding.id ?? 'unknown'
     await saveMemory.execute({
-      pk: `SUPPLIER#${finding.cnpj}`,
+      pk: `SUPPLIER#${cnpjN}`,
       table: SUPPLIERS_TABLE,
       item: {
-        sk: `${contractedAt}#${contractId}`,
+        sk: `${contractedAtDay}#${contractId}`,
+        cnpj: cnpjN,
         cityId: finding.cityId,
-        contractedAt,
+        contractedAt: contractedAtDay,
+        contractedAtIso: createdAt,
         contractId,
         contractNumber: finding.contractNumber,
         valueAmount: finding.value,
-        secretaria: finding.secretaria,
+        // LRN-20260502-019: secretaria participa de GSI (`GSI3-secretaria-date`
+        // existente + futuro `secretariaCityKey` para GSI2 de outro PR). Campos
+        // de GSI key NUNCA podem ser `null` — omitir o atributo se ausente.
+        ...(finding.secretaria && {
+          secretaria: finding.secretaria,
+          secretariaCityKey: `${finding.secretaria}#${finding.cityId}`,
+        }),
         sourceFindingId: finding.id,
         sourceFiscalId: finding.fiscalId,
         capturedAt: new Date().toISOString(),
@@ -181,7 +196,7 @@ async function maybeWriteSupplier(finding: Finding, createdAt: string): Promise<
     })
   } catch (err) {
     logger.warn('supplier write falhou — finding preservado', {
-      cnpj: finding.cnpj,
+      cnpj: cnpjN,
       findingId: finding.id,
       err: (err as Error).message,
     })
