@@ -10,13 +10,11 @@
 //   if (!check.ok) console.warn(check.reason)
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
-const __dirname = (() => {
-  try { return dirname(fileURLToPath(import.meta.url)) } catch { return __filename ? dirname(__filename) : process.cwd() }
-})()
-
+// tsconfig.json do engine usa module=commonjs, entao __dirname e variavel built-in
+// no output compilado. Em testes (ts-jest/Jest), __dirname e populado para o .ts file.
+// Nao usar import.meta.url aqui — TS bloqueia em CommonJS (TS1343).
 const CORPUS_ROOT = __dirname
 
 // ---------- Types ----------
