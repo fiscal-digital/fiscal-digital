@@ -1,0 +1,55 @@
+name: Publish Engine
+
+# Publica @fiscal-digital/engine no GitHub Packages npm.
+#
+# Triggers:
+#   - workflow_dispatch (manual via UI): Diego decide quando publicar.
+#   - push de tag `engine-v*` (ex: `engine-v0.1.0`, `engine-v0.2.1`): tag
+#     namespaced para nao conflitar com tags de release de Lambdas no futuro.
+#
+# Auth: GITHUB_TOKEN com `packages: write` (gerenciado automaticamente pelo
+# Actions runner, sem secret extra).
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'engine-v*'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@fiscal-digital'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: npm run build -w packages/engine
+
+      - name: Sanity check — require built engine
+        run: node -e "require('./packages/engine/dist/index.js')"
+
+      - name: Validate tarball (dry-run)
+        working-directory: packages/engine
+        run: npm pack --dry-run
+
+      - name: Publish to GitHub Packages
+        working-directory: packages/engine
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm publish

@@ -18,6 +18,7 @@ auth.json
 # ─── Cloud credentials ──────────────────────────────────────────
 .aws/
 .npmrc
+!/.npmrc
 .netrc
 
 # ─── Lambda bundles ─────────────────────────────────────────────
