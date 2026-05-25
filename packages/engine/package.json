@@ -1,6 +1,6 @@
 {
   "name": "@fiscal-digital/engine",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Fiscais, Skills e contratos TypeScript do Fiscal Digital",
   "license": "MIT",
   "main": "dist/index.js",
@@ -21,7 +21,7 @@
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
+    "access": "public"
   },
   "engines": {
     "node": ">=24"
