@@ -23,6 +23,11 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # GH_TOKEN no job-level: prepack do engine (npm pack/publish disparam build →
+    # prebuild → sync-brand.mjs que chama `gh api`). Sem token no escopo do prepack,
+    # falha com "set the GH_TOKEN environment variable".
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
 
@@ -37,8 +42,6 @@ jobs:
         run: npm ci
 
       - name: Build engine
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: npm run build -w packages/engine
 
       - name: Sanity check — require built engine
