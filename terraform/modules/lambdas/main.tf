@@ -14,27 +14,6 @@ locals {
   }
 }
 
-resource "aws_lambda_function" "collector" {
-  function_name    = "fiscal-digital-collector-prod"
-  role             = var.collector_role_arn
-  handler          = "index.handler"
-  runtime          = "nodejs24.x"
-  timeout          = 300
-  memory_size      = 512
-  filename         = data.archive_file.placeholder.output_path
-  source_code_hash = data.archive_file.placeholder.output_base64sha256
-
-  environment {
-    variables = merge(local.common_env, {
-      GAZETTES_QUEUE_URL = var.gazettes_queue_url
-    })
-  }
-
-  lifecycle {
-    ignore_changes = [filename, source_code_hash]
-  }
-}
-
 resource "aws_lambda_function" "analyzer" {
   function_name = "fiscal-digital-analyzer-prod"
   role          = var.analyzer_role_arn

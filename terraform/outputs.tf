@@ -1,7 +1,3 @@
-output "collector_lambda_arn" {
-  value = module.lambdas.collector_arn
-}
-
 output "analyzer_lambda_arn" {
   value = module.lambdas.analyzer_arn
 }

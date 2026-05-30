@@ -1,7 +1,3 @@
-output "collector_role_arn" {
-  value = aws_iam_role.collector.arn
-}
-
 output "analyzer_role_arn" {
   value = aws_iam_role.analyzer.arn
 }

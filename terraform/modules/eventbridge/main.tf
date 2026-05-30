@@ -1,26 +1,3 @@
-resource "aws_cloudwatch_event_rule" "daily_collector" {
-  name = "fiscal-digital-daily-collector-prod"
-  # 2026-05-11: retomada do schedule diário. Estratégia atual é coletar todo
-  # dia (cobrindo cidades que QD indexar quando indexar), priorizando arquivo
-  # completo para reprocessamento futuro sem custo de QD. Decisão registrada
-  # em docs/operations/reprocessing-archive-strategy.md.
-  description         = "Aciona o collector diariamente às 07:00 UTC (04:00 BRT)."
-  schedule_expression = "cron(0 7 * * ? *)"
-}
-
-resource "aws_cloudwatch_event_target" "collector" {
-  rule = aws_cloudwatch_event_rule.daily_collector.name
-  arn  = var.collector_lambda_arn
-}
-
-resource "aws_lambda_permission" "eventbridge_collector" {
-  statement_id  = "AllowEventBridgeInvokeCollector"
-  action        = "lambda:InvokeFunction"
-  function_name = var.collector_lambda_arn
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.daily_collector.arn
-}
-
 # FiscalCustos — daily às 06:00 UTC (03:00 BRT). Cost Explorer só finaliza dado
 # do dia anterior ~24h depois, então o agente sempre coleta janela móvel de 7 dias.
 resource "aws_cloudwatch_event_rule" "daily_costs" {
