@@ -97,6 +97,7 @@ resource "aws_iam_role_policy" "github_actions" {
           "iam:GetOpenIDConnectProvider",
           "iam:CreatePolicy", "iam:GetPolicy", "iam:DeletePolicy",
           "iam:GetPolicyVersion", "iam:ListPolicyVersions",
+          "iam:TagPolicy", "iam:UntagPolicy", "iam:ListPolicyTags",
         ]
         Resource = [
           "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:fiscal-digital-*",
