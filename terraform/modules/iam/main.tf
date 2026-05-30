@@ -423,52 +423,6 @@ resource "aws_iam_policy" "lambda_logs" {
   })
 }
 
-# ─── Collector ───────────────────────────────────────────────────────────────
-
-resource "aws_iam_role" "collector" {
-  name               = "fiscal-digital-collector-prod"
-  assume_role_policy = data.aws_iam_policy_document.lambda_trust.json
-}
-
-resource "aws_iam_role_policy_attachment" "collector_logs" {
-  role       = aws_iam_role.collector.name
-  policy_arn = aws_iam_policy.lambda_logs.arn
-}
-
-resource "aws_iam_role_policy" "collector" {
-  role = aws_iam_role.collector.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
-        Resource = var.gazettes_table_arn
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["sqs:SendMessage"]
-        Resource = var.gazettes_queue_arn
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
-        Resource = var.kms_key_arn
-      },
-      {
-        # Cache de PDFs do Querido Diário — PutObject + HeadObject para idempotência
-        Sid    = "GazettesPdfCache"
-        Effect = "Allow"
-        Action = ["s3:PutObject", "s3:HeadObject", "s3:GetObject"]
-        Resource = [
-          "arn:aws:s3:::fiscal-digital-gazettes-cache-prod",
-          "arn:aws:s3:::fiscal-digital-gazettes-cache-prod/*",
-        ]
-      },
-    ]
-  })
-}
-
 # ─── Analyzer ────────────────────────────────────────────────────────────────
 
 resource "aws_iam_role" "analyzer" {

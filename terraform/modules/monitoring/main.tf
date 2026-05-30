@@ -2,11 +2,6 @@
 # 30 dias para RCA de incidentes detectados após uma semana.
 # Custo: ~$0.03/GB/mês — insignificante no volume atual.
 
-resource "aws_cloudwatch_log_group" "collector" {
-  name              = "/aws/lambda/fiscal-digital-collector-prod"
-  retention_in_days = 30
-}
-
 resource "aws_cloudwatch_log_group" "analyzer" {
   name              = "/aws/lambda/fiscal-digital-analyzer-prod"
   retention_in_days = 30

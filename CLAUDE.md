@@ -110,9 +110,9 @@ ou copy de site, abrir sessão dedicada em `fiscal-digital-web/`.
 
 | Repo | Conteúdo | Deploy |
 |---|---|---|
-| `fiscal-digital` | Engine (Fiscais + Skills + API) + Terraform | AWS Lambda via GH Actions |
+| `fiscal-digital` | Engine (Fiscais + Skills + API) + Terraform (analyzer / publisher / api / costs) | AWS Lambda via GH Actions |
 | `fiscal-digital-web` | Next.js — landing + dashboards por cidade | S3 + CloudFront via GH Actions |
-| `fiscal-digital-collectors` | Adaptadores de fontes de dados | Lambda agendado via GH Actions |
+| `fiscal-digital-collectors` | Collectors (Querido Diário, RFB/CGU suppliers, …) + Terraform de cada Lambda coletora | AWS Lambda agendado via GH Actions |
 | `fiscal-digital-analytics` | Notebooks, relatórios, exports CSV | Manual / GitHub Pages |
 | `fiscal-digital-evaluations` | Golden set rotulado, ADRs por Fiscal, baselines de precisão | Repo público de metodologia (sem deploy) |
 

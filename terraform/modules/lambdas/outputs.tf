@@ -1,7 +1,3 @@
-output "collector_arn" {
-  value = aws_lambda_function.collector.arn
-}
-
 output "analyzer_arn" {
   value = aws_lambda_function.analyzer.arn
 }
