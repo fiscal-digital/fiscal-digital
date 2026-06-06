@@ -22,3 +22,8 @@ output "github_actions_collectors_role_arn" {
   value       = aws_iam_role.github_actions_collectors.arn
   description = "ARN da role IAM dedicada ao repo fiscal-digital-collectors via OIDC"
 }
+
+output "github_actions_web_role_arn" {
+  value       = aws_iam_role.github_actions_web.arn
+  description = "ARN da role IAM dedicada ao repo fiscal-digital-web via OIDC"
+}
