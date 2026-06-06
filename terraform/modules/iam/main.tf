@@ -411,6 +411,98 @@ resource "aws_iam_role_policy" "github_actions" {
   })
 }
 
+# ─── GitHub Actions OIDC — web repo (Sprint A3b) ─────────────────────────────
+#
+# Role dedicada ao repo fiscal-digital-web via OIDC.
+# Escopada apenas a S3 (ISR cache + assets estáticos), Lambda update-code
+# (server + revalidation functions) e CloudFront invalidation.
+# NÃO inclui DynamoDB, Bedrock, SQS, IAM gerencial — menor privilégio.
+#
+# Coexistência: role compartilhada (github_actions) permanece inalterada.
+# Sids duplicados na role antiga serão removidos em Sprint A4.
+# Auditoria dos workflows web: deploy.yml usa S3 sync + lambda update-function-code
+# + cloudfront create-invalidation. E2E workflow não usa AWS (lê prod read-only).
+
+data "aws_iam_policy_document" "github_web_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_org}/fiscal-digital-web:*"]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_actions_web" {
+  name               = "fiscal-digital-github-actions-web-prod"
+  assume_role_policy = data.aws_iam_policy_document.github_web_trust.json
+
+  tags = {
+    Project   = "FiscalDigital"
+    ManagedBy = "Terraform"
+    Repo      = "fiscal-digital-web"
+  }
+}
+
+resource "aws_iam_role_policy" "github_actions_web" {
+  role = aws_iam_role.github_actions_web.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # S3 sync — assets estáticos hashed + ISR cache pré-aquecido
+        # Bucket: fiscal-digital-web-prod (var S3_CACHE_BUCKET no workflow)
+        Sid    = "WebS3Sync"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+        ]
+        Resource = [
+          "arn:aws:s3:::fiscal-digital-web-prod",
+          "arn:aws:s3:::fiscal-digital-web-prod/*",
+        ]
+      },
+      {
+        # Lambda update-function-code — server function + revalidation function
+        # Funções: fiscal-digital-web-isr-prod + fiscal-digital-web-isr-revalidate-prod
+        Sid    = "WebLambdaDeploy"
+        Effect = "Allow"
+        Action = [
+          "lambda:UpdateFunctionCode",
+          "lambda:GetFunction",
+        ]
+        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:fiscal-digital-web-*"
+      },
+      {
+        # CloudFront invalidation — após cada deploy para expirar cache de rotas dinâmicas
+        # Resource = "*" obrigatório: CreateInvalidation e ListDistributions não suportam resource-level
+        Sid    = "WebCloudFrontInvalidate"
+        Effect = "Allow"
+        Action = [
+          "cloudfront:CreateInvalidation",
+          "cloudfront:GetDistribution",
+          "cloudfront:ListDistributions",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
 # ─── Shared trust + log policy ───────────────────────────────────────────────
 
 data "aws_iam_policy_document" "lambda_trust" {
