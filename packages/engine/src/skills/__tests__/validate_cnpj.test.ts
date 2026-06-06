@@ -99,6 +99,24 @@ describe('validateCNPJ', () => {
     expect(cnpjInPath).toBe('12345678000190')
   })
 
+  it('envia User-Agent header nas chamadas HTTP (previne 403 Cloudflare WAF — LRN-20260606-002)', async () => {
+    mockFetch.mockReturnValue(
+      makeOkResponse({
+        cnpj: '12345678000190',
+        razao_social: 'Empresa UA LTDA',
+        situacao_cadastral: 2,
+        data_inicio_atividade: '2018-01-01',
+        qsa: [],
+      }),
+    )
+
+    await validateCNPJ.execute({ cnpj: '12.345.678/0001-90' })
+
+    const calledHeaders = mockFetch.mock.calls[0][1]?.headers as Record<string, string>
+    expect(calledHeaders['User-Agent']).toMatch(/^FiscalDigital\//)
+    expect(calledHeaders['User-Agent']).toContain('fiscaldigital.org')
+  })
+
   it('retorna sanctions false (preenchido por check_sanctions)', async () => {
     mockFetch.mockReturnValue(
       makeOkResponse({
