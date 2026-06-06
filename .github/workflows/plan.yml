@@ -125,51 +125,30 @@ jobs:
           tflint --init
           tflint --recursive --format=compact --minimum-failure-severity=error
 
+      - name: Setup Python (for checkov)
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install checkov
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: pip install -r requirements.txt
+
       - name: Run checkov
         if: github.event.pull_request.head.repo.full_name == github.repository
         # TODO: revisar e endereçar checks pulados em PR de hardening de infra.
         # Lista atual reflete o estado de prod ao introduzir o gate (PR #1).
         # Resources afetados: gazettes-cache (S3+CF), iam roles, lambdas.
-        uses: bridgecrewio/checkov-action@v12
-        with:
-          directory: terraform
-          framework: terraform
-          quiet: true
-          soft_fail: false
-          skip_check: >-
-            CKV_AWS_18,
-            CKV_AWS_21,
-            CKV_AWS_28,
-            CKV_AWS_50,
-            CKV_AWS_68,
-            CKV_AWS_86,
-            CKV_AWS_115,
-            CKV_AWS_116,
-            CKV_AWS_117,
-            CKV_AWS_144,
-            CKV_AWS_145,
-            CKV_AWS_158,
-            CKV_AWS_173,
-            CKV_AWS_258,
-            CKV_AWS_259,
-            CKV_AWS_272,
-            CKV_AWS_289,
-            CKV_AWS_290,
-            CKV_AWS_300,
-            CKV_AWS_305,
-            CKV_AWS_310,
-            CKV_AWS_338,
-            CKV_AWS_355,
-            CKV_AWS_374,
-            CKV2_AWS_32,
-            CKV2_AWS_34,
-            CKV2_AWS_47,
-            CKV2_AWS_57,
-            CKV2_AWS_61,
-            CKV2_AWS_62,
-            CKV2_AWS_64,
-            CKV2_AWS_67,
-            CKV2_AWS_75
+        working-directory: terraform
+        run: |
+          checkov \
+            --directory . \
+            --framework terraform \
+            --quiet \
+            --skip-check CKV_AWS_18,CKV_AWS_21,CKV_AWS_28,CKV_AWS_50,CKV_AWS_68,CKV_AWS_86,CKV_AWS_115,CKV_AWS_116,CKV_AWS_117,CKV_AWS_144,CKV_AWS_145,CKV_AWS_158,CKV_AWS_173,CKV_AWS_258,CKV_AWS_259,CKV_AWS_272,CKV_AWS_289,CKV_AWS_290,CKV_AWS_300,CKV_AWS_305,CKV_AWS_310,CKV_AWS_338,CKV_AWS_355,CKV_AWS_374,CKV2_AWS_32,CKV2_AWS_34,CKV2_AWS_47,CKV2_AWS_57,CKV2_AWS_61,CKV2_AWS_62,CKV2_AWS_64,CKV2_AWS_67,CKV2_AWS_75
 
       - name: AWS quota check (LRN-20260503-020)
         if: github.event.pull_request.head.repo.full_name == github.repository
