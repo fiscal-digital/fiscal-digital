@@ -82,6 +82,21 @@ jobs:
         if: github.event.pull_request.head.repo.full_name == github.repository
         uses: hashicorp/setup-terraform@v4
 
+      - name: Cache Terraform plugins
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: tf-plugins-${{ runner.os }}-${{ hashFiles('terraform/**/.terraform.lock.hcl') }}
+          restore-keys: |
+            tf-plugins-${{ runner.os }}-
+
+      - name: Configure Terraform plugin cache
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' >> ~/.terraformrc
+
       - name: Terraform fmt check
         if: github.event.pull_request.head.repo.full_name == github.repository
         working-directory: terraform
