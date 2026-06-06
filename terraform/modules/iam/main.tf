@@ -10,6 +10,13 @@ data "aws_secretsmanager_secret" "web_revalidate" {
   name = "fiscal-digital-revalidate-token-prod"
 }
 
+# CGU Portal da Transparencia secret — gerenciado fora do terraform (rotacao manual).
+# Lookup por nome para que o GitHub Actions role possa ler o ARN real sem
+# hardcoding e sem expor account ID em repo OSS.
+data "aws_secretsmanager_secret" "cgu" {
+  name = "fiscaldigital-cgu-prod"
+}
+
 # ─── GitHub Actions OIDC ─────────────────────────────────────────────────────
 
 # OIDC provider já existe na conta (compartilhado entre projetos da org)
@@ -113,15 +120,20 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
       },
       {
-        # GetResourcePolicy necessário para o data source do Terraform ler a secret
+        # GetResourcePolicy necessário para o data source do Terraform ler a secret.
+        # Inclui CGU secret (fiscaldigital-cgu-prod) para que o collectors repo
+        # possa resolver o ARN via data source no terraform plan/apply (MIT-02/EVO-002).
         Action = [
           "secretsmanager:DescribeSecret",
           "secretsmanager:GetSecretValue",
           "secretsmanager:GetResourcePolicy",
         ]
-        Effect   = "Allow"
-        Resource = data.aws_secretsmanager_secret.anthropic.arn
-        Sid      = "SecretsManagerRead"
+        Effect = "Allow"
+        Resource = [
+          data.aws_secretsmanager_secret.anthropic.arn,
+          data.aws_secretsmanager_secret.cgu.arn,
+        ]
+        Sid = "SecretsManagerRead"
       },
       {
         # ISR revalidate token (ISR-WEB-002) — Terraform precisa gerenciar
