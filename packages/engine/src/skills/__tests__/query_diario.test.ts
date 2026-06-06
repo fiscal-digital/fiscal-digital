@@ -133,4 +133,14 @@ describe('queryDiario', () => {
     expect(calledUrl).toContain('querystring=')
     expect(calledUrl).toContain('dispensa')
   })
+
+  it('envia User-Agent header nas chamadas HTTP (previne 403 Cloudflare WAF — LRN-20260606-002)', async () => {
+    mockFetch.mockReturnValue(makeQDResponse([]))
+
+    await queryDiario.execute({ territory_id: '4305108' })
+
+    const calledHeaders = mockFetch.mock.calls[0][1]?.headers as Record<string, string>
+    expect(calledHeaders['User-Agent']).toMatch(/^FiscalDigital\//)
+    expect(calledHeaders['User-Agent']).toContain('fiscaldigital.org')
+  })
 })
