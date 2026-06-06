@@ -670,3 +670,176 @@ resource "aws_iam_role_policy" "costs" {
     ]
   })
 }
+
+# ─── GitHub Actions OIDC — collectors repo (Sprint A3) ───────────────────────
+#
+# Role dedicada ao repo fiscal-digital-collectors via OIDC.
+# Escopada apenas a resources fiscal-digital-collector-* e
+# fiscal-digital-supplier-*. Resolve risco crítico de privilege escalation:
+# IAMUpdateAssumeRolePolicySelf na role compartilhada permitia que collectors
+# comprometido modificasse trust policy e ganhasse acesso à role do monorepo.
+#
+# Coexistência: role compartilhada (github_actions) mantida intacta nesta
+# sprint. Próxima sprint remove os Sids extraídos da role compartilhada.
+
+data "aws_iam_policy_document" "github_collectors_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_org}/fiscal-digital-collectors:*"]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_actions_collectors" {
+  name               = "fiscal-digital-github-actions-collectors-prod"
+  assume_role_policy = data.aws_iam_policy_document.github_collectors_trust.json
+}
+
+resource "aws_iam_role_policy" "github_actions_collectors" {
+  role = aws_iam_role.github_actions_collectors.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "TerraformState"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject", "s3:PutObject", "s3:ListBucket", "s3:DeleteObject",
+        ]
+        Resource = [
+          "arn:aws:s3:::fiscal-digital-terraform-state",
+          "arn:aws:s3:::fiscal-digital-terraform-state/*",
+        ]
+      },
+      {
+        Sid      = "TerraformLock"
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+        Resource = "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/fiscal-digital-terraform-lock"
+      },
+      {
+        # Terraform gerir recursos collector-* e supplier-* incluindo suas
+        # IAM roles/policies, Lambdas, filas SQS, eventos e logs.
+        # logs:* necessário pois CloudWatch Logs retorna resource-not-found em
+        # PutRetentionPolicy via wildcard por log-group sem prefixo.
+        Sid    = "TerraformManageCollectors"
+        Effect = "Allow"
+        Action = [
+          "lambda:*", "dynamodb:*", "sqs:*", "events:*", "kms:*",
+          "iam:GetRole", "iam:CreateRole", "iam:UpdateRole", "iam:DeleteRole",
+          "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy",
+          "iam:AttachRolePolicy", "iam:DetachRolePolicy",
+          "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
+          "iam:TagRole", "iam:PassRole",
+          "iam:GetOpenIDConnectProvider",
+          "iam:CreatePolicy", "iam:GetPolicy", "iam:DeletePolicy",
+          "iam:GetPolicyVersion", "iam:ListPolicyVersions",
+          "iam:TagPolicy", "iam:UntagPolicy", "iam:ListPolicyTags",
+          "logs:*",
+        ]
+        Resource = [
+          "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:fiscal-digital-collector-*",
+          "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:fiscal-digital-supplier-*",
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/fiscal-digital-*",
+          "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:fiscal-digital-*",
+          "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/fiscal-digital-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/fiscal-digital-collector-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/fiscal-digital-supplier-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/fiscal-digital-collector-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/fiscal-digital-supplier-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com",
+          "arn:aws:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:key/*",
+          "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/fiscal-digital-collector-*",
+          "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/fiscal-digital-supplier-*",
+        ]
+      },
+      {
+        Sid    = "LambdaEventSourceMappingsCollectors"
+        Effect = "Allow"
+        Action = [
+          "lambda:CreateEventSourceMapping",
+          "lambda:DeleteEventSourceMapping",
+          "lambda:GetEventSourceMapping",
+          "lambda:ListEventSourceMappings",
+          "lambda:ListTags",
+          "lambda:TagResource",
+          "lambda:UntagResource",
+          "lambda:UpdateEventSourceMapping",
+        ]
+        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:event-source-mapping:*"
+      },
+      {
+        # GetSecretValue para o secret CGU no plano e no runtime do collector.
+        Sid    = "SecretsManagerReadCgu"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:GetResourcePolicy",
+        ]
+        Resource = data.aws_secretsmanager_secret.cgu.arn
+      },
+      {
+        # Resource = "*" obrigatório — iam:List* não suporta resource-level
+        Sid      = "IAMReadAccount"
+        Effect   = "Allow"
+        Action   = ["iam:ListOpenIDConnectProviders"]
+        Resource = "*"
+      },
+      {
+        # Resource = "*" obrigatório — kms:List* não suporta resource-level
+        Sid      = "KMSReadAccount"
+        Effect   = "Allow"
+        Action   = ["kms:ListAliases", "kms:ListKeys"]
+        Resource = "*"
+      },
+      {
+        # Quota check no plan.yml gate (LRN-20260503-020). APIs account-level
+        # read-only que não suportam resource scoping.
+        Sid      = "QuotaCheckReadOnly"
+        Effect   = "Allow"
+        Action   = ["lambda:GetAccountSettings", "dynamodb:DescribeLimits"]
+        Resource = "*"
+      },
+      {
+        # Escopado a roles de workload collector/supplier — não à role GHA
+        # nem a roles do monorepo. Resolve blast radius do escalation crítico.
+        Sid    = "IAMUpdateAssumeRolePolicyCollectorsScoped"
+        Effect = "Allow"
+        Action = ["iam:UpdateAssumeRolePolicy"]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/fiscal-digital-collector-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/fiscal-digital-supplier-*",
+        ]
+      },
+      {
+        # ssm:DescribeParameters NÃO suporta resource-level — exige "*"
+        Sid      = "SSMDescribeParameters"
+        Effect   = "Allow"
+        Action   = ["ssm:DescribeParameters"]
+        Resource = "*"
+      },
+      {
+        # logs:DescribeLogGroups é operação de listagem — Resource = "*" obrigatório
+        Sid      = "CloudWatchLogsDescribe"
+        Effect   = "Allow"
+        Action   = ["logs:DescribeLogGroups"]
+        Resource = "*"
+      },
+    ]
+  })
+}

@@ -48,9 +48,11 @@ interface BcbSgsRow {
 // Busca PTAX (cotação de venda do dólar comercial) — SGS série 1.
 // Endpoint Olinda OData mudou a estrutura algumas vezes; SGS é mais estável.
 // BCB devolve apenas dias úteis — cotação mais recente dentro da janela.
+const USER_AGENT = 'FiscalDigital/0.1.1 (+https://fiscaldigital.org)'
+
 async function fetchPtaxFor(_dateIso: string): Promise<number> {
   const url = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados/ultimos/5?formato=json'
-  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+  const res = await fetch(url, { signal: AbortSignal.timeout(10_000), headers: { 'User-Agent': USER_AGENT } })
   if (!res.ok) throw new Error(`BCB SGS HTTP ${res.status}`)
   const rows = (await res.json()) as BcbSgsRow[]
   const last = rows.at(-1)
