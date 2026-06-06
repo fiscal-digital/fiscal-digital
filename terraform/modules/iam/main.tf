@@ -227,16 +227,6 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "*"
       },
       {
-        # Deploy do site estático fiscal-digital-web para S3
-        Sid    = "WebS3Deploy"
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetBucketLocation"]
-        Resource = [
-          "arn:aws:s3:::fiscal-digital-web-prod",
-          "arn:aws:s3:::fiscal-digital-web-prod/*",
-        ]
-      },
-      {
         # Cache de gazettes — CI precisa de GetObject/PutObject para smoke tests e validação
         Sid    = "GazettesCacheS3Deploy"
         Effect = "Allow"
@@ -265,13 +255,6 @@ resource "aws_iam_role_policy" "github_actions" {
           "s3:PutBucketAcl", "s3:GetBucketAcl",
         ]
         Resource = "arn:aws:s3:::fiscal-digital-gazettes-cache-prod"
-      },
-      {
-        # Invalidação do CloudFront após deploy
-        Sid      = "WebCloudFrontInvalidate"
-        Effect   = "Allow"
-        Action   = ["cloudfront:CreateInvalidation", "cloudfront:GetDistribution", "cloudfront:ListDistributions"]
-        Resource = "*"
       },
       {
         # ACM — criar/validar certificado SSL para fiscaldigital.org
