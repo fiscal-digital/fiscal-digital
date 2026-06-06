@@ -1,6 +1,7 @@
 import type { Skill, SkillResult, SupplierProfile } from '../types'
 
 const BRASIL_API = 'https://brasilapi.com.br/api/cnpj/v1'
+const USER_AGENT = 'FiscalDigital/0.1.1 (+https://fiscaldigital.org)'
 
 interface BrasilApiCNPJ {
   cnpj: string
@@ -29,7 +30,7 @@ export const validateCNPJ: Skill<ValidateCNPJInput, Partial<SupplierProfile>> = 
     const clean = input.cnpj.replace(/\D/g, '')
     const url = `${BRASIL_API}/${clean}`
 
-    const res = await fetch(url, { headers: { Accept: 'application/json' } })
+    const res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } })
 
     if (res.status === 404) {
       return {

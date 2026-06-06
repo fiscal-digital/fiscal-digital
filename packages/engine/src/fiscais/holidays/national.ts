@@ -13,6 +13,7 @@
 import { FERIADOS_NACIONAIS } from '../diarias'
 
 const BRASIL_API_FERIADOS = 'https://brasilapi.com.br/api/feriados/v1'
+const USER_AGENT = 'FiscalDigital/0.1.1 (+https://fiscaldigital.org)'
 
 interface BrasilAPIFeriado {
   date: string  // YYYY-MM-DD
@@ -34,7 +35,7 @@ export async function preloadFeriadosNacionais(year: number): Promise<void> {
   try {
     const res = await fetch(`${BRASIL_API_FERIADOS}/${year}`, {
       signal: AbortSignal.timeout(3000),
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
     })
 
     if (res.ok) {

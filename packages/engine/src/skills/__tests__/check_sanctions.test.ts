@@ -118,4 +118,16 @@ describe('checkSanctions', () => {
     expect(result.data.sanctioned).toBe(false)
     expect(result.data.records).toHaveLength(0)
   })
+
+  it('envia User-Agent header nas chamadas HTTP (previne 403 WAF — LRN-20260606-002)', async () => {
+    mockFetch
+      .mockReturnValueOnce(makeJsonResponse([]))
+      .mockReturnValueOnce(makeJsonResponse([]))
+
+    await checkSanctions.execute({ cnpj: '12.345.678/0001-90', apiKey: 'test-api-key' })
+
+    const calledHeaders = mockFetch.mock.calls[0][1]?.headers as Record<string, string>
+    expect(calledHeaders['User-Agent']).toMatch(/^FiscalDigital\//)
+    expect(calledHeaders['User-Agent']).toContain('fiscaldigital.org')
+  })
 })

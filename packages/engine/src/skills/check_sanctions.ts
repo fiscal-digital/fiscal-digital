@@ -1,6 +1,7 @@
 import type { Skill, SkillResult } from '../types'
 
 const CGU_API = 'https://api.portaldatransparencia.gov.br/api-de-dados'
+const USER_AGENT = 'FiscalDigital/0.1.1 (+https://fiscaldigital.org)'
 
 export interface CheckSanctionsInput {
   cnpj: string
@@ -30,7 +31,7 @@ export const checkSanctions: Skill<CheckSanctionsInput, SanctionResult> = {
     }
 
     const clean = input.cnpj.replace(/\D/g, '')
-    const headers = { Accept: 'application/json', 'chave-api-dados': input.apiKey }
+    const headers = { Accept: 'application/json', 'chave-api-dados': input.apiKey, 'User-Agent': USER_AGENT }
 
     const [ceisRes, cnepRes] = await Promise.allSettled([
       fetch(`${CGU_API}/ceis?cnpjSancionado=${clean}&pagina=1`, { headers }),

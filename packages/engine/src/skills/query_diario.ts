@@ -2,6 +2,7 @@ import { RateLimiter } from '../utils/rate_limiter'
 import type { Gazette, Skill, SkillResult } from '../types'
 
 const QD_API = 'https://api.queridodiario.ok.org.br'
+const USER_AGENT = 'FiscalDigital/0.1.1 (+https://fiscaldigital.org)'
 const limiter = new RateLimiter(60)
 
 export interface QueryDiarioInput {
@@ -47,7 +48,7 @@ export const queryDiario: Skill<QueryDiarioInput, { gazettes: Gazette[]; total: 
     await limiter.acquire()
 
     const url = `${QD_API}/gazettes?${params}`
-    const res = await fetch(url, { headers: { Accept: 'application/json' } })
+    const res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } })
 
     if (!res.ok) {
       throw new Error(`Querido Diário API ${res.status}: ${res.statusText}`)
