@@ -135,11 +135,33 @@ resource "aws_dynamodb_table" "suppliers" {
     type = "S"
   }
 
+  attribute {
+    name = "secretariaId"
+    type = "S"
+  }
+
+  attribute {
+    name = "mesCNPJ"
+    type = "S"
+  }
+
   # Cross-supplier por cidade — "contratos do CNPJ X em Caxias por data"
   global_secondary_index {
     name            = "GSI1-city-date"
     hash_key        = "cityId"
     range_key       = "contractedAt"
+    projection_type = "ALL"
+  }
+
+  # FiscalFornecedores v2 — concentracao por secretaria nos ultimos 12 meses
+  # hash_key: secretariaId (String)
+  # range_key: mesCNPJ (String, formato YYYY-MM#CNPJ14)
+  # Query pattern: secretariaId = X AND mesCNPJ BETWEEN "2025-06#" AND "2026-06#"
+  # Feature-flagged OFF ate engine Sonnet-A ser mergeado
+  global_secondary_index {
+    name            = "GSI2_ConcentracaoSecretaria"
+    hash_key        = "secretariaId"
+    range_key       = "mesCNPJ"
     projection_type = "ALL"
   }
 

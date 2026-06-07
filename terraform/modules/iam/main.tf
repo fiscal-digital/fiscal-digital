@@ -572,6 +572,18 @@ resource "aws_iam_role_policy" "analyzer" {
         Action   = ["ssm:GetParameter", "ssm:GetParameters"]
         Resource = "arn:aws:ssm:us-east-1:*:parameter/fiscal-digital/prod/*"
       },
+      {
+        # FiscalFornecedores v2 — concentracao por secretaria (12 meses).
+        # Query pattern: secretariaId = X AND mesCNPJ BETWEEN begin AND end.
+        # Feature-flagged OFF ate engine Sonnet-A ser mergeado — IAM provisionado
+        # com antecedencia para que o apply de infra nao bloqueie a feature.
+        Sid    = "QueryGSI2Concentracao"
+        Effect = "Allow"
+        Action = ["dynamodb:Query"]
+        Resource = [
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/fiscal-digital-suppliers-prod/index/GSI2_ConcentracaoSecretaria",
+        ]
+      },
     ]
   })
 }
