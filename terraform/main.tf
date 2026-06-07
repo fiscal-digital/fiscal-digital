@@ -155,18 +155,9 @@ resource "aws_ssm_parameter" "enable_fiscal_fornecedores_v2" {
   }
 }
 
-# ─── State reconciliation (P0 2026-06-07) ────────────────────────────────────
-# Apply parcial em 2026-06-07 15:57 UTC destruiu aws_s3_bucket_policy.web e
-# aws_s3_bucket_public_access_block.web (recreate plan) mas falhou ao recriar
-# o bucket S3 ("empty result" da AWS API). Resultado: site fiscaldigital.org
-# down (assets 404) por falta de policy OAC. Mitigacao: PUT manual de policy+PAB.
-# Imports abaixo reconciliam state com prod. Remover apos primeiro apply OK.
-import {
-  to = module.web.aws_s3_bucket_policy.web
-  id = "fiscal-digital-web-prod"
-}
-
-import {
-  to = module.web.aws_s3_bucket_public_access_block.web
-  id = "fiscal-digital-web-prod"
-}
+# ─── State reconciliation (P0 2026-06-07) — imports REMOVIDOS pos-aplicacao ──
+# PR #91 aplicou os imports (reconciliacao apos incidente P0 documentado em
+# LRN-20260607-004). Blocos removidos aqui: import blocks duplicados causam
+# "Cannot import non-existent remote object" em plans subsequentes, pois os
+# resources ja estao no state. Defesas contra repeticao do P0 estao em
+# .github/workflows/deploy.yml (guard de destroys criticos + smoke test).
