@@ -156,18 +156,12 @@ resource "aws_ssm_parameter" "enable_fiscal_fornecedores_v2" {
 }
 
 # ─── State reconciliation (P0 2026-06-07) ────────────────────────────────────
-# Incidente P0 (LRN-20260607-004): apply parcial destruiu bucket policy + PAB
-# em cascata mas falhou ao recriar bucket S3 em flake AWS API. PR #91 tentou
-# importar policy + PAB mas o deploy que aplicaria os imports tambem falhou
-# no mesmo "empty result" do bucket -- entao OS IMPORTS NUNCA APLICARAM e
-# state remoto continua sem os 3 resources do web bucket.
-# Estes imports aplicam tudo de uma vez (bucket + policy + PAB) num plan
-# atomico. Apos primeiro apply OK, removeremos em PR de cleanup.
-import {
-  to = module.web.aws_s3_bucket.web
-  id = "fiscal-digital-web-prod"
-}
-
+# Incidente P0 (LRN-20260607-004) + investigacao 2026-06-07 22:45 UTC:
+# state remoto tinha aws_s3_bucket.web TAINTED (marcado para destroy+recreate
+# em proximo apply) -- por isso 3 deploys consecutivos tentaram "create"
+# bucket que ja existe. Fix: terraform untaint module.web.aws_s3_bucket.web
+# (aplicado localmente em 22:46 UTC). Policy + PAB ficaram fora do state
+# desde apply parcial, importados aqui.
 import {
   to = module.web.aws_s3_bucket_policy.web
   id = "fiscal-digital-web-prod"
