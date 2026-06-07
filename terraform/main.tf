@@ -154,3 +154,19 @@ resource "aws_ssm_parameter" "enable_fiscal_fornecedores_v2" {
     ignore_changes = [value]
   }
 }
+
+# ─── State reconciliation (P0 2026-06-07) ────────────────────────────────────
+# Apply parcial em 2026-06-07 15:57 UTC destruiu aws_s3_bucket_policy.web e
+# aws_s3_bucket_public_access_block.web (recreate plan) mas falhou ao recriar
+# o bucket S3 ("empty result" da AWS API). Resultado: site fiscaldigital.org
+# down (assets 404) por falta de policy OAC. Mitigacao: PUT manual de policy+PAB.
+# Imports abaixo reconciliam state com prod. Remover apos primeiro apply OK.
+import {
+  to = module.web.aws_s3_bucket_policy.web
+  id = "fiscal-digital-web-prod"
+}
+
+import {
+  to = module.web.aws_s3_bucket_public_access_block.web
+  id = "fiscal-digital-web-prod"
+}
