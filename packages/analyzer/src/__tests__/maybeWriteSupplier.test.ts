@@ -55,6 +55,7 @@ jest.mock('@fiscal-digital/engine', () => ({
   fiscalLicitacoes: { id: 'fiscal-licitacoes', description: 'mock', analisar: mockAnalisarLicitacoes },
   fiscalContratos: { id: 'fiscal-contratos', description: 'mock', analisar: mockAnalisarContratos },
   fiscalFornecedores: { id: 'fiscal-fornecedores', description: 'mock', analisar: mockAnalisarFornecedores },
+  fiscalFornecedoresV2: { id: 'fiscal-fornecedores', description: 'mock-v2', analisar: jest.fn().mockResolvedValue([]) },
   fiscalPessoal: { id: 'fiscal-pessoal', description: 'mock', analisar: mockAnalisarPessoal },
   fiscalConvenios: { id: 'fiscal-convenios', description: 'mock', analisar: jest.fn().mockResolvedValue([]) },
   fiscalNepotismo: { id: 'fiscal-nepotismo', description: 'mock', analisar: jest.fn().mockResolvedValue([]) },
@@ -95,6 +96,7 @@ jest.mock('@fiscal-digital/engine', () => ({
     confidenceThreshold: 0.70,
   }),
   isFeatureEnabled: mockIsFeatureEnabled,
+  queryConcentracaoGSI2: jest.fn().mockResolvedValue([]),
 }))
 
 // ---------------------------------------------------------------------------

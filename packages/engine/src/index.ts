@@ -29,6 +29,8 @@ export type { QuerySuppliersContractInput, SupplierContractRecord } from './skil
 export { fiscalLicitacoes } from './fiscais/licitacoes'
 export { fiscalContratos } from './fiscais/contratos'
 export { fiscalFornecedores } from './fiscais/fornecedores'
+export { fiscalFornecedoresV2, agregarConcentracao, queryConcentracaoGSI2 } from './fiscais/fornecedores-v2'
+export type { FiscalContextV2, SecretariaContrato } from './fiscais/fornecedores-v2'
 export { fiscalPessoal } from './fiscais/pessoal'
 export { fiscalGeral } from './fiscais/geral'
 export { fiscalConvenios } from './fiscais/convenios'
