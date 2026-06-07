@@ -53,6 +53,9 @@ jest.mock('@fiscal-digital/engine', () => ({
   fiscalLicitacoes: { id: 'fiscal-licitacoes', description: 'mock', analisar: mockAnalisarLicitacoes },
   fiscalContratos: { id: 'fiscal-contratos', description: 'mock', analisar: mockAnalisarContratos },
   fiscalFornecedores: { id: 'fiscal-fornecedores', description: 'mock', analisar: mockAnalisarFornecedores },
+  // FiscalFornecedores v2 — stub silencioso. A handler usa fiscalFornecedores (v1)
+  // quando isFeatureEnabled retorna false (default nos testes abaixo).
+  fiscalFornecedoresV2: { id: 'fiscal-fornecedores', description: 'mock-v2', analisar: jest.fn().mockResolvedValue([]) },
   fiscalPessoal: { id: 'fiscal-pessoal', description: 'mock', analisar: mockAnalisarPessoal },
   fiscalConvenios: { id: 'fiscal-convenios', description: 'mock', analisar: jest.fn().mockResolvedValue([]) },
   fiscalNepotismo: { id: 'fiscal-nepotismo', description: 'mock', analisar: jest.fn().mockResolvedValue([]) },
@@ -95,6 +98,19 @@ jest.mock('@fiscal-digital/engine', () => ({
     riskThreshold: 60,
     confidenceThreshold: 0.70,
   }),
+  // isFeatureEnabled — feature flags via SSM. Retorna false (default) em testes
+  // para garantir que fiscalFornecedores (v1) seja sempre usado nos testes existentes.
+  // Sem este mock, a chamada SSM falha por ausência de credenciais AWS no CI.
+  isFeatureEnabled: jest.fn().mockResolvedValue(false),
+  // queryConcentracaoGSI2 — injetado no context v2 do analyzer.
+  // Stub silencioso; não é chamado em testes com isFeatureEnabled=false.
+  queryConcentracaoGSI2: jest.fn().mockResolvedValue([]),
+  // querySuppliersContract — cross-ref valor original em suppliers-prod.
+  querySuppliersContract: {
+    name: 'query_suppliers_contract',
+    description: 'mock',
+    execute: jest.fn().mockResolvedValue({ data: null, source: 'mock', confidence: 1.0 }),
+  },
 }))
 
 // ---------------------------------------------------------------------------
