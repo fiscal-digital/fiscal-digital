@@ -155,9 +155,25 @@ resource "aws_ssm_parameter" "enable_fiscal_fornecedores_v2" {
   }
 }
 
-# ─── State reconciliation (P0 2026-06-07) — imports REMOVIDOS pos-aplicacao ──
-# PR #91 aplicou os imports (reconciliacao apos incidente P0 documentado em
-# LRN-20260607-004). Blocos removidos aqui: import blocks duplicados causam
-# "Cannot import non-existent remote object" em plans subsequentes, pois os
-# resources ja estao no state. Defesas contra repeticao do P0 estao em
-# .github/workflows/deploy.yml (guard de destroys criticos + smoke test).
+# ─── State reconciliation (P0 2026-06-07) ────────────────────────────────────
+# Incidente P0 (LRN-20260607-004): apply parcial destruiu bucket policy + PAB
+# em cascata mas falhou ao recriar bucket S3 em flake AWS API. PR #91 tentou
+# importar policy + PAB mas o deploy que aplicaria os imports tambem falhou
+# no mesmo "empty result" do bucket -- entao OS IMPORTS NUNCA APLICARAM e
+# state remoto continua sem os 3 resources do web bucket.
+# Estes imports aplicam tudo de uma vez (bucket + policy + PAB) num plan
+# atomico. Apos primeiro apply OK, removeremos em PR de cleanup.
+import {
+  to = module.web.aws_s3_bucket.web
+  id = "fiscal-digital-web-prod"
+}
+
+import {
+  to = module.web.aws_s3_bucket_policy.web
+  id = "fiscal-digital-web-prod"
+}
+
+import {
+  to = module.web.aws_s3_bucket_public_access_block.web
+  id = "fiscal-digital-web-prod"
+}
