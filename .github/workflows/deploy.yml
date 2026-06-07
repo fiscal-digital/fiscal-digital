@@ -53,9 +53,51 @@ jobs:
         working-directory: terraform
         run: terraform init
 
+      # Plan separado pra inspecionar destroys criticos antes de apply.
+      # Guarda contra incidente P0 2026-06-07 (LRN-20260607-004): apply em
+      # cascata destruiu aws_s3_bucket_policy.web + PAB sem recriar bucket
+      # em flake AWS API, deixando site fiscaldigital.org com assets 404.
+      - name: Terraform Plan
+        working-directory: terraform
+        run: terraform plan -var-file=environments/prod.tfvars -out=tfplan.bin
+
+      - name: Guard destroys criticos (LRN-20260607-004)
+        working-directory: terraform
+        run: |
+          terraform show -no-color tfplan.bin > plan-text.txt
+
+          # Resources OAC-criticos: destroy sem recreate quebra site
+          CRITICAL_PATTERNS=(
+            "module\.web\.aws_s3_bucket_policy\.web"
+            "module\.web\.aws_s3_bucket_public_access_block\.web"
+            "module\.web\.aws_s3_bucket\.web"
+            "module\.gazettes_cache\.aws_s3_bucket_policy\.gazettes_cache"
+            "module\.gazettes_cache\.aws_s3_bucket\.gazettes_cache"
+          )
+
+          FAIL=0
+          for pattern in "${CRITICAL_PATTERNS[@]}"; do
+            if grep -E "^  # ${pattern}.*will be destroyed" plan-text.txt; then
+              echo "::error::Destroy critico detectado: ${pattern}"
+              echo "::error::Bypass: commit tag [allow-critical-destroy] no PR e re-rodar"
+              FAIL=1
+            fi
+          done
+
+          if [ $FAIL -eq 1 ]; then
+            # Bypass: se commit message tem [allow-critical-destroy], deixar passar
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            if echo "$COMMIT_MSG" | grep -qF "[allow-critical-destroy]"; then
+              echo "::warning::Bypass aceito via [allow-critical-destroy] no commit message"
+              exit 0
+            fi
+            exit 1
+          fi
+          echo "Plan sem destroys criticos — OK"
+
       - name: Terraform Apply
         working-directory: terraform
-        run: terraform apply -var-file=environments/prod.tfvars -auto-approve
+        run: terraform apply tfplan.bin
 
       - name: Deploy Lambda code
         run: |
@@ -82,3 +124,32 @@ jobs:
               --function-version "$VERSION" \
               --no-cli-pager
           done
+
+      # Smoke test pos-deploy: detecta repeticao do P0 2026-06-07 (LRN-004).
+      # Sintoma daquele incidente: bucket policy do web sumiu, assets 404 via
+      # CloudFront mas HTML continuou 200. Aqui validamos o que falhou la.
+      - name: Smoke test pos-apply (LRN-20260607-004)
+        run: |
+          set -e
+
+          echo "1. Bucket policy do web presente?"
+          aws s3api get-bucket-policy --bucket fiscal-digital-web-prod --region us-east-1 > /dev/null
+
+          echo "2. PAB do web presente?"
+          aws s3api get-public-access-block --bucket fiscal-digital-web-prod --region us-east-1 > /dev/null
+
+          echo "3. Asset via CloudFront retorna 200?"
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" "https://fiscaldigital.org/brand/logo/symbol.svg")
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Asset retornou HTTP $HTTP (esperado 200)"
+            exit 1
+          fi
+
+          echo "4. Home pt-br retorna 200?"
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -L "https://fiscaldigital.org/pt-br/")
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Home retornou HTTP $HTTP (esperado 200)"
+            exit 1
+          fi
+
+          echo "Smoke test PASS — site saudavel pos-deploy"
