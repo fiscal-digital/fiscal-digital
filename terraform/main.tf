@@ -128,3 +128,29 @@ resource "aws_ssm_parameter" "enable_supplier_write" {
     ignore_changes = [value]
   }
 }
+
+# FiscalFornecedores v2 — concentracao 12m via GSI2_ConcentracaoSecretaria.
+# DESLIGADO por default. Ativar APENAS apos:
+#   1. Ciclo 4 de observacao concluido (janela ate 2026-06-10)
+#   2. Canary validado em Caxias do Sul + Porto Alegre
+#   3. Aprovacao de Diego
+#
+# Para ativar:
+#   aws ssm put-parameter --overwrite \
+#     --name /fiscal-digital/prod/enable-fiscal-fornecedores-v2 \
+#     --value true --type String
+#
+# Para reverter:
+#   aws ssm put-parameter --overwrite \
+#     --name /fiscal-digital/prod/enable-fiscal-fornecedores-v2 \
+#     --value false --type String
+resource "aws_ssm_parameter" "enable_fiscal_fornecedores_v2" {
+  name        = "/fiscal-digital/prod/enable-fiscal-fornecedores-v2"
+  type        = "String"
+  value       = "false"
+  description = "Feature flag FiscalFornecedores v2. Ativar APENAS apos validacao Ciclo 4 + canary Caxias."
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
