@@ -6,6 +6,7 @@ import {
   fiscalLicitacoes,
   fiscalContratos,
   fiscalFornecedores,
+  fiscalFornecedoresV2,
   fiscalPessoal,
   fiscalConvenios,
   fiscalNepotismo,
@@ -17,6 +18,7 @@ import {
   saveMemory,
   generateNarrative,
   querySuppliersContract,
+  queryConcentracaoGSI2,
   gazetteKey,
   requireEnv,
   createLogger,
@@ -27,6 +29,7 @@ import type {
   CollectorMessage,
   Finding,
   FiscalContext,
+  FiscalContextV2,
   Gazette,
 } from '@fiscal-digital/engine'
 
@@ -244,7 +247,7 @@ function toGazette(msg: CollectorMessage): Gazette {
 // Build FiscalContext with real skills injected
 // ---------------------------------------------------------------------------
 
-function buildContext(gazetteId: string): FiscalContext {
+function buildContext(gazetteId: string): FiscalContextV2 {
   // Cached extractor escopado a esta gazette: cache em memória + DynamoDB entities-prod.
   // Eliminação de 3-5x chamadas Bedrock duplicadas dentro do mesmo Lambda invocation,
   // e 100% cache hit em re-análises (UH-22).
@@ -262,6 +265,10 @@ function buildContext(gazetteId: string): FiscalContext {
     // ADR-001 Contratos follow-up — cross-ref valor original em suppliers-prod.
     // Skill consulta DDB Query por pk=SUPPLIER#{cnpj} + filtra contractNumber+cityId.
     querySuppliersContract: input => querySuppliersContract.execute(input),
+    // FiscalFornecedores v2 — GSI2 query injetado no contexto para testabilidade.
+    // Quando feature flag OFF, buildContext ainda inclui a função (custo zero),
+    // mas ela nunca é chamada porque fiscalFornecedores (v1) não conhece este campo.
+    queryConcentracaoGSI2,
   }
 }
 
@@ -280,6 +287,16 @@ async function processRecord(body: string): Promise<void> {
   const enabled = msg.enabledFiscals
   const shouldRun = (id: string): boolean => !enabled || enabled.includes(id)
 
+  // FiscalFornecedores: v2 se feature flag ON, v1 caso contrário.
+  // O check SSM é cacheado em memória (cold start) via isFeatureEnabled,
+  // portanto não adiciona latência a warm invocations.
+  const useFornecedoresV2 = await isFeatureEnabled('enable-fiscal-fornecedores-v2')
+  const activeFornecedor = useFornecedoresV2 ? fiscalFornecedoresV2 : fiscalFornecedores
+
+  if (useFornecedoresV2) {
+    logger.info('FiscalFornecedores v2 ativo (feature flag ON)')
+  }
+
   // Run only enabled Fiscais; allSettled ensures one failure never stops the others
   const [
     licitacoesResult,
@@ -294,7 +311,7 @@ async function processRecord(body: string): Promise<void> {
   ] = await Promise.allSettled([
     shouldRun('fiscal-licitacoes') ? fiscalLicitacoes.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
     shouldRun('fiscal-contratos') ? fiscalContratos.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
-    shouldRun('fiscal-fornecedores') ? fiscalFornecedores.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
+    shouldRun('fiscal-fornecedores') ? activeFornecedor.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
     shouldRun('fiscal-pessoal') ? fiscalPessoal.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
     shouldRun('fiscal-convenios') ? fiscalConvenios.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
     shouldRun('fiscal-nepotismo') ? fiscalNepotismo.analisar({ gazette, cityId, context: ctx }) : Promise.resolve([]),
