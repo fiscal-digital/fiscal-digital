@@ -48,6 +48,18 @@ resource "aws_acm_certificate_validation" "web" {
 
 resource "aws_s3_bucket" "web" {
   bucket = "fiscal-digital-web-prod"
+
+  # P0 2026-06-07 (LRN-20260607-004 + LRN-20260607-005): bucket sofre re-taint
+  # pos falha de apply (cascade circular destruiu policy+PAB 6x no mesmo dia,
+  # site down 30min por 2x). Atributos read-only que provider AWS v6.x reporta
+  # (arn, bucket_domain_name, bucket_region, etc) e drift de tags/encryption
+  # criados manualmente em bootstrap forçam replace em todo plan.
+  # ignore_changes = all desacopla state do drift ate refactor completo do
+  # modulo web (sub-resources separados: tags, encryption, versioning,
+  # public_access_block — pattern provider v5/v6). Tracking: TEC-INFRA-001.
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 resource "aws_s3_bucket_public_access_block" "web" {
