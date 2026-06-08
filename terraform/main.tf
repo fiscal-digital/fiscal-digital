@@ -156,11 +156,12 @@ resource "aws_ssm_parameter" "enable_fiscal_fornecedores_v2" {
 }
 
 # ─── State reconciliation (P0 2026-06-07) ────────────────────────────────────
-# Apply parcial em 2026-06-07 15:57 UTC destruiu aws_s3_bucket_policy.web e
-# aws_s3_bucket_public_access_block.web (recreate plan) mas falhou ao recriar
-# o bucket S3 ("empty result" da AWS API). Resultado: site fiscaldigital.org
-# down (assets 404) por falta de policy OAC. Mitigacao: PUT manual de policy+PAB.
-# Imports abaixo reconciliam state com prod. Remover apos primeiro apply OK.
+# Incidente P0 (LRN-20260607-004) + investigacao 2026-06-07 22:45 UTC:
+# state remoto tinha aws_s3_bucket.web TAINTED (marcado para destroy+recreate
+# em proximo apply) -- por isso 3 deploys consecutivos tentaram "create"
+# bucket que ja existe. Fix: terraform untaint module.web.aws_s3_bucket.web
+# (aplicado localmente em 22:46 UTC). Policy + PAB ficaram fora do state
+# desde apply parcial, importados aqui.
 import {
   to = module.web.aws_s3_bucket_policy.web
   id = "fiscal-digital-web-prod"
