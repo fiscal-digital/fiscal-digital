@@ -33,6 +33,21 @@
  *   node packages/analyzer/scripts/reanalyze.mjs --all --city=4305108       # 1 cidade
  *   node packages/analyzer/scripts/reanalyze.mjs --all --since=2025-12-01
  *   node packages/analyzer/scripts/reanalyze.mjs --fiscal=X --force         # re-roda mesmo já processedBy
+ *
+ * ATENÇÃO — fiscal-licitacoes (BUG-FSC-002): este script enfileira gazettes em
+ * lote via SQS (SendMessageBatchCommand) para a Lambda analyzer real, que
+ * processa mensagens concorrentemente (Promise.allSettled + concorrência do
+ * event source mapping). O dedup de fracionamento por padrão (CNPJ+cidade)
+ * em fiscalLicitacoes SÓ converge para 1 finding quando gazettes do MESMO
+ * CNPJ são analisadas sequencialmente (cada uma precisa ver, via
+ * queryAlertsByCnpj/GSI2, o finding persistido pela anterior — ver
+ * licitacoes.ts Etapa 8 e licitacoes.legal.md). Rodar este script sobre
+ * `fiscal-licitacoes` em volume pode gerar de novo o padrão "1 finding por
+ * gazette" para CNPJs cujas gazettes caiam na mesma janela de concorrência.
+ * Para reanalyze de licitações, preferir `scripts/replay-fiscal.mjs`
+ * (processamento sequencial por cidade, sem SQS) até que um mecanismo de
+ * serialização por CNPJ (ex.: SQS FIFO com MessageGroupId=cnpj) exista aqui —
+ * mudança estrutural, não implementada neste fix.
  */
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
