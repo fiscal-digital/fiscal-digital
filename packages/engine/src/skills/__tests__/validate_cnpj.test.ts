@@ -131,4 +131,68 @@ describe('validateCNPJ', () => {
     const result = await validateCNPJ.execute({ cnpj: '12.345.678/0001-90' })
     expect(result.data.sanctions).toBe(false)
   })
+
+  // ── EVO-024: CNPJ alfanumérico (Lei 14.973/2024) ──────────────────────────
+
+  it('CNPJ alfanumérico: letras são PRESERVADAS na URL (não removidas como /\\D/g removeria)', async () => {
+    mockFetch.mockReturnValue(
+      makeOkResponse({
+        cnpj: '1234ABCD000116',
+        razao_social: 'Empresa Alfanumérica LTDA',
+        situacao_cadastral: 2,
+        data_inicio_atividade: '2026-08-01',
+        qsa: [],
+      }),
+    )
+
+    await validateCNPJ.execute({ cnpj: '12.34A.BCD/0001-16' })
+
+    const calledUrl: string = mockFetch.mock.calls[0][0]
+    const cnpjInPath = calledUrl.split('/').pop()
+    expect(cnpjInPath).toBe('1234ABCD000116')
+  })
+
+  it('CNPJ alfanumérico: letra minúscula na entrada é normalizada para uppercase na URL', async () => {
+    mockFetch.mockReturnValue(
+      makeOkResponse({
+        cnpj: '1234abcd000116',
+        razao_social: 'Empresa Alfanumérica LTDA',
+        situacao_cadastral: 2,
+        data_inicio_atividade: '2026-08-01',
+        qsa: [],
+      }),
+    )
+
+    await validateCNPJ.execute({ cnpj: '1234abcd000116' })
+
+    const calledUrl: string = mockFetch.mock.calls[0][0]
+    expect(calledUrl.split('/').pop()).toBe('1234ABCD000116')
+  })
+
+  it('CNPJ alfanumérico + 404: mesmo comportamento do numérico (nao_encontrado, sem lançar)', async () => {
+    mockFetch.mockReturnValue(makeErrorResponse(404, 'Not Found'))
+
+    const result = await validateCNPJ.execute({ cnpj: '1234ABCD000116' })
+
+    expect(result.data.situacaoCadastral).toBe('nao_encontrado')
+    expect(result.confidence).toBe(0.9)
+  })
+
+  it('CNPJ alfanumérico + erro não mapeado (500): degrada graciosamente em vez de lançar', async () => {
+    mockFetch.mockReturnValue(makeErrorResponse(500, 'Internal Server Error'))
+
+    const result = await validateCNPJ.execute({ cnpj: '1234ABCD000116' })
+
+    expect(result.data.situacaoCadastral).toBe('consulta_indisponivel')
+    expect(result.data.consultaDegradada).toBe(true)
+    expect(result.confidence).toBe(0.2)
+  })
+
+  it('CNPJ numérico legado + erro não mapeado (500): continua lançando (sem regressão)', async () => {
+    mockFetch.mockReturnValue(makeErrorResponse(500, 'Internal Server Error'))
+
+    await expect(
+      validateCNPJ.execute({ cnpj: '12.345.678/0001-90' }),
+    ).rejects.toThrow('BrasilAPI CNPJ 500')
+  })
 })

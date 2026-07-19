@@ -34,7 +34,10 @@ const CONCENTRACAO_LIMITE = 0.40
 const CONTRATO_RE = /\b(?:contrat[oaou]|conven[çc][ãa]o|credenciamento|adesão\s+de\s+ata)\b/i
 const DISPENSA_RE = /dispensa\s+(de\s+)?licita[çc][ãa]o/i
 const PREGAO_RE = /\bpreg[ãa]o\s+(?:eletr[ôo]nico|presencial)/i
-const CNPJ_RE = /\d{2}[.\s]?\d{3}[.\s]?\d{3}[/\s]?\d{4}[-\s]?\d{2}/
+// EVO-024: aceita CNPJ alfanumérico (Lei 14.973/2024) além do numérico legado —
+// gate de excerpt relevante, não regex de captura (extração real é via
+// extractEntities → extractAll do pacote regex).
+const CNPJ_RE = /[A-Z\d]{2}[.\s]?[A-Z\d]{3}[.\s]?[A-Z\d]{3}[/\s]?[A-Z\d]{4}[-\s]?\d{2}/i
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
