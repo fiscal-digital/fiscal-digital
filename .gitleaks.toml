@@ -9,7 +9,14 @@ id = "aws-account-id-arn"
 description = "AWS Account ID em ARN (repo OSS publico)"
 regex = '''arn:aws:[a-z0-9\-]*:[a-z0-9\-]*:[0-9]{12}:'''
 
+# IDs canonicos de mock usados em testes (nao sao contas reais)
+[rules.allowlist]
+regexes = ['''123456789012''', '''000000000000''']
+
 [[rules]]
 id = "aws-account-id-service-url"
 description = "AWS Account ID em URL de servico (SQS/Lambda/execute-api)"
 regex = '''https://[a-z0-9.\-]*amazonaws\.com/[0-9]{12}([/"'\s]|$)'''
+
+[rules.allowlist]
+regexes = ['''123456789012''', '''000000000000''']
