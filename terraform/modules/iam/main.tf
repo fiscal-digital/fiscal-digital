@@ -289,6 +289,21 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "*"
       },
       {
+        # HeadBucket do provider AWS exige s3:ListBucket no bucket alvo.
+        # Este Sid foi perdido no rewrite do cleanup A4 (2026-06-06): sem ele,
+        # o refresh do terraform le o 403 do HeadBucket como "bucket deletado",
+        # o plan tenta recriar o bucket existente e destroi policy + PAB por
+        # replace em cascata; o create trava no waiter (mesmo HeadBucket 403)
+        # e aborta com "empty result", deixando o site sem assets. Causa raiz
+        # dos P0 de 2026-06-07 (LRN-20260607-004) e 2026-07-19
+        # (ERR-20260719-001). Escopado ao bucket web: nao usar o Resource "*"
+        # do Sid acima para acao de List.
+        Sid      = "WebS3BucketRead"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetBucketLocation"]
+        Resource = "arn:aws:s3:::fiscal-digital-web-prod"
+      },
+      {
         # CloudFront OAC management
         Sid    = "WebCloudFrontManage"
         Effect = "Allow"
