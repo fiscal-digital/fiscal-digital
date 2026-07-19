@@ -106,6 +106,15 @@ export interface SupplierProfile {
   cidades: string[]
   sanctions: boolean
   lastUpdated: string
+  /**
+   * true quando a consulta é de um CNPJ alfanumérico (Lei 14.973/2024) e a
+   * fonte externa (ex.: BrasilAPI) recusou a requisição com um erro não
+   * mapeado — sinal de que o backend pode ainda não suportar o novo
+   * formato plenamente. Quando true, `confidence` vem reduzida e o Fiscal
+   * chamador deve tratar o resultado como não confiável para decisão
+   * automática (não publicar finding só com base nele).
+   */
+  consultaDegradada?: boolean
 }
 
 export interface RiskFactor {

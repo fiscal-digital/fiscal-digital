@@ -43,6 +43,31 @@ Múltiplas dispensas para o mesmo CNPJ dentro de uma janela de 12 meses, cuja so
 
 Requer **ao menos 1 dispensa anterior** para o mesmo CNPJ/cidade dentro da janela para emitir alerta.
 
+**Convergência para 1 finding por padrão (BUG-FSC-002 / issue #46, corrigido
+2026-07-19):** o padrão é identificado por `(CNPJ, cidade)`, não por gazette
+individual. Quando uma nova gazette do mesmo CNPJ estende um padrão já detectado, o
+finding de fracionamento **existente** é atualizado (mesma evidência-âncora, soma
+recalculada, `createdAt` original preservado) em vez de um novo finding ser criado —
+evita reemissão a cada gazette (visto em prod: 15 findings para 6 padrões reais,
+inflação ~2,5×, avaliação Ciclo 4). Apenas atos com `temTeto: true` (não enquadrados
+em hipótese sem teto — ver seção "Hipóteses sem teto" abaixo) entram na soma; um
+"Termo de contrato" fundamentado no Art. 75 IX, por exemplo, não é fracionamento
+porque não está sujeito a teto.
+
+**Limite conhecido — não é idempotência garantida sob concorrência.** A convergência
+acima depende de a gazette anterior do mesmo CNPJ já ter sido persistida em
+`alerts-prod` (via GSI2-cnpj-date, eventually consistent) no momento em que a próxima
+é analisada — ou seja, depende de processamento **sequencial por CNPJ**. Isso vale
+para o ciclo diário normal (1 gazette nova por execução). Mas se duas gazettes do
+mesmo CNPJ forem processadas por invocações concorrentes da Lambda analyzer (SQS
+batch/concurrency — típico de reanalyze em massa via
+`packages/analyzer/scripts/reanalyze.mjs`), nenhuma vê o finding da outra a tempo, e
+cada uma ancora na própria gazette, produzindo 2 findings que não se reconciliam
+sozinhos. `scripts/replay-fiscal.mjs` (reanalyze/backfill por cidade do Ciclo 4.1) já
+processa gazettes sequencialmente e satisfaz esse requisito. Resolver o caso
+concorrente de forma geral (ex.: SQS FIFO com `MessageGroupId=cnpj`) é mudança
+estrutural, fora de escopo do BUG-FSC-002.
+
 ---
 
 ## 3. Exemplo que DISPARA o alerta (Padrão A — inciso II)
