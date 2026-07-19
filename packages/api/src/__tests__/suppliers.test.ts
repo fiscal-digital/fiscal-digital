@@ -148,6 +148,24 @@ describe('GET /suppliers/{cnpj} — validação de input', () => {
     expect(mockDdbSend).not.toHaveBeenCalled()
   })
 
+  it('EVO-024: aceita CNPJ alfanumérico (Lei 14.973/2024) — não retorna 400, consulta DDB com pk em UPPERCASE', async () => {
+    mockDdbSend.mockImplementation((cmd: MockCmd) => {
+      if (cmd.__type === 'Get') return Promise.resolve({})
+      if (cmd.__type === 'Query') return Promise.resolve({ Items: [] })
+      return Promise.resolve({})
+    })
+
+    const cnpjPath = encodeURIComponent('12.34a.bcd/0001-16')
+    const res = asResult(await handler(makeEvent(`/suppliers/${cnpjPath}`)))
+
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.cnpjRaw).toBe('1234ABCD000116')
+
+    const getCall = mockDdbSend.mock.calls.find(([cmd]: [MockCmd]) => cmd.__type === 'Get')
+    expect(getCall?.[0].input.Key.pk).toBe('SUPPLIER#1234ABCD000116')
+  })
+
   it('retorna 405 quando método não é GET', async () => {
     const event = makeEvent('/suppliers/12345678000199', 'POST')
     const res = asResult(await handler(event))

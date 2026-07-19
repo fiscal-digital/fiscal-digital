@@ -130,4 +130,17 @@ describe('checkSanctions', () => {
     expect(calledHeaders['User-Agent']).toMatch(/^FiscalDigital\//)
     expect(calledHeaders['User-Agent']).toContain('fiscaldigital.org')
   })
+
+  it('EVO-024: CNPJ alfanumérico tem letras preservadas na query (não removidas como /\\D/g removeria)', async () => {
+    mockFetch
+      .mockReturnValueOnce(makeJsonResponse([]))
+      .mockReturnValueOnce(makeJsonResponse([]))
+
+    await checkSanctions.execute({ cnpj: '12.34A.BCD/0001-16', apiKey: 'test-api-key' })
+
+    const ceisUrl: string = mockFetch.mock.calls[0][0]
+    const cnepUrl: string = mockFetch.mock.calls[1][0]
+    expect(ceisUrl).toContain('cnpjSancionado=1234ABCD000116')
+    expect(cnepUrl).toContain('cnpjSancionado=1234ABCD000116')
+  })
 })
