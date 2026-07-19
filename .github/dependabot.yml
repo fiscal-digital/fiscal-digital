@@ -1,0 +1,36 @@
+# Dependabot rodava sem credencial para o GitHub Packages (scope
+# @fiscal-digital no .npmrc) e abortava toda execucao com "updater
+# encountered an error" — semanas sem vigilancia de deps (2026-07-19).
+# GH Packages npm exige auth ate para leitura de pacote publico.
+# Requer secret de DEPENDABOT (Settings > Secrets > Dependabot):
+#   GH_PACKAGES_TOKEN = PAT classic com escopo read:packages
+version: 2
+
+registries:
+  gh-packages:
+    type: npm-registry
+    url: https://npm.pkg.github.com
+    token: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    registries: "*"
+    groups:
+      aws-sdk:
+        patterns: ["@aws-sdk/*"]
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
