@@ -155,19 +155,25 @@ resource "aws_ssm_parameter" "enable_fiscal_fornecedores_v2" {
   }
 }
 
-# ─── State reconciliation (P0 2026-06-07) ────────────────────────────────────
-# Incidente P0 (LRN-20260607-004) + investigacao 2026-06-07 22:45 UTC:
-# state remoto tinha aws_s3_bucket.web TAINTED (marcado para destroy+recreate
-# em proximo apply) -- por isso 3 deploys consecutivos tentaram "create"
-# bucket que ja existe. Fix: terraform untaint module.web.aws_s3_bucket.web
-# (aplicado localmente em 22:46 UTC). Policy + PAB ficaram fora do state
-# desde apply parcial, importados aqui.
+# ─── State reconciliation (P0 2026-07-19, recorrencia de LRN-20260607-004) ───
+# Causa raiz do ciclo de deploys quebrando o site: aws_s3_bucket.web NUNCA
+# voltou ao state apos o apply parcial de 2026-06-07. O PR #91 importou
+# policy + PAB, mas nao o bucket. Consequencia em todo apply desde entao:
+#   1. import blocks reimportam policy + PAB (que voltaram via mitigacao CLI)
+#   2. plan quer CREATE do bucket (fora do state, mas existente na AWS)
+#   3. policy + PAB dependem do bucket "novo" -> REPLACE (o guard de destroys
+#      so grepa "will be destroyed" e nao pega "must be replaced")
+#   4. destroy de policy + PAB executa em 1s; create do bucket trava no flake
+#      "empty result" e aborta o apply apos ~20min
+#   5. policy + PAB ficam orfaos -> OAC recebe 403 do S3 -> assets 404
+# Fix definitivo: importar o BUCKET. Com ele no state, o plan para de criar
+# o bucket e policy + PAB deixam de ser replaced.
+# Os import blocks de policy + PAB sairam: o apply de 2026-07-19 (run
+# 29685210890) os destruiu e nao existem mais na AWS (import de objeto
+# inexistente falha o plan). O proprio apply os RECRIA como create normal,
+# restaurando o acesso OAC do CloudFront sem mitigacao manual.
+# Remover este import block em PR de cleanup apos deploy verde.
 import {
-  to = module.web.aws_s3_bucket_policy.web
-  id = "fiscal-digital-web-prod"
-}
-
-import {
-  to = module.web.aws_s3_bucket_public_access_block.web
+  to = module.web.aws_s3_bucket.web
   id = "fiscal-digital-web-prod"
 }

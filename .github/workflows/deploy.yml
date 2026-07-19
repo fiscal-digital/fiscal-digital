@@ -76,8 +76,11 @@ jobs:
           )
 
           FAIL=0
+          # "must be replaced" incluido: incidente 2026-07-19 (run 29685210890)
+          # passou pelo guard porque replace (destroy+create) nao casa com
+          # "will be destroyed", e replace destroi do mesmo jeito.
           for pattern in "${CRITICAL_PATTERNS[@]}"; do
-            if grep -E "^  # ${pattern}.*will be destroyed" plan-text.txt; then
+            if grep -E "^  # ${pattern}.*(will be destroyed|must be replaced|will be replaced)" plan-text.txt; then
               echo "::error::Destroy critico detectado: ${pattern}"
               echo "::error::Bypass: commit tag [allow-critical-destroy] no PR e re-rodar"
               FAIL=1
