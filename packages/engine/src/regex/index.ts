@@ -5,7 +5,17 @@
 // então nenhuma captura numérica legada deixa de bater. Flag `i` porque
 // texto de diário pode trazer a letra em minúscula por erro de digitação;
 // `normalizeCNPJ` sempre uppercase o resultado.
-const CNPJ_RE = /[A-Z\d]{2}\.?[A-Z\d]{3}\.?[A-Z\d]{3}\/?[A-Z\d]{4}-?\d{2}/gi
+//
+// `\b` nas duas pontas (revisão adversarial do PR #97): alargar para
+// `[A-Z\d]` sem âncora deixaria o regex casar substrings de 14 caracteres
+// dentro de tokens alfanuméricos maiores e não-relacionados a CNPJ — ex.:
+// chassi `9BWZZZ377VT004251` ou `PORTARIASEQUENCIAL2026` (a cauda
+// `SEQUENCIAL2026` bateria as 14 posições). `\b` exige que o match comece/
+// termine numa fronteira de palavra, então só compara contra tokens
+// isolados — não elimina falsos positivos que sejam eles mesmos um token
+// de 14 caracteres (ex.: `SEI23067000123`, `2026NE00012345`); esses são
+// descartados pelo filtro de dígito verificador em `extractCNPJs`.
+const CNPJ_RE = /\b[A-Z\d]{2}\.?[A-Z\d]{3}\.?[A-Z\d]{3}\/?[A-Z\d]{4}-?\d{2}\b/gi
 const VALUE_RE = /R\$\s*[\d.,]+/g
 const DATE_RE = /\b(\d{2})\/(\d{2})\/(\d{4})\b/g
 const CONTRACT_RE = /(?:Contrato|Convênio|Ata)\s+(?:n[°º.]\s*)?(\d+\/\d{4})/gi
@@ -73,8 +83,15 @@ function parseValue(raw: string): number {
 }
 
 export function extractCNPJs(text: string): string[] {
+  // Revisão adversarial do PR #97 (BLOQUEANTE): o regex alargado para
+  // alfanumérico casa qualquer token de 14 caracteres no formato certo,
+  // inclusive códigos que não são CNPJ (SEI, empenho, chassi/RENAVAM,
+  // portaria concatenada). Filtrar por `isValidCNPJ` (dígito verificador,
+  // módulo 11) antes de retornar evita candidatos falsos que inflariam
+  // chamadas à BrasilAPI/CGU (Camada 2) e poluiriam o cache/DDB com
+  // "fornecedores" que não existem.
   const matches = text.match(CNPJ_RE) ?? []
-  return [...new Set(matches.map(normalizeCNPJ))]
+  return [...new Set(matches.map(normalizeCNPJ))].filter(isValidCNPJ)
 }
 
 export function extractValues(text: string): number[] {

@@ -35,9 +35,12 @@ const CONTRATO_RE = /\b(?:contrat[oaou]|conven[çc][ãa]o|credenciamento|adesão
 const DISPENSA_RE = /dispensa\s+(de\s+)?licita[çc][ãa]o/i
 const PREGAO_RE = /\bpreg[ãa]o\s+(?:eletr[ôo]nico|presencial)/i
 // EVO-024: aceita CNPJ alfanumérico (Lei 14.973/2024) além do numérico legado —
-// gate de excerpt relevante, não regex de captura (extração real é via
-// extractEntities → extractAll do pacote regex).
-const CNPJ_RE = /[A-Z\d]{2}[.\s]?[A-Z\d]{3}[.\s]?[A-Z\d]{3}[/\s]?[A-Z\d]{4}[-\s]?\d{2}/i
+// gate de excerpt relevante, não regex de captura (extração real e o filtro
+// de dígito verificador acontecem via extractEntities → extractAll →
+// extractCNPJs do pacote regex). `\b` nas pontas evita casar substring
+// dentro de token maior (chassi, código de portaria concatenado etc.) —
+// ver revisão adversarial do PR #97.
+const CNPJ_RE = /\b[A-Z\d]{2}[.\s]?[A-Z\d]{3}[.\s]?[A-Z\d]{3}[/\s]?[A-Z\d]{4}[-\s]?\d{2}\b/i
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
