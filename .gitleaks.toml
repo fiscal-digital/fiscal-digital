@@ -1,0 +1,26 @@
+# Gitleaks — regras default + regras custom do projeto.
+# Repo OSS publico: Account ID AWS nunca pode aparecer (LRN-20260428-005).
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "aws-account-id-arn"
+description = "AWS Account ID em ARN (repo OSS publico)"
+regex = '''arn:aws:[a-z0-9\-]*:[a-z0-9\-]*:[0-9]{12}:'''
+
+# IDs canonicos de mock usados em testes (nao sao contas reais).
+# Sintaxe plural [[rules.allowlists]] obrigatoria: a singular [rules.allowlist]
+# foi silenciosamente ignorada na v8.30 (verificado em CI 2026-07-19).
+[[rules.allowlists]]
+regexTarget = "line"
+regexes = ['''123456789012''', '''000000000000''']
+
+[[rules]]
+id = "aws-account-id-service-url"
+description = "AWS Account ID em URL de servico (SQS/Lambda/execute-api)"
+regex = '''https://[a-z0-9.\-]*amazonaws\.com/[0-9]{12}([/"'\s]|$)'''
+
+[[rules.allowlists]]
+regexTarget = "line"
+regexes = ['''123456789012''', '''000000000000''']
