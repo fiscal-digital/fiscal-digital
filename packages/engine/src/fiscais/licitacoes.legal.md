@@ -43,6 +43,16 @@ Múltiplas dispensas para o mesmo CNPJ dentro de uma janela de 12 meses, cuja so
 
 Requer **ao menos 1 dispensa anterior** para o mesmo CNPJ/cidade dentro da janela para emitir alerta.
 
+**1 finding por padrão (BUG-FSC-002 / issue #46, corrigido 2026-07-19):** o padrão é
+identificado por `(CNPJ, cidade)`, não por gazette individual. Quando uma nova gazette
+do mesmo CNPJ estende um padrão já detectado, o finding de fracionamento **existente**
+é atualizado (mesma evidência-âncora, soma recalculada) em vez de um novo finding ser
+criado — evita reemissão a cada gazette (visto em prod: 15 findings para 6 padrões
+reais, inflação ~2,5×, avaliação Ciclo 4). Apenas atos com `temTeto: true` (não
+enquadrados em hipótese sem teto — ver seção "Hipóteses sem teto" abaixo) entram na
+soma; um "Termo de contrato" fundamentado no Art. 75 IX, por exemplo, não é
+fracionamento porque não está sujeito a teto.
+
 ---
 
 ## 3. Exemplo que DISPARA o alerta (Padrão A — inciso II)
