@@ -3,7 +3,7 @@ import { saveMemory } from '../skills/save_memory'
 import { generateNarrative as defaultGenerateNarrative } from '../skills/generate_narrative'
 import { scoreRisk } from '../skills/score_risk'
 import { getPublishThresholds } from '../thresholds'
-import type { Finding, RiskFactor } from '../types'
+import type { Evidence, Finding, RiskFactor } from '../types'
 import { gazetteKey } from '../utils/pdf_cache'
 import { LEI_14133_ART_75_I_LIMITE, LEI_14133_ART_75_II_LIMITE } from './legal-constants'
 import type { Fiscal, AnalisarInput, FiscalContext } from './types'
@@ -163,10 +163,25 @@ export const fiscalLicitacoes: Fiscal = {
       const teto = inciso === 'I' ? LEI_14133_ART_75_I_LIMITE : LEI_14133_ART_75_II_LIMITE
       const legalBasisStr = `Lei 14.133/2021, Art. 75, ${inciso}`
 
+      // BUG-FSC-002 (Correção C): calculado uma vez, usado tanto na Etapa 4
+      // (pular dispensa_irregular se hipótese sem teto) quanto no campo `temTeto`
+      // persistido abaixo (usado para filtrar a soma de fracionamento na Etapa 8).
+      const semTeto = isHipoteseSemTeto(excerpt)
+
       // Para histórico de fracionamento: persistir todas as dispensas (mesmo legais)
       // com actType='dispensa', sem findingType.
       // IMPORTANTE: omitir campos null. Atributos indexados em GSI (cnpj, secretaria)
       // rejeitam NULL — devem estar ausentes ou ser String válida.
+      //
+      // BUG-FSC-002 (Correção A — field name): campo de valor gravado SEMPRE como
+      // `valor` (não `value`). Verificado via `aws dynamodb scan` em
+      // fiscal-digital-alerts-prod (2026-07-19, us-east-1): 572/572 itens DISPENSA#
+      // reais em prod usam `valor`; nenhum usa `value`. `value` é o nome de campo do
+      // tipo `Finding` (achados publicados), não do item de memória DISPENSA#. O
+      // fallback dual-read na Etapa 8 (`item.valor ?? item.value`) é mantido por
+      // segurança apenas para o caso de `historico` conter um objeto Finding (que usa
+      // `value`) em vez de um item DISPENSA# — não porque prod tenha registros
+      // legados com `value`.
       const dispensaItem: Record<string, unknown> = {
         fiscalId: FISCAL_ID,
         cityId,
@@ -176,6 +191,12 @@ export const fiscalLicitacoes: Fiscal = {
         ...(supplier && { supplier }),
         valor,
         inciso,
+        // BUG-FSC-002 (Correção C): marca se este ato está sujeito ao teto do Art. 75
+        // (false = hipótese sem teto, ex. Art. 75 III/IV/VIII/IX/XV — fornecedor
+        // exclusivo, emergência, insumo de saúde, ente público, ciência/tecnologia).
+        // Itens sem este campo (gravados antes deste fix) são tratados como sujeitos
+        // a teto por compatibilidade — corrigido definitivamente via reanalyze.
+        temTeto: !semTeto,
         gazetteUrl: gazette.url,
         gazetteDate: gazette.date,
         createdAt: now.toISOString(),
@@ -187,7 +208,7 @@ export const fiscalLicitacoes: Fiscal = {
       // Etapa 4 — Detecção dispensa irregular
       // ADR-001: pular se o ato cita hipótese sem teto (Art. 75 III/IV/VIII/IX/XV).
       // Ex: emergência sanitária + agulhas hospitalares = legal mesmo acima de R$ 50k.
-      if (valor > teto && !isHipoteseSemTeto(excerpt)) {
+      if (valor > teto && !semTeto) {
         // Etapa 5 — RiskFactors
         const legalBasisCitada =
           (legalBasis?.includes('75') && legalBasis.includes('14.133')) ? 80 : 50
@@ -266,15 +287,30 @@ export const fiscalLicitacoes: Fiscal = {
         // gazette atual. Reanalyze sobre gazette ja processada antes traz
         // DISPENSA#<gazetteKey atual>#... como historico, gerando contagem
         // dobrada (a atual conta como ela mesma + historico). Issue #53.
+        //
+        // BUG-FSC-002 (Correção C): exclui também itens marcados `temTeto: false`
+        // (hipóteses sem teto do Art. 75 III/IV/VIII/IX/XV — ex.: "Termo de contrato"
+        // fundamentado em Art. 75 IX entre entes públicos não é fracionamento, é
+        // dispensa legal sem limite de valor). Itens sem o campo `temTeto` (gravados
+        // antes deste fix) são tratados como sujeitos a teto por compatibilidade —
+        // corrigido definitivamente quando o histórico for reanalisado.
         const dispensasHistorico = historico.filter(f => {
           const item = f as unknown as Record<string, unknown>
           if (f.cityId !== cityId) return false
           if (item.actType !== 'dispensa') return false
           if (item.gazetteUrl === gazette.url) return false
+          if (item.temTeto === false) return false
           return true
         })
 
         // Fracionamento requer pelo menos 1 dispensa anterior para o mesmo CNPJ
+        //
+        // BUG-FSC-002 (Correção A — field mismatch): campo canônico é `valor`, ver
+        // comentário na Etapa 3 (verificado via `aws dynamodb scan` em
+        // fiscal-digital-alerts-prod, 2026-07-19: 572/572 itens DISPENSA# reais usam
+        // `valor`). Fallback `?? item.value` mantido apenas como defesa caso
+        // `historico` contenha um objeto `Finding` (tipo que usa `value`) em vez de
+        // um item DISPENSA# — não corresponde a nenhum registro real conhecido hoje.
         const somaHistorico = dispensasHistorico.reduce((s, f) => {
           const item = f as unknown as { valor?: number; value?: number }
           return s + (item.valor ?? item.value ?? 0)
@@ -330,26 +366,86 @@ export const fiscalLicitacoes: Fiscal = {
             `totalizando R$ ${formatBRL(somaTotal)}, acima do limite legal de R$ ${formatBRL(LEI_14133_ART_75_II_LIMITE)} ` +
             `(Lei 14.133/2021, Art. 75, §1º). O documento aponta possível fracionamento de contrato.`
 
+          // BUG-FSC-002 (Correção B): emissão por PADRÃO (CNPJ + janela), não por
+          // gazette. O pk determinístico do Finding é derivado de
+          // `evidence[0].source` (MIT-ENG-001 — `persistFinding` em
+          // packages/analyzer/src/index.ts: `stableKey = gazetteKey(sourceUrl)`,
+          // `pk = FINDING#{fiscalId}#{cityId}#{type}#{stableKey}`). Antes deste fix,
+          // cada gazette do mesmo CNPJ usava sua própria URL como evidence[0], então
+          // cada uma gerava um pk distinto e o MESMO padrão de fracionamento era
+          // reemitido a cada nova dispensa (15 findings para 6 padrões reais no
+          // Ciclo 4, inflação ~2,5×).
+          //
+          // Fix (sem alterar o esquema de pk global — apenas qual evidência vira
+          // evidence[0] aqui): se já existe um finding `fracionamento` para este
+          // CNPJ+cidade no histórico, reaproveita a evidência ÂNCORA dele (a
+          // primeira gazette que originou o padrão) como evidence[0] do novo
+          // finding. O pk resultante no analyzer é IDÊNTICO ao do finding anterior,
+          // então o `saveMemory` (PUT por pk) ATUALIZA o finding existente em vez de
+          // criar um novo — soma e evidência ficam com o estado mais recente. Sem
+          // padrão anterior, a gazette atual vira a âncora para futuras
+          // atualizações do mesmo padrão.
+          //
+          // Limite conhecido — concorrência: esta convergência depende de o
+          // finding-âncora já estar persistido em `alerts-prod` (via GSI2, que é
+          // eventually consistent) no momento em que `queryAlertsByCnpj` é chamado
+          // para a PRÓXIMA gazette do mesmo CNPJ. No ciclo diário (1 gazette nova
+          // por execução do analyzer, tipicamente 1 dispensa nova por CNPJ), isso
+          // converge. Mas se duas gazettes do MESMO CNPJ forem processadas em
+          // paralelo por duas invocações concorrentes da Lambda analyzer (SQS
+          // batch/concurrency — típico em reanalyze em massa via
+          // packages/analyzer/scripts/reanalyze.mjs), nenhuma das duas vê o
+          // finding da outra a tempo, e cada uma ancora na sua própria gazette →
+          // dois pks distintos que NUNCA se reconciliam sozinhos. Não é
+          // idempotência garantida em qualquer ordem de execução — é convergência
+          // sob processamento SEQUENCIAL por CNPJ. `scripts/replay-fiscal.mjs`
+          // (reanalyze/backfill por cidade do Ciclo 4.1) já processa gazettes
+          // sequencialmente (não usa SQS/Lambda concorrente) e por isso satisfaz
+          // esse requisito — ver comentário em `processCity` nesse arquivo.
+          // Resolver o caso concorrente de forma geral (ex.: FIFO SQS com
+          // MessageGroupId=cnpj) é mudança estrutural, fora de escopo deste fix
+          // (BUG-FSC-002).
+          const existingFracionamento = historico.find(
+            f => f.type === 'fracionamento' && f.cityId === cityId && f.cnpj === cnpj,
+          )
+
+          const currentEvidence: Evidence = { source: gazette.url, excerpt, date: gazette.date }
+          const historicoEvidence = dispensasHistorico.flatMap(f => f.evidence ?? [])
+          const rawEvidenceFrac: Evidence[] = existingFracionamento
+            ? [...existingFracionamento.evidence, ...historicoEvidence, currentEvidence]
+            : [currentEvidence, ...historicoEvidence]
+
+          // Dedup por `source` (URL da gazette) — evita evidence duplicada quando a
+          // mesma gazette aparece tanto na âncora quanto no histórico/atual.
+          const seenSources = new Set<string>()
+          const evidenceFrac = rawEvidenceFrac.filter(e => {
+            if (seenSources.has(e.source)) return false
+            seenSources.add(e.source)
+            return true
+          })
+
+          // Correção 2 (revisão adversarial PR #100): preservar `createdAt` do
+          // padrão já existente (data da PRIMEIRA detecção) em vez de sobrescrever
+          // com `now` a cada atualização. `createdAt` é range key de
+          // GSI2-cnpj-date (e de GSI1 no feed) — trocar o valor a cada gazette
+          // nova faria o finding "pular" para o topo do feed/ordenação como se
+          // fosse recém-detectado, e corromperia a semântica de "detectado em".
+          // Só usa `now` quando não há padrão anterior (1ª emissão).
+          const createdAtFrac = existingFracionamento?.createdAt ?? now.toISOString()
+
           const findingFrac: Finding = {
             fiscalId: FISCAL_ID,
             cityId,
             type: 'fracionamento',
             riskScore: riskScoreFrac,
             confidence: confidenceFrac,
-            evidence: [
-              {
-                source: gazette.url,
-                excerpt,
-                date: gazette.date,
-              },
-              ...dispensasHistorico.flatMap(f => f.evidence ?? []),
-            ],
+            evidence: evidenceFrac,
             narrative: narrativaFrac,
             legalBasis: 'Lei 14.133/2021, Art. 75, §1º',
             cnpj,
             secretaria: secretaria ?? undefined,
             value: somaTotal,
-            createdAt: now.toISOString(),
+            createdAt: createdAtFrac,
           }
 
           findings.push(findingFrac)
