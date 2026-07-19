@@ -15,6 +15,8 @@ import {
   gazetteDispensaBaixoRisco,
   gazetteDispensaReformaEquipamento,
   gazetteDispensaObraFallbackRegex,
+  gazetteFracionamentoContinuacao,
+  gazetteFracionamentoComIsento,
 } from './fixtures'
 
 // ─── Mock helpers ────────────────────────────────────────────────────────────
@@ -461,6 +463,252 @@ describe('fiscalLicitacoes', () => {
 
     const fracionamentos = findings.filter(f => f.type === 'fracionamento')
     expect(fracionamentos).toHaveLength(0)
+  })
+
+  // ── BUG-FSC-002 (issue #46) — regression tests do escopo ampliado (Ciclo 4 / PR #96) ──
+  describe('BUG-FSC-002 — fracionamento: correções A (field mismatch), B (1 finding por padrão), C (soma só dispensas sujeitas a teto)', () => {
+    // Correção B (baseline) — 1 dispensa única, sem histórico → 0 fracionamento
+    it('B0. 1 dispensa única (sem histórico) → 0 fracionamento', async () => {
+      const context = makeContext({
+        extractEntities: makeExtractEntitiesMock({
+          cnpjs: ['40.111.222/0001-55'],
+          values: [80000],
+          legalBasis: 'Lei 14.133/2021, Art. 75, II',
+        }),
+        queryAlertsByCnpj: makeQueryAlertsByCnpjMock([]),
+      })
+
+      const findings = await fiscalLicitacoes.analisar({
+        gazette: gazetteDispensaServicoAcimaTeto,
+        cityId: '4305108',
+        context,
+      })
+
+      expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(1)
+      expect(findings.filter(f => f.type === 'fracionamento')).toHaveLength(0)
+    })
+
+    // Correção A — histórico gravado com o campo legado `value` (sem `valor`) precisa
+    // continuar entrando na soma via fallback documentado, para compatibilidade com
+    // qualquer registro pré-padronização.
+    it('A1. field mismatch: histórico com campo legado `value` (sem `valor`) ainda soma corretamente', async () => {
+      const cnpjLegado = '50.333.444/0001-66'
+
+      const dispensaLegado: Finding[] = [
+        {
+          fiscalId: FISCAL_ID,
+          cityId: '4305108',
+          type: 'dispensa_irregular',
+          riskScore: 0,
+          confidence: 0.85,
+          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=legado', excerpt: 'dispensa legada', date: '2026-01-05' }],
+          narrative: '',
+          legalBasis: 'Lei 14.133/2021, Art. 75, II',
+          cnpj: cnpjLegado,
+          // Simula item histórico gravado ANTES da padronização — só tem `value`, não `valor`.
+          ...(({ actType: 'dispensa', value: 40000 }) as unknown as Record<string, unknown>),
+        },
+      ]
+
+      const context = makeContext({
+        extractEntities: makeExtractEntitiesMock({
+          cnpjs: [cnpjLegado],
+          values: [40000],
+          legalBasis: 'Lei 14.133/2021, Art. 75, II',
+        }),
+        queryAlertsByCnpj: makeQueryAlertsByCnpjMock(dispensaLegado),
+      })
+
+      const findings = await fiscalLicitacoes.analisar({
+        gazette: gazetteDispensaFracionamento,
+        cityId: '4305108',
+        context,
+      })
+
+      const fracionamentos = findings.filter(f => f.type === 'fracionamento')
+      expect(fracionamentos).toHaveLength(1)
+      // 40000 (legado, via fallback `value`) + 40000 (atual) = 80000
+      expect(fracionamentos[0].value).toBe(80000)
+    })
+
+    // Correção C — item histórico isento de teto (Art. 75 IX, contratação entre entes
+    // públicos) NÃO deve entrar na soma de fracionamento, mesmo com actType='dispensa'.
+    it('C1. item histórico isento de teto (Art. 75 IX) fica fora da soma de fracionamento', async () => {
+      const cnpjIsento = '30.222.333/0001-44'
+
+      const historicoMisto: Finding[] = [
+        // Dispensa real sujeita a teto — R$ 30k
+        {
+          fiscalId: FISCAL_ID,
+          cityId: '4305108',
+          type: 'dispensa_irregular',
+          riskScore: 0,
+          confidence: 0.85,
+          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=isento-1', excerpt: 'dispensa real', date: '2026-01-10' }],
+          narrative: '',
+          legalBasis: 'Lei 14.133/2021, Art. 75, II',
+          cnpj: cnpjIsento,
+          ...(({ actType: 'dispensa', valor: 30000, temTeto: true }) as unknown as Record<string, unknown>),
+        },
+        // "Termo de contrato" isento (Art. 75 IX) — não deveria contar na soma,
+        // mesmo com valor alto e actType='dispensa' gravado no item de memória.
+        {
+          fiscalId: FISCAL_ID,
+          cityId: '4305108',
+          type: 'dispensa_irregular',
+          riskScore: 0,
+          confidence: 0.85,
+          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=isento-2', excerpt: 'termo isento Art. 75 IX', date: '2026-01-15' }],
+          narrative: '',
+          legalBasis: 'Lei 14.133/2021, Art. 75, IX',
+          cnpj: cnpjIsento,
+          ...(({ actType: 'dispensa', valor: 23340000, temTeto: false }) as unknown as Record<string, unknown>),
+        },
+      ]
+
+      const context = makeContext({
+        extractEntities: makeExtractEntitiesMock({
+          cnpjs: [cnpjIsento],
+          values: [40000],
+          legalBasis: 'Lei 14.133/2021, Art. 75, II',
+        }),
+        queryAlertsByCnpj: makeQueryAlertsByCnpjMock(historicoMisto),
+      })
+
+      const findings = await fiscalLicitacoes.analisar({
+        gazette: gazetteFracionamentoComIsento,
+        cityId: '4305108',
+        context,
+      })
+
+      const fracionamentos = findings.filter(f => f.type === 'fracionamento')
+      expect(fracionamentos).toHaveLength(1)
+      // Soma deve ser 30000 (real) + 40000 (atual) = 70000 — SEM o item isento de R$ 23,34M.
+      expect(fracionamentos[0].value).toBe(70000)
+    })
+
+    // Correção B — um padrão de fracionamento já existente (finding de gazette anterior)
+    // + nova gazette do mesmo CNPJ deve ATUALIZAR o mesmo padrão (mesma âncora de
+    // evidence[0].source, que determina o pk determinístico MIT-ENG-001 no analyzer),
+    // não criar um segundo finding.
+    it('B1. padrão já existente + nova gazette do mesmo CNPJ → mantém âncora (evidence[0]), soma atualizada, não duplica', async () => {
+      const cnpjPadrao = '60.444.555/0001-77'
+      const anchorSource = 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=frac-anchor'
+
+      const historicoComPadraoExistente: Finding[] = [
+        // 2 dispensas reais que originaram o padrão
+        {
+          fiscalId: FISCAL_ID,
+          cityId: '4305108',
+          type: 'dispensa_irregular',
+          riskScore: 0,
+          confidence: 0.85,
+          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=frac-d1', excerpt: 'dispensa 1', date: '2026-01-10' }],
+          narrative: '',
+          legalBasis: 'Lei 14.133/2021, Art. 75, II',
+          cnpj: cnpjPadrao,
+          ...(({ actType: 'dispensa', valor: 30000 }) as unknown as Record<string, unknown>),
+        },
+        {
+          fiscalId: FISCAL_ID,
+          cityId: '4305108',
+          type: 'dispensa_irregular',
+          riskScore: 0,
+          confidence: 0.85,
+          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=frac-d2', excerpt: 'dispensa 2', date: '2026-02-10' }],
+          narrative: '',
+          legalBasis: 'Lei 14.133/2021, Art. 75, II',
+          cnpj: cnpjPadrao,
+          ...(({ actType: 'dispensa', valor: 30000 }) as unknown as Record<string, unknown>),
+        },
+        // Finding de fracionamento JÁ emitido anteriormente para esse padrão — a
+        // âncora (evidence[0].source) é a que determina o pk no analyzer.
+        {
+          fiscalId: FISCAL_ID,
+          cityId: '4305108',
+          type: 'fracionamento',
+          riskScore: 70,
+          confidence: 0.9,
+          evidence: [{ source: anchorSource, excerpt: 'dispensa 1', date: '2026-01-10' }],
+          narrative: 'Identificamos 2 dispensas...',
+          legalBasis: 'Lei 14.133/2021, Art. 75, §1º',
+          cnpj: cnpjPadrao,
+          value: 60000,
+        },
+      ]
+
+      const context = makeContext({
+        extractEntities: makeExtractEntitiesMock({
+          cnpjs: [cnpjPadrao],
+          values: [20000],
+          legalBasis: 'Lei 14.133/2021, Art. 75, II',
+        }),
+        queryAlertsByCnpj: makeQueryAlertsByCnpjMock(historicoComPadraoExistente),
+      })
+
+      const findings = await fiscalLicitacoes.analisar({
+        gazette: gazetteFracionamentoContinuacao,
+        cityId: '4305108',
+        context,
+      })
+
+      const fracionamentos = findings.filter(f => f.type === 'fracionamento')
+      expect(fracionamentos).toHaveLength(1)
+      // A âncora precisa ser preservada — é ela que fixa o pk determinístico
+      // FINDING#{fiscalId}#{cityId}#{type}#{gazetteKey} no analyzer (MIT-ENG-001).
+      // Sem isso, cada nova gazette geraria um pk novo → duplicata.
+      expect(fracionamentos[0].evidence[0].source).toBe(anchorSource)
+      // Soma atualizada: 30000 + 30000 + 20000 (atual) = 80000
+      expect(fracionamentos[0].value).toBe(80000)
+    })
+
+    // Complemento do B1 — reprocessar a MESMA gazette-âncora (reanalyze) duas vezes
+    // deve produzir o mesmo evidence[0].source em ambas as execuções (idempotência).
+    it('B2. reanalyze da gazette-âncora 2 vezes → evidence[0].source idêntico nas duas execuções (idempotente)', async () => {
+      const cnpjReanalyze2x = '70.555.666/0001-88'
+
+      const dispensaAnterior: Finding[] = [
+        {
+          fiscalId: FISCAL_ID,
+          cityId: '4305108',
+          type: 'dispensa_irregular',
+          riskScore: 0,
+          confidence: 0.85,
+          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=reanalyze2x-d1', excerpt: 'dispensa anterior', date: '2026-01-10' }],
+          narrative: '',
+          legalBasis: 'Lei 14.133/2021, Art. 75, II',
+          cnpj: cnpjReanalyze2x,
+          ...(({ actType: 'dispensa', valor: 40000 }) as unknown as Record<string, unknown>),
+        },
+      ]
+
+      const makeCtx = () => makeContext({
+        extractEntities: makeExtractEntitiesMock({
+          cnpjs: [cnpjReanalyze2x],
+          values: [40000],
+          legalBasis: 'Lei 14.133/2021, Art. 75, II',
+        }),
+        queryAlertsByCnpj: makeQueryAlertsByCnpjMock(dispensaAnterior),
+      })
+
+      const run1 = await fiscalLicitacoes.analisar({
+        gazette: gazetteDispensaFracionamento,
+        cityId: '4305108',
+        context: makeCtx(),
+      })
+      const run2 = await fiscalLicitacoes.analisar({
+        gazette: gazetteDispensaFracionamento,
+        cityId: '4305108',
+        context: makeCtx(),
+      })
+
+      const frac1 = run1.filter(f => f.type === 'fracionamento')
+      const frac2 = run2.filter(f => f.type === 'fracionamento')
+      expect(frac1).toHaveLength(1)
+      expect(frac2).toHaveLength(1)
+      expect(frac2[0].evidence[0].source).toBe(frac1[0].evidence[0].source)
+      expect(frac2[0].evidence[0].source).toBe(gazetteDispensaFracionamento.url)
+    })
   })
 
   // Caso 10 — Linguagem factual: riskScore < 60 → template sem LLM, sem "fraudou", "desviou"
