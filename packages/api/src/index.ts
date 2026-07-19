@@ -957,7 +957,8 @@ interface SupplierContractItem {
 }
 
 function formatCnpj14(cnpj14: string): string {
-  // XX.XXX.XXX/XXXX-XX
+  // XX.XXX.XXX/XXXX-XX — funciona igual para CNPJ alfanumérico (Lei
+  // 14.973/2024): é fatiamento posicional puro, não distingue dígito de letra.
   return `${cnpj14.slice(0, 2)}.${cnpj14.slice(2, 5)}.${cnpj14.slice(5, 8)}/${cnpj14.slice(8, 12)}-${cnpj14.slice(12, 14)}`
 }
 
@@ -972,8 +973,12 @@ async function handleSupplier(
   rawInput: string,
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResultV2> {
-  // Aceita cnpj com máscara (XX.XXX.XXX/XXXX-XX) ou 14 dígitos crus.
-  const cnpj14 = rawInput.replace(/\D/g, '')
+  // Aceita cnpj com máscara (XX.XXX.XXX/XXXX-XX) ou 14 caracteres crus —
+  // numérico legado OU alfanumérico (Lei 14.973/2024: 12 alfanuméricos +
+  // 2 dígitos verificadores). Remove só máscara/espaços e uppercase; NUNCA
+  // /\D/g aqui — destruiria as letras e a pk `SUPPLIER#{cnpj14}` deixaria
+  // de bater com o que `maybeWriteSupplier` (analyzer) gravou.
+  const cnpj14 = rawInput.replace(/[.\-/\s]/g, '').toUpperCase()
   if (cnpj14.length !== 14) {
     return {
       statusCode: 400,
