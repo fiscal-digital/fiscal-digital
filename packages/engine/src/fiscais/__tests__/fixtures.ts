@@ -122,3 +122,29 @@ export const gazetteDispensaObraFallbackRegex: Gazette = {
     'DISPENSA DE LICITAÇÃO n° 042/2026. Objeto: obra de ampliação do Centro Comunitário. Valor: R$ 120.000,00. Base Legal: Lei 14.133/2021, Art. 75, I. Contratada: Construtora Regional LTDA, CNPJ: 11.222.333/0001-44. Secretaria Municipal de Obras.',
   ],
 }
+
+// BUG-FSC-002 — Correção B: 3ª gazette do mesmo CNPJ de um padrão de fracionamento
+// já existente (findings anteriores em outras 2 gazettes). Usada para validar que o
+// finding de fracionamento é ANCORADO (evidence[0] preservado) e não duplicado.
+export const gazetteFracionamentoContinuacao: Gazette = {
+  ...BASE_GAZETTE,
+  id: 'gazette-test-013',
+  url: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=frac-continuacao',
+  date: '2026-04-01',
+  excerpts: [
+    'DISPENSA DE LICITAÇÃO n° 050/2026. Objeto: serviços de transporte escolar. Valor: R$ 20.000,00. Base Legal: Lei 14.133/2021, Art. 75, II. Contratada: Transporte Serrano LTDA, CNPJ: 20.111.222/0001-33. Secretaria Municipal de Educação.',
+  ],
+}
+
+// BUG-FSC-002 — Correção C: dispensa REAL (sujeita a teto) que dispara fracionamento
+// quando somada apenas a itens de histórico igualmente sujeitos a teto (exclui item
+// isento — ex.: Art. 75 IX, contratação entre entes públicos).
+export const gazetteFracionamentoComIsento: Gazette = {
+  ...BASE_GAZETTE,
+  id: 'gazette-test-014',
+  url: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=frac-isento',
+  date: '2026-04-05',
+  excerpts: [
+    'DISPENSA DE LICITAÇÃO n° 051/2026. Objeto: serviços de manutenção predial. Valor: R$ 40.000,00. Base Legal: Lei 14.133/2021, Art. 75, II. Contratada: Manutenções Gerais LTDA, CNPJ: 30.222.333/0001-44. Secretaria Municipal de Administração.',
+  ],
+}

@@ -488,4 +488,38 @@ describe('fiscalFornecedoresV2 — cenários adicionais', () => {
     // GSI2 deve ser chamado apenas 1× mesmo com 2 excerpts da mesma secretaria
     expect(queryMock).toHaveBeenCalledTimes(1)
   })
+
+  it('6e. EVO-024: excerpt com CNPJ alfanumérico (Lei 14.973/2024) passa no gate e aciona extractEntities', async () => {
+    const extractEntitiesMock = makeExtractEntitiesMock({
+      cnpjs: ['12.34A.BCD/0001-16'],
+      values: [48000],
+    })
+    const gazetteAlfanumerico = {
+      ...gazetteContratoFornecedorJovem,
+      excerpts: [
+        'CONTRATO n° 099/2026. Objeto: prestação de serviços de TI. ' +
+        'Valor: R$ 48.000,00. Contratada: Nova Tech Alfa LTDA, CNPJ: 12.34A.BCD/0001-16. ' +
+        'Secretaria Municipal de Administração. Vigência: 12 meses.',
+      ],
+    }
+
+    const context = makeContext({
+      extractEntities: extractEntitiesMock,
+      validateCNPJ: makeValidateCNPJMock({
+        cnpj: '12.34A.BCD/0001-16',
+        dataAbertura: '2025-12-01',
+      }),
+    })
+
+    const findings = await fiscalFornecedoresV2.analisar({
+      gazette: gazetteAlfanumerico,
+      cityId: '4305108',
+      context,
+    })
+
+    expect(extractEntitiesMock.execute).toHaveBeenCalled()
+    const cnpjJovem = findings.filter(f => f.type === 'cnpj_jovem')
+    expect(cnpjJovem).toHaveLength(1)
+    expect(cnpjJovem[0].cnpj).toBe('12.34A.BCD/0001-16')
+  })
 })
