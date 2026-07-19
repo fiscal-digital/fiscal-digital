@@ -205,6 +205,16 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms))
 }
 
+// BUG-FSC-002: o dedup de fracionamento por padrão (CNPJ+cidade) em
+// fiscalLicitacoes (packages/engine/src/fiscais/licitacoes.ts, Etapa 8) só
+// converge para 1 finding quando gazettes do MESMO CNPJ são analisadas
+// SEQUENCIALMENTE — cada gazette precisa ver, via queryAlertsByCnpj, o finding
+// de fracionamento persistido pela gazette anterior. `processCity` abaixo
+// depende de rodar em loop `for await` (não `Promise.all`/`allSettled`) e de
+// `cities` (chamador, no main()) também ser processado sequencialmente — NÃO
+// paralelizar este runner para licitações sem revisar essa garantia. Ver
+// também o comentário equivalente em packages/analyzer/scripts/reanalyze.mjs
+// (que usa SQS + Lambda concorrente e NÃO tem essa garantia).
 async function processCity(fiscal, cityId, filters, opts) {
   let gazettesProcessed = 0
   let findingsGenerated = 0
@@ -327,6 +337,12 @@ async function main() {
     await new Promise(r => setTimeout(r, 3000))
   }
 
+  // Sequencial por cidade também (não Promise.all) — mesmo motivo do comentário
+  // BUG-FSC-002 em processCity(): um CNPJ pode aparecer em mais de uma cidade
+  // é raro, mas paralelizar cidades quebraria a garantia de ordem para
+  // fiscal-licitacoes se algum dia a query de histórico deixar de ser
+  // filtrada por cidade. Manter sequencial preserva a garantia sem custo
+  // relevante (o gargalo real é o throttle Bedrock, não o loop em si).
   const results = []
   for (const cityId of cities) {
     console.log(`\n→ ${cityId}`)

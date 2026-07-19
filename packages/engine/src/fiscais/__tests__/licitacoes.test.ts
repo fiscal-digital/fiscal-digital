@@ -231,7 +231,9 @@ describe('fiscalLicitacoes', () => {
         type: 'dispensa_irregular',
         riskScore: 0,
         confidence: 0.85,
-        evidence: [{ source: 'https://queridodiario.ok.org.br', excerpt: 'dispensa anterior 1', date: '2026-01-10' }],
+        // DISPENSA# real não tem campo `evidence` (ver dispensaItem em
+        // licitacoes.ts — só FINDING# publicados têm). Vazio por fidelidade.
+        evidence: [],
         narrative: '',
         legalBasis: 'Lei 14.133/2021, Art. 75, II',
         cnpj: cnpjFracionamento,
@@ -244,7 +246,7 @@ describe('fiscalLicitacoes', () => {
         type: 'dispensa_irregular',
         riskScore: 0,
         confidence: 0.85,
-        evidence: [{ source: 'https://queridodiario.ok.org.br', excerpt: 'dispensa anterior 2', date: '2026-02-20' }],
+        evidence: [],
         narrative: '',
         legalBasis: 'Lei 14.133/2021, Art. 75, II',
         cnpj: cnpjFracionamento,
@@ -287,7 +289,8 @@ describe('fiscalLicitacoes', () => {
           type: 'dispensa_irregular',
           riskScore: 0,
           confidence: 0.85,
-          evidence: [{ source: item.gazetteUrl as string, excerpt: 'dispensa atual', date: item.gazetteDate as string }],
+          // DISPENSA# real não tem campo `evidence` — vazio por fidelidade.
+          evidence: [],
           narrative: '',
           legalBasis: 'Lei 14.133/2021, Art. 75, II',
           cnpj: item.cnpj as string,
@@ -342,11 +345,9 @@ describe('fiscalLicitacoes', () => {
         type: 'dispensa_irregular',
         riskScore: 0,
         confidence: 0.85,
-        evidence: [{
-          source: gazetteDispensaServicoAcimaTeto.url,
-          excerpt: 'mesma gazette G1 (self-history pos reanalyze)',
-          date: '2026-03-15',
-        }],
+        // DISPENSA# real não tem campo `evidence` — vazio por fidelidade. O
+        // filtro de self-history usa `item.gazetteUrl`, não `evidence[0]`.
+        evidence: [],
         narrative: '',
         legalBasis: 'Lei 14.133/2021, Art. 75, II',
         cnpj: cnpjReanalyze,
@@ -390,11 +391,8 @@ describe('fiscalLicitacoes', () => {
         type: 'dispensa_irregular',
         riskScore: 0,
         confidence: 0.85,
-        evidence: [{
-          source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=outra',
-          excerpt: 'dispensa REAL de gazette anterior',
-          date: '2026-01-10',
-        }],
+        // DISPENSA# real não tem campo `evidence` — vazio por fidelidade.
+        evidence: [],
         narrative: '',
         legalBasis: 'Lei 14.133/2021, Art. 75, II',
         cnpj: cnpjMisto,
@@ -438,7 +436,8 @@ describe('fiscalLicitacoes', () => {
         type: 'dispensa_irregular',
         riskScore: 0,
         confidence: 0.85,
-        evidence: [{ source: 'https://queridodiario.ok.org.br', excerpt: 'dispensa anterior', date: '2026-01-15' }],
+        // DISPENSA# real não tem campo `evidence` — vazio por fidelidade.
+        evidence: [],
         narrative: '',
         legalBasis: 'Lei 14.133/2021, Art. 75, II',
         cnpj: cnpjNaoFracionamento,
@@ -501,7 +500,8 @@ describe('fiscalLicitacoes', () => {
           type: 'dispensa_irregular',
           riskScore: 0,
           confidence: 0.85,
-          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=legado', excerpt: 'dispensa legada', date: '2026-01-05' }],
+          // DISPENSA# real não tem campo `evidence` — vazio por fidelidade.
+          evidence: [],
           narrative: '',
           legalBasis: 'Lei 14.133/2021, Art. 75, II',
           cnpj: cnpjLegado,
@@ -544,7 +544,8 @@ describe('fiscalLicitacoes', () => {
           type: 'dispensa_irregular',
           riskScore: 0,
           confidence: 0.85,
-          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=isento-1', excerpt: 'dispensa real', date: '2026-01-10' }],
+          // DISPENSA# real não tem campo `evidence` — vazio por fidelidade.
+          evidence: [],
           narrative: '',
           legalBasis: 'Lei 14.133/2021, Art. 75, II',
           cnpj: cnpjIsento,
@@ -558,7 +559,7 @@ describe('fiscalLicitacoes', () => {
           type: 'dispensa_irregular',
           riskScore: 0,
           confidence: 0.85,
-          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=isento-2', excerpt: 'termo isento Art. 75 IX', date: '2026-01-15' }],
+          evidence: [],
           narrative: '',
           legalBasis: 'Lei 14.133/2021, Art. 75, IX',
           cnpj: cnpjIsento,
@@ -587,23 +588,27 @@ describe('fiscalLicitacoes', () => {
       expect(fracionamentos[0].value).toBe(70000)
     })
 
-    // Correção B — um padrão de fracionamento já existente (finding de gazette anterior)
-    // + nova gazette do mesmo CNPJ deve ATUALIZAR o mesmo padrão (mesma âncora de
-    // evidence[0].source, que determina o pk determinístico MIT-ENG-001 no analyzer),
-    // não criar um segundo finding.
-    it('B1. padrão já existente + nova gazette do mesmo CNPJ → mantém âncora (evidence[0]), soma atualizada, não duplica', async () => {
+    // Correção B — caminho de UPDATE real: um padrão de fracionamento já existente
+    // (finding de gazette anterior, persistido em prod) + nova gazette do mesmo CNPJ
+    // deve ATUALIZAR o mesmo padrão (mesma âncora de evidence[0].source, que
+    // determina o pk determinístico MIT-ENG-001 no analyzer; e mesmo `createdAt`,
+    // que é a data de detecção original), não criar um segundo finding nem
+    // sobrescrever a data de detecção.
+    it('B1. padrão já existente + nova gazette do mesmo CNPJ → UPDATE (mantém âncora e createdAt, soma atualizada, não duplica)', async () => {
       const cnpjPadrao = '60.444.555/0001-77'
       const anchorSource = 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=frac-anchor'
+      const createdAtOriginal = '2026-02-10T09:00:00.000Z'
 
       const historicoComPadraoExistente: Finding[] = [
-        // 2 dispensas reais que originaram o padrão
+        // 2 dispensas reais que originaram o padrão — DISPENSA# real não tem
+        // campo `evidence` (vazio por fidelidade).
         {
           fiscalId: FISCAL_ID,
           cityId: '4305108',
           type: 'dispensa_irregular',
           riskScore: 0,
           confidence: 0.85,
-          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=frac-d1', excerpt: 'dispensa 1', date: '2026-01-10' }],
+          evidence: [],
           narrative: '',
           legalBasis: 'Lei 14.133/2021, Art. 75, II',
           cnpj: cnpjPadrao,
@@ -615,14 +620,17 @@ describe('fiscalLicitacoes', () => {
           type: 'dispensa_irregular',
           riskScore: 0,
           confidence: 0.85,
-          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=frac-d2', excerpt: 'dispensa 2', date: '2026-02-10' }],
+          evidence: [],
           narrative: '',
           legalBasis: 'Lei 14.133/2021, Art. 75, II',
           cnpj: cnpjPadrao,
           ...(({ actType: 'dispensa', valor: 30000 }) as unknown as Record<string, unknown>),
         },
-        // Finding de fracionamento JÁ emitido anteriormente para esse padrão — a
-        // âncora (evidence[0].source) é a que determina o pk no analyzer.
+        // Finding de fracionamento JÁ emitido anteriormente para esse padrão (este
+        // SIM é um Finding real, persistido via persistFinding — tem `evidence`
+        // e `createdAt`). A âncora (evidence[0].source) é a que determina o pk no
+        // analyzer; `createdAt` é a data de detecção original, que deve sobreviver
+        // à atualização.
         {
           fiscalId: FISCAL_ID,
           cityId: '4305108',
@@ -634,6 +642,7 @@ describe('fiscalLicitacoes', () => {
           legalBasis: 'Lei 14.133/2021, Art. 75, §1º',
           cnpj: cnpjPadrao,
           value: 60000,
+          createdAt: createdAtOriginal,
         },
       ]
 
@@ -644,6 +653,9 @@ describe('fiscalLicitacoes', () => {
           legalBasis: 'Lei 14.133/2021, Art. 75, II',
         }),
         queryAlertsByCnpj: makeQueryAlertsByCnpjMock(historicoComPadraoExistente),
+        // now() representa o momento da NOVA análise — diferente de createdAtOriginal.
+        // Se createdAt não fosse preservado, o finding "pularia" para esta data.
+        now: () => new Date('2026-04-01T12:00:00.000Z'),
       })
 
       const findings = await fiscalLicitacoes.analisar({
@@ -658,13 +670,19 @@ describe('fiscalLicitacoes', () => {
       // FINDING#{fiscalId}#{cityId}#{type}#{gazetteKey} no analyzer (MIT-ENG-001).
       // Sem isso, cada nova gazette geraria um pk novo → duplicata.
       expect(fracionamentos[0].evidence[0].source).toBe(anchorSource)
+      // createdAt preservado — não deve virar `now()` desta análise, senão o
+      // finding "pula" para o topo do feed como se fosse recém-detectado.
+      expect(fracionamentos[0].createdAt).toBe(createdAtOriginal)
       // Soma atualizada: 30000 + 30000 + 20000 (atual) = 80000
       expect(fracionamentos[0].value).toBe(80000)
     })
 
-    // Complemento do B1 — reprocessar a MESMA gazette-âncora (reanalyze) duas vezes
-    // deve produzir o mesmo evidence[0].source em ambas as execuções (idempotência).
-    it('B2. reanalyze da gazette-âncora 2 vezes → evidence[0].source idêntico nas duas execuções (idempotente)', async () => {
+    // Complemento do B1 — reprocessar a MESMA gazette-âncora (reanalyze) duas vezes,
+    // SEQUENCIALMENTE, deve produzir o mesmo evidence[0].source em ambas as
+    // execuções. Convergência garantida só sob processamento sequencial por CNPJ —
+    // ver limite de concorrência documentado em licitacoes.ts (Etapa 8) e
+    // licitacoes.legal.md.
+    it('B2. reanalyze sequencial da gazette-âncora 2 vezes → evidence[0].source idêntico nas duas execuções', async () => {
       const cnpjReanalyze2x = '70.555.666/0001-88'
 
       const dispensaAnterior: Finding[] = [
@@ -674,7 +692,8 @@ describe('fiscalLicitacoes', () => {
           type: 'dispensa_irregular',
           riskScore: 0,
           confidence: 0.85,
-          evidence: [{ source: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=reanalyze2x-d1', excerpt: 'dispensa anterior', date: '2026-01-10' }],
+          // DISPENSA# real não tem campo `evidence` — vazio por fidelidade.
+          evidence: [],
           narrative: '',
           legalBasis: 'Lei 14.133/2021, Art. 75, II',
           cnpj: cnpjReanalyze2x,

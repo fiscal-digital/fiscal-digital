@@ -382,10 +382,29 @@ export const fiscalLicitacoes: Fiscal = {
           // primeira gazette que originou o padrão) como evidence[0] do novo
           // finding. O pk resultante no analyzer é IDÊNTICO ao do finding anterior,
           // então o `saveMemory` (PUT por pk) ATUALIZA o finding existente em vez de
-          // criar um novo — soma e evidência ficam com o estado mais recente, e
-          // reprocessar a mesma gazette (reanalyze) continua idempotente. Sem
+          // criar um novo — soma e evidência ficam com o estado mais recente. Sem
           // padrão anterior, a gazette atual vira a âncora para futuras
           // atualizações do mesmo padrão.
+          //
+          // Limite conhecido — concorrência: esta convergência depende de o
+          // finding-âncora já estar persistido em `alerts-prod` (via GSI2, que é
+          // eventually consistent) no momento em que `queryAlertsByCnpj` é chamado
+          // para a PRÓXIMA gazette do mesmo CNPJ. No ciclo diário (1 gazette nova
+          // por execução do analyzer, tipicamente 1 dispensa nova por CNPJ), isso
+          // converge. Mas se duas gazettes do MESMO CNPJ forem processadas em
+          // paralelo por duas invocações concorrentes da Lambda analyzer (SQS
+          // batch/concurrency — típico em reanalyze em massa via
+          // packages/analyzer/scripts/reanalyze.mjs), nenhuma das duas vê o
+          // finding da outra a tempo, e cada uma ancora na sua própria gazette →
+          // dois pks distintos que NUNCA se reconciliam sozinhos. Não é
+          // idempotência garantida em qualquer ordem de execução — é convergência
+          // sob processamento SEQUENCIAL por CNPJ. `scripts/replay-fiscal.mjs`
+          // (reanalyze/backfill por cidade do Ciclo 4.1) já processa gazettes
+          // sequencialmente (não usa SQS/Lambda concorrente) e por isso satisfaz
+          // esse requisito — ver comentário em `processCity` nesse arquivo.
+          // Resolver o caso concorrente de forma geral (ex.: FIFO SQS com
+          // MessageGroupId=cnpj) é mudança estrutural, fora de escopo deste fix
+          // (BUG-FSC-002).
           const existingFracionamento = historico.find(
             f => f.type === 'fracionamento' && f.cityId === cityId && f.cnpj === cnpj,
           )
@@ -405,6 +424,15 @@ export const fiscalLicitacoes: Fiscal = {
             return true
           })
 
+          // Correção 2 (revisão adversarial PR #100): preservar `createdAt` do
+          // padrão já existente (data da PRIMEIRA detecção) em vez de sobrescrever
+          // com `now` a cada atualização. `createdAt` é range key de
+          // GSI2-cnpj-date (e de GSI1 no feed) — trocar o valor a cada gazette
+          // nova faria o finding "pular" para o topo do feed/ordenação como se
+          // fosse recém-detectado, e corromperia a semântica de "detectado em".
+          // Só usa `now` quando não há padrão anterior (1ª emissão).
+          const createdAtFrac = existingFracionamento?.createdAt ?? now.toISOString()
+
           const findingFrac: Finding = {
             fiscalId: FISCAL_ID,
             cityId,
@@ -417,7 +445,7 @@ export const fiscalLicitacoes: Fiscal = {
             cnpj,
             secretaria: secretaria ?? undefined,
             value: somaTotal,
-            createdAt: now.toISOString(),
+            createdAt: createdAtFrac,
           }
 
           findings.push(findingFrac)
