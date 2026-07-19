@@ -30,7 +30,13 @@ export const checkSanctions: Skill<CheckSanctionsInput, SanctionResult> = {
       return { data: { sanctioned: false, records: [] }, source: CGU_API, confidence: 0.0 }
     }
 
-    const clean = input.cnpj.replace(/\D/g, '')
+    // Preserva letras (CNPJ alfanumérico — Lei 14.973/2024): remove só
+    // máscara/espaços e uppercase. Suporte do Portal da Transparência (CGU)
+    // a CNPJ alfanumérico não foi verificado nesta mudança — fora do escopo
+    // EVO-024, que cobriu apenas BrasilAPI (`validate_cnpj`). Este fix evita
+    // a corrupção do CNPJ antes do envio; não garante que o CEIS/CNEP
+    // encontre o registro.
+    const clean = input.cnpj.replace(/[.\-/\s]/g, '').toUpperCase()
     const headers = { Accept: 'application/json', 'chave-api-dados': input.apiKey, 'User-Agent': USER_AGENT }
 
     const [ceisRes, cnepRes] = await Promise.allSettled([

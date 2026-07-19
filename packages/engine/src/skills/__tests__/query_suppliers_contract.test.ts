@@ -148,6 +148,19 @@ describe('querySuppliersContract', () => {
     expect(call.input.ScanIndexForward).toBe(false)
   })
 
+  it('EVO-024: normaliza CNPJ alfanumérico para UPPERCASE (letras preservadas na pk)', async () => {
+    mockSend.mockResolvedValueOnce({ Items: [] })
+
+    await querySuppliersContract.execute({
+      cnpj: '12.34a.bcd/0001-16',
+      cityId: '4305108',
+      contractNumber: '388/2020',
+    })
+
+    const call = mockSend.mock.calls[0][0]
+    expect(call.input.ExpressionAttributeValues[':pk']).toBe('SUPPLIER#1234ABCD000116')
+  })
+
   it('omite campos opcionais (secretaria/contractType/sourceFindingId) quando ausentes', async () => {
     mockSend.mockResolvedValueOnce({
       Items: [makeItem({ secretaria: undefined, contractType: undefined, sourceFindingId: undefined })],
