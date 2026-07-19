@@ -15,9 +15,14 @@ permissions:
   id-token: write
   contents: read
 
-# Mesmo grupo do plan.yml: serializa acesso ao state remoto (LRN-20260510-003).
+# Grupo PROPRIO (nao compartilhar com plan.yml): no GitHub so 1 run fica
+# pendente por grupo e o mais antigo pendente e CANCELADO quando outro entra.
+# Compartilhar grupo com os plans de PR poderia cancelar um deploy da main
+# silenciosamente (observado em 2026-07-19 com plan de PR cancelado).
+# Deploys serializam entre si; contencao deploy x plan pelo state lock e
+# rara e o plan de PR falha visivel + re-run.
 concurrency:
-  group: terraform-state-prod
+  group: deploy-prod
   cancel-in-progress: false
 
 jobs:
