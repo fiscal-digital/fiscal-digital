@@ -155,19 +155,18 @@ resource "aws_ssm_parameter" "enable_fiscal_fornecedores_v2" {
   }
 }
 
-# ─── State reconciliation (P0 2026-06-07) ────────────────────────────────────
-# Incidente P0 (LRN-20260607-004) + investigacao 2026-06-07 22:45 UTC:
-# state remoto tinha aws_s3_bucket.web TAINTED (marcado para destroy+recreate
-# em proximo apply) -- por isso 3 deploys consecutivos tentaram "create"
-# bucket que ja existe. Fix: terraform untaint module.web.aws_s3_bucket.web
-# (aplicado localmente em 22:46 UTC). Policy + PAB ficaram fora do state
-# desde apply parcial, importados aqui.
+# ─── State reconciliation (P0 2026-07-19, ERR-20260719-001) ─────────────────
+# Causa raiz REAL dos P0 de 2026-06-07 e 2026-07-19: o Sid WebS3BucketRead
+# (s3:ListBucket no bucket web) foi perdido no cleanup A4 de 2026-06-06.
+# HeadBucket exige s3:ListBucket; o refresh lia 403 como "bucket deletado",
+# o plan tentava recriar o bucket existente e destruia policy + PAB por
+# replace. Fix na policy da role CI (modules/iam/main.tf, Sid WebS3BucketRead).
+# Os import blocks de policy + PAB (PR #91) sairam: o apply de 2026-07-19
+# (run 29685210890) os destruiu na AWS e import de objeto inexistente falha
+# o plan. O apply os recria como create normal, restaurando o acesso OAC.
+# O import do bucket abaixo e defesa em profundidade: no-op enquanto o bucket
+# estiver no state; se algum dia sair, reimporta em vez de recriar em cascata.
 import {
-  to = module.web.aws_s3_bucket_policy.web
-  id = "fiscal-digital-web-prod"
-}
-
-import {
-  to = module.web.aws_s3_bucket_public_access_block.web
+  to = module.web.aws_s3_bucket.web
   id = "fiscal-digital-web-prod"
 }
