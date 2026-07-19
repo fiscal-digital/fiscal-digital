@@ -3,14 +3,29 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # Commits sem artefato deployavel nao disparam pipeline (incidente
+    # 2026-07-19: commit de skills rodou apply completo em prod).
+    paths-ignore:
+      - "docs/**"
+      - ".claude/**"
+      - ".mcp.json"
+      - "**.md"
 
 permissions:
   id-token: write
   contents: read
 
+# Mesmo grupo do plan.yml: serializa acesso ao state remoto (LRN-20260510-003).
+concurrency:
+  group: terraform-state-prod
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Waiter de S3/CloudFront preso nao pode segurar runner por horas
+    # (2026-07-19: apply ficou 21min num waiter que nunca passaria).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
