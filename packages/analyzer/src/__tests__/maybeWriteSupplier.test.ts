@@ -317,6 +317,19 @@ test('flag ON + cnpj não-numérico ("abc") → no-op', async () => {
   expect(supplierWrites()).toHaveLength(0)
 })
 
+test('EVO-024: flag ON + cnpj alfanumérico (Lei 14.973/2024) com máscara → pk grava letras em UPPERCASE (não corrompe como /\\D/g faria)', async () => {
+  mockIsFeatureEnabled.mockResolvedValue(true)
+  const finding = makeFinding({ cnpj: '12.34a.bcd/0001-16' })
+  mockAnalisarLicitacoes.mockResolvedValue([finding])
+
+  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
+
+  const writes = supplierWrites()
+  expect(writes).toHaveLength(1)
+  expect(writes[0].pk).toBe('SUPPLIER#1234ABCD000116')
+  expect(writes[0].item.cnpj).toBe('1234ABCD000116')
+})
+
 test('flag ON + finding sem secretaria → item gravado SEM atributo secretariaCityKey (LRN-20260502-019)', async () => {
   mockIsFeatureEnabled.mockResolvedValue(true)
   mockAnalisarLicitacoes.mockResolvedValue([makeFinding({ secretaria: undefined })])

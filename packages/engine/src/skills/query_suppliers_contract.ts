@@ -43,7 +43,11 @@ export interface SupplierContractRecord {
 const TABLE_DEFAULT = 'fiscal-digital-suppliers-prod'
 
 function normalizeCnpj(cnpj: string): string {
-  return cnpj.replace(/[.\-/]/g, '')
+  // Uppercase garante que a pk `SUPPLIER#{cnpj}` bate com o que
+  // `maybeWriteSupplier` (analyzer) grava para CNPJ alfanumérico
+  // (Lei 14.973/2024) — letras já eram preservadas aqui (só `.`, `-`, `/`
+  // eram removidos), faltava só normalizar o case.
+  return cnpj.replace(/[.\-/]/g, '').toUpperCase()
 }
 
 function normalizeContractNumber(num: string): string {
