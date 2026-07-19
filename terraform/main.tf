@@ -155,24 +155,17 @@ resource "aws_ssm_parameter" "enable_fiscal_fornecedores_v2" {
   }
 }
 
-# ─── State reconciliation (P0 2026-07-19, recorrencia de LRN-20260607-004) ───
-# Causa raiz do ciclo de deploys quebrando o site: aws_s3_bucket.web NUNCA
-# voltou ao state apos o apply parcial de 2026-06-07. O PR #91 importou
-# policy + PAB, mas nao o bucket. Consequencia em todo apply desde entao:
-#   1. import blocks reimportam policy + PAB (que voltaram via mitigacao CLI)
-#   2. plan quer CREATE do bucket (fora do state, mas existente na AWS)
-#   3. policy + PAB dependem do bucket "novo" -> REPLACE (o guard de destroys
-#      so grepa "will be destroyed" e nao pega "must be replaced")
-#   4. destroy de policy + PAB executa em 1s; create do bucket trava no flake
-#      "empty result" e aborta o apply apos ~20min
-#   5. policy + PAB ficam orfaos -> OAC recebe 403 do S3 -> assets 404
-# Fix definitivo: importar o BUCKET. Com ele no state, o plan para de criar
-# o bucket e policy + PAB deixam de ser replaced.
-# Os import blocks de policy + PAB sairam: o apply de 2026-07-19 (run
-# 29685210890) os destruiu e nao existem mais na AWS (import de objeto
-# inexistente falha o plan). O proprio apply os RECRIA como create normal,
-# restaurando o acesso OAC do CloudFront sem mitigacao manual.
-# Remover este import block em PR de cleanup apos deploy verde.
+# ─── State reconciliation (P0 2026-07-19, ERR-20260719-001) ─────────────────
+# Causa raiz REAL dos P0 de 2026-06-07 e 2026-07-19: o Sid WebS3BucketRead
+# (s3:ListBucket no bucket web) foi perdido no cleanup A4 de 2026-06-06.
+# HeadBucket exige s3:ListBucket; o refresh lia 403 como "bucket deletado",
+# o plan tentava recriar o bucket existente e destruia policy + PAB por
+# replace. Fix na policy da role CI (modules/iam/main.tf, Sid WebS3BucketRead).
+# Os import blocks de policy + PAB (PR #91) sairam: o apply de 2026-07-19
+# (run 29685210890) os destruiu na AWS e import de objeto inexistente falha
+# o plan. O apply os recria como create normal, restaurando o acesso OAC.
+# O import do bucket abaixo e defesa em profundidade: no-op enquanto o bucket
+# estiver no state; se algum dia sair, reimporta em vez de recriar em cascata.
 import {
   to = module.web.aws_s3_bucket.web
   id = "fiscal-digital-web-prod"
