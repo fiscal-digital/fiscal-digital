@@ -161,9 +161,11 @@ const SUPPLIERS_TABLE = process.env.SUPPLIERS_TABLE ?? 'fiscal-digital-suppliers
 async function maybeWriteSupplier(finding: Finding, createdAt: string): Promise<void> {
   if (!finding.cnpj) return
   // Normaliza CNPJ removendo máscara — alinha write com leitura da
-  // `querySuppliersContract` (que também normaliza com `replace(/\D/g, '')`).
-  // Sem isso, writes ficavam órfãos: pk gravado com máscara, leitura com 14 dígitos.
-  const cnpjN = finding.cnpj.replace(/\D/g, '')
+  // `querySuppliersContract`. EVO-024: CNPJ alfanumérico (Lei 14.973/2024)
+  // tem letras nas 12 primeiras posições — usar /\D/g aqui destruiria esses
+  // caracteres e corromperia a pk. Remove só máscara/espaços e uppercase;
+  // o comprimento continua 14 (numérico ou alfanumérico).
+  const cnpjN = finding.cnpj.replace(/[.\-/\s]/g, '').toUpperCase()
   if (cnpjN.length !== 14) return
   if (!(await isFeatureEnabled('enable-supplier-write'))) return
   try {

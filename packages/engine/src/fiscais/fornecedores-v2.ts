@@ -67,7 +67,13 @@ const GSI2_NAME = 'GSI2_ConcentracaoSecretaria'
 const CONTRATO_RE = /\b(?:contrat[oaou]|conven[çc][ãa]o|credenciamento|adesão\s+de\s+ata)\b/i
 const DISPENSA_RE = /dispensa\s+(de\s+)?licita[çc][ãa]o/i
 const PREGAO_RE = /\bpreg[ãa]o\s+(?:eletr[ôo]nico|presencial)/i
-const CNPJ_RE = /\d{2}[.\s]?\d{3}[.\s]?\d{3}[/\s]?\d{4}[-\s]?\d{2}/
+// EVO-024: aceita CNPJ alfanumérico (Lei 14.973/2024) além do numérico legado —
+// gate de excerpt relevante, não regex de captura (extração real e o filtro
+// de dígito verificador acontecem via extractEntities → extractAll →
+// extractCNPJs do pacote regex). `\b` nas pontas evita casar substring
+// dentro de token maior (chassi, código de portaria concatenado etc.) —
+// ver revisão adversarial do PR #97.
+const CNPJ_RE = /\b[A-Z\d]{2}[.\s]?[A-Z\d]{3}[.\s]?[A-Z\d]{3}[/\s]?[A-Z\d]{4}[-\s]?\d{2}\b/i
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
