@@ -17,11 +17,11 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "fiscal-digital-terraform-state"
-    key            = "prod/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "fiscal-digital-terraform-lock"
-    encrypt        = true
+    bucket       = "fiscal-digital-terraform-state"
+    key          = "prod/terraform.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true # lock nativo S3; dynamodb_table deprecated
+    encrypt      = true
   }
 }
 
