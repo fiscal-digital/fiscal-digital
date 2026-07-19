@@ -87,3 +87,7 @@ packages/engine/src/brand/
 # ─── Backfill / migration artifacts ─────────────────────────────
 backfill-errors.jsonl
 backfill.log
+
+# Gemini image MCP (dev) — imagens geradas e config local com segredo
+/output/
+.claude/settings.local.json
