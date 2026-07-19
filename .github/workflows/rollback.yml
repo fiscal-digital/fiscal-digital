@@ -1,0 +1,53 @@
+name: Rollback Lambdas
+
+# Reponta o alias `prod` de cada Lambda para a versao anterior (N-1).
+# Uso: Actions > Rollback Lambdas > Run workflow. Deploy ruim de engine
+# vira incidente de ~2 minutos em vez de investigacao + redeploy completo.
+# O rollback e de CODIGO apenas; mudancas de infra exigem revert + deploy.
+
+on:
+  workflow_dispatch:
+    inputs:
+      functions:
+        description: 'Pacotes (CSV) ou "all": analyzer,publisher,api,costs'
+        required: true
+        default: 'all'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Rollback aliases para versao N-1
+        run: |
+          set -e
+          FUNCS="${{ inputs.functions }}"
+          [ "$FUNCS" = "all" ] && FUNCS="analyzer,publisher,api,costs"
+
+          for pkg in ${FUNCS//,/ }; do
+            FN="fiscal-digital-${pkg}-prod"
+            CUR=$(aws lambda get-alias --function-name "$FN" --name prod \
+              --query FunctionVersion --output text --no-cli-pager)
+
+            if ! [[ "$CUR" =~ ^[0-9]+$ ]] || [ "$CUR" -le 1 ]; then
+              echo "::error::$FN: alias prod na versao '$CUR', sem versao anterior para rollback"
+              exit 1
+            fi
+
+            PREV=$((CUR - 1))
+            aws lambda update-alias --function-name "$FN" --name prod \
+              --function-version "$PREV" --no-cli-pager > /dev/null
+            echo "$FN: alias prod $CUR -> $PREV"
+          done
+
+          echo "Rollback concluido. Proximo deploy na main volta a publicar versao nova."

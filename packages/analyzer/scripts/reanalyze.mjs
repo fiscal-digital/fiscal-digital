@@ -52,11 +52,18 @@
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs'
+import { SQSClient, SendMessageBatchCommand, GetQueueUrlCommand } from '@aws-sdk/client-sqs'
 
 const REGION = 'us-east-1'
 const GAZETTES_TABLE = 'fiscal-digital-gazettes-prod'
-const GAZETTES_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/664905858073/fiscal-digital-gazettes-queue-prod'
+// URL resolvida em runtime: repo OSS publico nao pode hardcodar account ID (LRN-20260428-005)
+const GAZETTES_QUEUE_URL =
+  process.env.GAZETTES_QUEUE_URL ??
+  (
+    await new SQSClient({ region: REGION }).send(
+      new GetQueueUrlCommand({ QueueName: 'fiscal-digital-gazettes-queue-prod' }),
+    )
+  ).QueueUrl
 const QD_API = 'https://api.queridodiario.ok.org.br'
 const QD_RATE_DELAY_MS = 1100
 const SQS_BATCH_SIZE = 10

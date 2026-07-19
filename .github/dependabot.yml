@@ -1,0 +1,28 @@
+# Updates semanais agrupados (reduz ruido de PR) + vigilancia de Actions.
+# Nota 2026-07-19: a causa das falhas em serie do updater era o lockfile
+# dessincronizado com js-yaml vulneravel pinado (ver PR #104), nao auth de
+# registry: @fiscal-digital/engine resolve como workspace local e nenhuma
+# chamada ao npm.pkg.github.com acontece nos jobs do Dependabot.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    groups:
+      aws-sdk:
+        patterns: ["@aws-sdk/*"]
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo

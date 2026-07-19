@@ -3,14 +3,37 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # Commits sem artefato deployavel nao disparam pipeline (incidente
+    # 2026-07-19: commit de skills rodou apply completo em prod).
+    paths-ignore:
+      - "docs/**"
+      - ".claude/**"
+      - ".mcp.json"
+      - "**.md"
 
 permissions:
   id-token: write
   contents: read
 
+# Grupo PROPRIO (nao compartilhar com plan.yml): no GitHub so 1 run fica
+# pendente por grupo e o mais antigo pendente e CANCELADO quando outro entra.
+# Compartilhar grupo com os plans de PR poderia cancelar um deploy da main
+# silenciosamente (observado em 2026-07-19 com plan de PR cancelado).
+# Deploys serializam entre si; contencao deploy x plan pelo state lock e
+# rara e o plan de PR falha visivel + re-run.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Deploy em prod exige approval manual (environment criado 2026-07-19,
+    # item 1 do briefing pos-P0 de junho). Aprovar na aba Actions do run.
+    environment: production
+    # Waiter de S3/CloudFront preso nao pode segurar runner por horas
+    # (2026-07-19: apply ficou 21min num waiter que nunca passaria).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
