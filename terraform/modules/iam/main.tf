@@ -298,9 +298,16 @@ resource "aws_iam_role_policy" "github_actions" {
         # dos P0 de 2026-06-07 (LRN-20260607-004) e 2026-07-19
         # (ERR-20260719-001). Escopado ao bucket web: nao usar o Resource "*"
         # do Sid acima para acao de List.
-        Sid      = "WebS3BucketRead"
-        Effect   = "Allow"
-        Action   = ["s3:ListBucket", "s3:GetBucketLocation"]
+        # Tagging incluido pos-incidente: o 1o apply apos restaurar ListBucket
+        # (run 29693957754) criou o bucket e falhou em PutBucketTagging
+        # (provider aplica default_tags no create). Sem estas acoes, qualquer
+        # create/replace legitimo do bucket aborta com o bucket tainted.
+        Sid    = "WebS3BucketRead"
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket", "s3:GetBucketLocation",
+          "s3:PutBucketTagging", "s3:DeleteBucketTagging",
+        ]
         Resource = "arn:aws:s3:::fiscal-digital-web-prod"
       },
       {
