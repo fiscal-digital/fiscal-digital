@@ -68,23 +68,25 @@ jobs:
         run: npm test
 
       # ─── Pipeline de infra (precisa de secrets) ──────────────────────────
-      # Steps abaixo NAO rodam em PR de fork: secrets nao sao expostos a
-      # forks por design de seguranca do GitHub Actions. PR de fork passa
-      # com lint + test (acima); pipeline terraform fica para PR interno.
-      # Ver LRN-20260523-003.
+      # Steps abaixo NAO rodam em PR de fork nem de Dependabot: secrets nao
+      # sao expostos a forks por design de seguranca do GitHub Actions, e
+      # runs disparados pelo Dependabot recebem apenas Dependabot secrets
+      # (AWS_ROLE_ARN vazio -> "Credentials could not be loaded"). Ambos
+      # passam com lint + test (acima); pipeline terraform fica para PR
+      # interno de autor humano. Ver LRN-20260523-003.
       - name: Configure AWS credentials (OIDC)
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: Setup Terraform
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         uses: hashicorp/setup-terraform@v4
 
       - name: Cache Terraform plugins
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         uses: actions/cache@v6
         with:
           path: ~/.terraform.d/plugin-cache
@@ -93,41 +95,41 @@ jobs:
             tf-plugins-${{ runner.os }}-
 
       - name: Configure Terraform plugin cache
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         run: |
           mkdir -p ~/.terraform.d/plugin-cache
           echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' >> ~/.terraformrc
 
       - name: Terraform fmt check
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         working-directory: terraform
         run: terraform fmt -check -recursive
 
       - name: Terraform Init
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         working-directory: terraform
         run: terraform init
 
       - name: Terraform Validate
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         working-directory: terraform
         run: terraform validate
 
       - name: Setup tflint
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         uses: terraform-linters/setup-tflint@v6
         with:
           tflint_version: latest
 
       - name: Run tflint
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         working-directory: terraform
         run: |
           tflint --init
           tflint --recursive --format=compact --minimum-failure-severity=error
 
       - name: Setup Python (for checkov)
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -135,11 +137,11 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Install checkov
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         run: pip install -r requirements.txt
 
       - name: Run checkov
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         # TODO: revisar e endereçar checks pulados em PR de hardening de infra.
         # Lista atual reflete o estado de prod ao introduzir o gate (PR #1).
         # Resources afetados: gazettes-cache (S3+CF), iam roles, lambdas.
@@ -152,12 +154,12 @@ jobs:
             --skip-check CKV_AWS_18,CKV_AWS_21,CKV_AWS_28,CKV_AWS_50,CKV_AWS_68,CKV_AWS_86,CKV_AWS_115,CKV_AWS_116,CKV_AWS_117,CKV_AWS_144,CKV_AWS_145,CKV_AWS_158,CKV_AWS_173,CKV_AWS_258,CKV_AWS_259,CKV_AWS_272,CKV_AWS_289,CKV_AWS_290,CKV_AWS_300,CKV_AWS_305,CKV_AWS_310,CKV_AWS_338,CKV_AWS_355,CKV_AWS_374,CKV2_AWS_32,CKV2_AWS_34,CKV2_AWS_47,CKV2_AWS_57,CKV2_AWS_61,CKV2_AWS_62,CKV2_AWS_64,CKV2_AWS_67,CKV2_AWS_75
 
       - name: AWS quota check (LRN-20260503-020)
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         run: node scripts/aws-quota-check.mjs
 
       - name: Terraform Plan
         id: plan
-        if: github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         working-directory: terraform
         run: |
           set -o pipefail
@@ -169,7 +171,7 @@ jobs:
           echo "exitcode=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
       - name: Upload plan artifact
-        if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         uses: actions/upload-artifact@v7
         with:
           name: tfplan
@@ -177,7 +179,7 @@ jobs:
           retention-days: 7
 
       - name: Comment Plan on PR
-        if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         uses: actions/github-script@v9
         env:
           PLAN_PATH: terraform/plan.txt
@@ -221,7 +223,7 @@ jobs:
             }
 
       - name: Fail if plan errored
-        if: github.event.pull_request.head.repo.full_name == github.repository && steps.plan.outputs.exitcode != '0'
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && steps.plan.outputs.exitcode != '0'
         run: |
           echo "Terraform plan failed (exit=${{ steps.plan.outputs.exitcode }})"
           exit 1
