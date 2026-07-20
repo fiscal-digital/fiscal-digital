@@ -9,16 +9,24 @@
  * (utils/dynamodb.ts), que precisa de `marshallOptions.removeUndefinedValues`.
  */
 
-import { CreateTableCommand } from '@aws-sdk/client-dynamodb'
+import { CreateTableCommand, DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { getItem, putItem } from '../../utils/dynamodb'
-import { dropTable, isIntegrationEnabled, makeRawClient } from './ddb-helpers'
+import { dropTable, isIntegrationEnabled } from './ddb-helpers'
 
 const TABLE = 'fiscal-digital-entities-test'
 
 const describeFn = isIntegrationEnabled() ? describe : describe.skip
 
 describeFn('integration: putItem com undefined aninhado (cache save failed)', () => {
-  const raw = makeRawClient()
+  // NÃO usar makeRawClient (credenciais 'dummy'): o DDB Local sem -sharedDb
+  // particiona tabelas por accessKeyId+region. Como o teste exercita o
+  // docClient de produção (utils/dynamodb, credenciais 'local' sob
+  // DDB_ENDPOINT), a tabela precisa ser criada no mesmo namespace.
+  const raw = new DynamoDBClient({
+    region: process.env.AWS_REGION ?? 'us-east-1',
+    endpoint: process.env.DDB_ENDPOINT,
+    credentials: { accessKeyId: 'local', secretAccessKey: 'local' },
+  })
 
   beforeAll(async () => {
     await dropTable(raw, TABLE)
