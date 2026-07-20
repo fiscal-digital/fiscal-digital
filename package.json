@@ -14,7 +14,7 @@
     "lint": "eslint packages"
   },
   "devDependencies": {
-    "eslint": "^9.18.0",
+    "eslint": "^10.7.0",
     "typescript-eslint": "^8.20.0"
   },
   "overrides": {

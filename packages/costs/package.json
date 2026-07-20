@@ -20,10 +20,10 @@
   "devDependencies": {
     "@types/aws-lambda": "^8.0.0",
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.1.1",
     "esbuild": "^0.28.1",
     "jest": "^30.0.0",
     "ts-jest": "^29.4.0",
-    "typescript": "^6.0.0"
+    "typescript": "^7.0.2"
   }
 }
