@@ -15,7 +15,13 @@ const raw = new DynamoDBClient({
       }
     : {}),
 })
-export const docClient = DynamoDBDocumentClient.from(raw)
+// removeUndefinedValues: entidades extraídas por LLM têm campos opcionais
+// undefined em maps aninhados (ex: entities.cnpj) — sem esta opção o marshaller
+// lança e o cache de extração nunca é salvo (toda reanálise paga Bedrock de novo).
+// Não afeta LRN-019: GSI keys continuam omitidas, nunca null.
+export const docClient = DynamoDBDocumentClient.from(raw, {
+  marshallOptions: { removeUndefinedValues: true },
+})
 
 export async function getItem(
   table: string,
