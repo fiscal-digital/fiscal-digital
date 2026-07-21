@@ -148,3 +148,19 @@ export const gazetteFracionamentoComIsento: Gazette = {
     'DISPENSA DE LICITAÇÃO n° 051/2026. Objeto: serviços de manutenção predial. Valor: R$ 40.000,00. Base Legal: Lei 14.133/2021, Art. 75, II. Contratada: Manutenções Gerais LTDA, CNPJ: 30.222.333/0001-44. Secretaria Municipal de Administração.',
   ],
 }
+
+// BUG-FSC-002 Correção C2: o ATO ATUAL é hipótese sem teto (Art. 75, inciso IX —
+// contratação de ente público, caso real CODECA/Caxias). Não pode iniciar nem
+// compor fracionamento, ainda que exista histórico de dispensas do mesmo CNPJ.
+export const gazetteAtoAtualIsentoComHistorico: Gazette = {
+  ...BASE_GAZETTE,
+  id: 'gazette-test-015',
+  url: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=ato-atual-isento',
+  date: '2026-04-12',
+  excerpts: [
+    'TERMO DE CONTRATO n° 09/2026. Objeto: manutenção de áreas públicas urbanas. ' +
+    'Contratada: Companhia de Desenvolvimento Municipal, CNPJ: 88.113.477/0001-24. ' +
+    'Valor: R$ 23.340.057,06. Fundamento: Lei 14.133/2021, Art. 75, inciso IX ' +
+    '(contratação entre entes da administração pública). Secretaria de Serviços Urbanos.',
+  ],
+}
