@@ -62,6 +62,7 @@ module "monitoring" {
   alerts_dlq_name     = module.sqs.alerts_dlq_name
   gazettes_queue_name = module.sqs.gazettes_queue_name
   alert_email         = var.alert_email
+  kms_key_arn         = module.kms.key_arn
 }
 
 module "web" {

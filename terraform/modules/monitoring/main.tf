@@ -23,6 +23,9 @@ resource "aws_cloudwatch_log_group" "api" {
 
 resource "aws_sns_topic" "ops_alerts" {
   name = "fiscal-digital-ops-alerts-prod"
+  # CMK do projeto (CKV_AWS_26); a key policy autoriza cloudwatch.amazonaws.com,
+  # sem isso o publish do alarme falha silenciosamente.
+  kms_master_key_id = var.kms_key_arn
 }
 
 resource "aws_sns_topic_subscription" "ops_alerts_email" {
