@@ -17,6 +17,20 @@ resource "aws_cloudwatch_log_group" "api" {
   retention_in_days = 30
 }
 
+# ── SNS — destino dos alarmes ─────────────────────────────────────────────────
+# Diagnóstico 2026-07-20: os 4 alarmes existiam sem alarm_actions — disparavam
+# para ninguém (a coleta ficou 50 dias sem publicar finding e ninguém soube).
+
+resource "aws_sns_topic" "ops_alerts" {
+  name = "fiscal-digital-ops-alerts-prod"
+}
+
+resource "aws_sns_topic_subscription" "ops_alerts_email" {
+  topic_arn = aws_sns_topic.ops_alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
 # ── CloudWatch Alarms — DLQ size ──────────────────────────────────────────────
 
 resource "aws_cloudwatch_metric_alarm" "gazettes_dlq_nonempty" {
@@ -29,6 +43,10 @@ resource "aws_cloudwatch_metric_alarm" "gazettes_dlq_nonempty" {
   statistic           = "Maximum"
   threshold           = 0
   alarm_description   = "DLQ de gazettes tem mensagens — investigar falha no collector/analyzer"
+  alarm_actions       = [aws_sns_topic.ops_alerts.arn]
+  ok_actions          = [aws_sns_topic.ops_alerts.arn]
+  # Fila saudável não emite datapoint — sem isto o alarme vive em INSUFFICIENT_DATA
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     QueueName = var.gazettes_dlq_name
@@ -45,9 +63,36 @@ resource "aws_cloudwatch_metric_alarm" "alerts_dlq_nonempty" {
   statistic           = "Maximum"
   threshold           = 0
   alarm_description   = "DLQ de alertas tem mensagens — investigar falha no publisher"
+  alarm_actions       = [aws_sns_topic.ops_alerts.arn]
+  ok_actions          = [aws_sns_topic.ops_alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     QueueName = var.alerts_dlq_name
+  }
+}
+
+# ── CloudWatch Alarm — coleta estagnada (freshness) ──────────────────────────
+# 0 gazettes enfileiradas por 3 dias corridos = collector morto, EventBridge
+# desabilitado ou QD totalmente fora — a janela de 3 dias absorve o fim de
+# semana (cron MON-FRI). Sem datapoint = sem envio = breaching.
+
+resource "aws_cloudwatch_metric_alarm" "gazettes_collect_stalled" {
+  alarm_name          = "fiscal-digital-gazettes-collect-stalled-prod"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = 3
+  metric_name         = "NumberOfMessagesSent"
+  namespace           = "AWS/SQS"
+  period              = 86400
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Nenhuma gazette enfileirada há 3 dias — coleta parada (collector/EventBridge/QD)"
+  alarm_actions       = [aws_sns_topic.ops_alerts.arn]
+  ok_actions          = [aws_sns_topic.ops_alerts.arn]
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    QueueName = var.gazettes_queue_name
   }
 }
 
@@ -63,6 +108,9 @@ resource "aws_cloudwatch_metric_alarm" "analyzer_errors" {
   statistic           = "Sum"
   threshold           = 5
   alarm_description   = "Analyzer Lambda teve > 5 erros em 5 min"
+  alarm_actions       = [aws_sns_topic.ops_alerts.arn]
+  ok_actions          = [aws_sns_topic.ops_alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     FunctionName = "fiscal-digital-analyzer-prod"
@@ -79,6 +127,9 @@ resource "aws_cloudwatch_metric_alarm" "publisher_errors" {
   statistic           = "Sum"
   threshold           = 5
   alarm_description   = "Publisher Lambda teve > 5 erros em 5 min"
+  alarm_actions       = [aws_sns_topic.ops_alerts.arn]
+  ok_actions          = [aws_sns_topic.ops_alerts.arn]
+  treat_missing_data  = "notBreaching"
 
   dimensions = {
     FunctionName = "fiscal-digital-publisher-prod"
