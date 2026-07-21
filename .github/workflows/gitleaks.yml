@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # `dir` escaneia a working tree (nao o historico git): o objetivo do
       # gate e impedir vazamento NOVO. Historico ja auditado manualmente.
