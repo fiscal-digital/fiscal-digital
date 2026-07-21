@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
+import { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand, QueryCommand, BatchGetCommand } from '@aws-sdk/lib-dynamodb'
 import { S3Client, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda'
 import crypto from 'node:crypto'
@@ -294,31 +294,54 @@ interface CityResponse {
   active: boolean
   findingsCount: number
   lastFindingAt: string | null
+  // Freshness (diagnóstico 2026-07-20): a indexação do QD estagna por cidade
+  // sem aviso — expor "dados até X" é princípio de verificabilidade pública.
+  lastGazetteDate: string | null
+  staleDays: number | null
+  dataStatus: 'atualizada' | 'estagnada' | 'sem-dados'
 }
 
-function buildCities(findings: Finding[]): CityResponse[] {
-  const counts: Record<string, { count: number; last: string | null }> = {}
-  for (const f of findings) {
-    if (!f.cityId) continue
-    const e = counts[f.cityId] ?? { count: 0, last: null }
-    e.count += 1
-    const ts = f.createdAt ?? null
-    if (ts && (!e.last || ts.localeCompare(e.last) > 0)) e.last = ts
-    counts[f.cityId] = e
-  }
+// > 7 dias sem gazette nova = estagnada. Absorve fim de semana + feriado
+// prolongado do cron MON-FRI sem mascarar scraper morto no QD.
+const STALE_THRESHOLD_DAYS = 7
 
-  return Object.values(CITIES).map(c => {
-    const stats = counts[c.cityId] ?? { count: 0, last: null }
-    return {
-      cityId: c.cityId,
-      name: c.name,
-      slug: c.slug,
-      uf: c.uf,
-      active: c.active,
-      findingsCount: stats.count,
-      lastFindingAt: stats.last,
+function freshnessOf(lastGazetteDate: string | null, now = new Date()): {
+  staleDays: number | null
+  dataStatus: CityResponse['dataStatus']
+} {
+  if (!lastGazetteDate) return { staleDays: null, dataStatus: 'sem-dados' }
+  const last = new Date(`${lastGazetteDate}T00:00:00Z`)
+  const staleDays = Math.max(0, Math.floor((now.getTime() - last.getTime()) / 86_400_000))
+  return { staleDays, dataStatus: staleDays > STALE_THRESHOLD_DAYS ? 'estagnada' : 'atualizada' }
+}
+
+/**
+ * Última data de gazette coletada por cidade — lê os watermarks
+ * `BACKFILL#{cityId}` (gazettes-prod) num único BatchGet (52 keys < limite 100).
+ * É o mesmo item que o collector usa como `published_since`; custo ~zero.
+ */
+async function fetchLastGazetteDates(cityIds: string[]): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>(cityIds.map(id => [id, null]))
+  try {
+    const out: { Responses?: Record<string, Array<{ pk?: string; lastDate?: string }>> } = await ddb.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [GAZETTES_TABLE]: {
+            Keys: cityIds.map(id => ({ pk: `BACKFILL#${id}` })),
+            ProjectionExpression: 'pk, lastDate',
+          },
+        },
+      }),
+    )
+    for (const item of out.Responses?.[GAZETTES_TABLE] ?? []) {
+      const cityId = item.pk?.replace('BACKFILL#', '')
+      if (cityId && item.lastDate) result.set(cityId, item.lastDate)
     }
-  })
+  } catch (err) {
+    // Degradação graciosa: freshness nula é melhor que derrubar /cities.
+    logger.error('backfill watermarks read failed (freshness degraded)', { err })
+  }
+  return result
 }
 
 // WIN-API-002: 1 Query por cidade em GSI1-city-date com projeção mínima.
@@ -364,16 +387,24 @@ async function countFindingsByCity(cityId: string): Promise<{ count: number; las
 
 async function buildCitiesFromQueries(): Promise<CityResponse[]> {
   const cities = Object.values(CITIES)
-  const stats = await Promise.all(cities.map(c => countFindingsByCity(c.cityId)))
-  return cities.map((c, i) => ({
-    cityId: c.cityId,
-    name: c.name,
-    slug: c.slug,
-    uf: c.uf,
-    active: c.active,
-    findingsCount: stats[i].count,
-    lastFindingAt: stats[i].last,
-  }))
+  const [stats, lastGazettes] = await Promise.all([
+    Promise.all(cities.map(c => countFindingsByCity(c.cityId))),
+    fetchLastGazetteDates(cities.map(c => c.cityId)),
+  ])
+  return cities.map((c, i) => {
+    const lastGazetteDate = lastGazettes.get(c.cityId) ?? null
+    return {
+      cityId: c.cityId,
+      name: c.name,
+      slug: c.slug,
+      uf: c.uf,
+      active: c.active,
+      findingsCount: stats[i].count,
+      lastFindingAt: stats[i].last,
+      lastGazetteDate,
+      ...freshnessOf(lastGazetteDate),
+    }
+  })
 }
 
 // ── City stats (UH-API-001) ─────────────────────────────────────────────────
@@ -393,6 +424,9 @@ interface CityStatsResponse {
   totalFindings: number
   lastFindingAt: string | null
   periodCovered: { from: string; to: string } | null
+  lastGazetteDate: string | null
+  staleDays: number | null
+  dataStatus: 'atualizada' | 'estagnada' | 'sem-dados'
 }
 
 async function buildCityStats(cityId: string): Promise<CityStatsResponse> {
@@ -428,12 +462,18 @@ async function buildCityStats(cityId: string): Promise<CityStatsResponse> {
   const findings = await fetchFindings({ cityId })
   const lastFindingAt = findings[0]?.createdAt ?? null
 
+  // Watermark do collector é a fonte canônica de freshness; o scan acima só
+  // conhece o que já foi processado (fallback quando o watermark não existe).
+  const watermark = (await fetchLastGazetteDates([cityId])).get(cityId) ?? lastDate
+
   return {
     cityId,
     totalGazettesProcessed: gazettesCount,
     totalFindings: findings.length,
     lastFindingAt,
     periodCovered: firstDate && lastDate ? { from: firstDate, to: lastDate } : null,
+    lastGazetteDate: watermark,
+    ...freshnessOf(watermark),
   }
 }
 
