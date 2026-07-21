@@ -582,6 +582,9 @@ export const OPENAPI_SPEC = {
           active: { type: 'boolean' },
           findingsCount: { type: 'integer' },
           lastFindingAt: { type: 'string', format: 'date-time', nullable: true },
+          lastGazetteDate: { type: 'string', format: 'date', nullable: true, description: 'Data da última gazette coletada do Querido Diário para a cidade' },
+          staleDays: { type: 'integer', nullable: true, description: 'Dias desde a última gazette coletada; null quando não há cobertura' },
+          dataStatus: { type: 'string', enum: ['atualizada', 'estagnada', 'sem-dados'], description: 'Freshness da cobertura: estagnada = mais de 7 dias sem gazette nova' },
         },
       },
       CityStats: {
@@ -599,6 +602,9 @@ export const OPENAPI_SPEC = {
               to: { type: 'string', format: 'date' },
             },
           },
+          lastGazetteDate: { type: 'string', format: 'date', nullable: true, description: 'Data da última gazette coletada do Querido Diário para a cidade' },
+          staleDays: { type: 'integer', nullable: true, description: 'Dias desde a última gazette coletada; null quando não há cobertura' },
+          dataStatus: { type: 'string', enum: ['atualizada', 'estagnada', 'sem-dados'], description: 'Freshness da cobertura: estagnada = mais de 7 dias sem gazette nova' },
         },
       },
       Stats: {

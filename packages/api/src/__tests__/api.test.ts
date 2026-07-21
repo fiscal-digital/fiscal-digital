@@ -28,6 +28,7 @@ jest.mock('@aws-sdk/lib-dynamodb', () => ({
   GetCommand: jest.fn().mockImplementation((input: unknown) => ({ __type: 'Get', input })),
   PutCommand: jest.fn().mockImplementation((input: unknown) => ({ __type: 'Put', input })),
   QueryCommand: jest.fn().mockImplementation((input: unknown) => ({ __type: 'Query', input })),
+  BatchGetCommand: jest.fn().mockImplementation((input: unknown) => ({ __type: 'BatchGet', input })),
 }))
 
 // ---------------------------------------------------------------------------
@@ -298,7 +299,17 @@ describe('GET /cities', () => {
         ExpressionAttributeValues?: Record<string, unknown>
       }
     }
-    mockDdbSend.mockImplementation((cmd: DdbCmd) => {
+    mockDdbSend.mockImplementation((cmd: DdbCmd & { input?: { RequestItems?: Record<string, unknown> } }) => {
+      // Freshness: watermarks BACKFILL# via BatchGet (1 call para todas as cidades)
+      if (cmd?.__type === 'BatchGet') {
+        return Promise.resolve({
+          Responses: {
+            'fiscal-digital-gazettes-prod': [
+              { pk: 'BACKFILL#4305108', lastDate: '2025-12-15' },
+            ],
+          },
+        })
+      }
       if (cmd?.__type !== 'Query') {
         throw new Error(`/cities deve usar Query, recebeu ${cmd?.__type}`)
       }
@@ -327,7 +338,17 @@ describe('GET /cities', () => {
       active: true,
       findingsCount: 2,
       lastFindingAt: '2026-04-15T00:00:00.000Z',
+      // Freshness: watermark 2025-12-15 está muito além do limiar de 7 dias
+      lastGazetteDate: '2025-12-15',
+      dataStatus: 'estagnada',
     })
+    expect(caxias.staleDays).toBeGreaterThan(7)
+
+    // Cidade sem watermark → sem-dados, staleDays null
+    const sp2 = body.find((c: { cityId: string }) => c.cityId === '3550308')
+    expect(sp2.lastGazetteDate).toBeNull()
+    expect(sp2.dataStatus).toBe('sem-dados')
+    expect(sp2.staleDays).toBeNull()
 
     const sp = body.find((c: { cityId: string }) => c.cityId === '3550308')
     expect(sp.findingsCount).toBe(1)
