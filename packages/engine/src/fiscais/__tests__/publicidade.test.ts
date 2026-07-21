@@ -112,13 +112,47 @@ const gazettePublicidadeJanelaInicio2028: Gazette = gazette(
   ],
 )
 
-// Caso 9 — Limite final da janela (31/12/2026) ainda dispara
+// Caso 9 (BUG-FSC-003) — 31/12/2026 é PÓS-eleição (04/10/2026): fora da vedação.
+// Antes do fix, a janela ia até 31/12 e este caso disparava FP com narrativa
+// afirmando "dentro da janela de 3 meses antes da eleição".
 const gazettePublicidadeJanelaFim2026: Gazette = gazette(
   'gazette-pub-009',
   '2026-12-31',
   [
     'CONTRATO de publicidade institucional. Empenho de R$ 100.000,00. ' +
     'Agência ABC LTDA. Secretaria Municipal de Comunicação.',
+  ],
+)
+
+// Caso 9b (BUG-FSC-003) — nov/2024, pós-eleição de 06/10/2024. Caso real da
+// avaliação Ciclo 4 §4.2: gazettes de nov/dez 2024 geravam FP.
+const gazettePublicidadePosEleicao2024: Gazette = gazette(
+  'gazette-pub-009b',
+  '2024-11-20',
+  [
+    'EXTRATO DE CONTRATO. Objeto: contratação de serviços de publicidade ' +
+    'institucional. Valor: R$ 180.000,00. Secretaria Municipal de Comunicação.',
+  ],
+)
+
+// Caso 9c (BUG-FSC-003) — dia da eleição de 2026 (04/10): a vedação alcança os
+// meses que ANTECEDEM o pleito; o próprio dia fica fora da janela [inicio, eleicao).
+const gazettePublicidadeDiaEleicao2026: Gazette = gazette(
+  'gazette-pub-009c',
+  '2026-10-04',
+  [
+    'CONTRATO de propaganda institucional em rádio. Valor: R$ 90.000,00. ' +
+    'Secretaria Municipal de Comunicação.',
+  ],
+)
+
+// Caso 9d — véspera da eleição de 2026 (03/10): último dia DENTRO da janela.
+const gazettePublicidadeVesperaEleicao2026: Gazette = gazette(
+  'gazette-pub-009d',
+  '2026-10-03',
+  [
+    'CONTRATO de publicidade institucional em mídia digital. Valor: R$ 75.000,00. ' +
+    'Secretaria Municipal de Comunicação.',
   ],
 )
 
@@ -242,11 +276,41 @@ describe('fiscalPublicidade', () => {
     expect(findings[0].narrative).toMatch(/2028/)
   })
 
-  it('9. positivo borda final janela 2026 (31/12/2026) → dispara', async () => {
+  it('9. BUG-FSC-003: 31/12/2026 é pós-eleição → 0 findings', async () => {
     const findings = await fiscalPublicidade.analisar({
       gazette: gazettePublicidadeJanelaFim2026,
       cityId: '4305108',
       context: makeContext({ now: () => new Date('2026-12-31T10:00:00.000Z') }),
+    })
+
+    expect(findings).toHaveLength(0)
+  })
+
+  it('9b. BUG-FSC-003: nov/2024 pós-eleição (caso da avaliação Ciclo 4) → 0 findings', async () => {
+    const findings = await fiscalPublicidade.analisar({
+      gazette: gazettePublicidadePosEleicao2024,
+      cityId: '4305108',
+      context: makeContext({ now: () => new Date('2024-11-20T10:00:00.000Z') }),
+    })
+
+    expect(findings).toHaveLength(0)
+  })
+
+  it('9c. BUG-FSC-003: dia da eleição (04/10/2026) fica fora da janela → 0 findings', async () => {
+    const findings = await fiscalPublicidade.analisar({
+      gazette: gazettePublicidadeDiaEleicao2026,
+      cityId: '4305108',
+      context: makeContext({ now: () => new Date('2026-10-04T10:00:00.000Z') }),
+    })
+
+    expect(findings).toHaveLength(0)
+  })
+
+  it('9d. véspera da eleição (03/10/2026) é o último dia da janela → dispara', async () => {
+    const findings = await fiscalPublicidade.analisar({
+      gazette: gazettePublicidadeVesperaEleicao2026,
+      cityId: '4305108',
+      context: makeContext({ now: () => new Date('2026-10-03T10:00:00.000Z') }),
     })
 
     expect(findings).toHaveLength(1)
