@@ -72,33 +72,36 @@ function isPublicidadeExcluida(excerpt: string): boolean {
 // que antecedem o pleito, exceto comunicações estritamente necessárias por
 // grave e urgente necessidade pública (com autorização da Justiça Eleitoral).
 //
-// Janela vedada: ~3 meses antes da eleição até o final do ano da eleição
-// (cobre também o segundo turno e o período de transição até a posse em 1º/01).
+// Janela vedada: os 3 meses que ANTECEDEM o pleito — [inicio, eleicao).
+//
+// BUG-FSC-003: a janela ia até 31/12 do ano eleitoral ("cobre segundo turno e
+// transição"), mas o texto legal veda publicidade nos meses que antecedem o
+// pleito — gazettes de nov/dez pós-eleição viravam FP com narrativa afirmando
+// "dentro da janela de 3 meses antes da eleição" (avaliação Ciclo 4 §4.2).
 
 interface JanelaVedada {
   inicio: string  // YYYY-MM-DD (inclusive) — 3 meses antes da eleição
-  fim: string     // YYYY-MM-DD (inclusive) — 31 de dezembro do ano eleitoral
-  eleicao: string // data da eleição (1º turno)
+  eleicao: string // data da eleição (1º turno) — fim EXCLUSIVO da janela
 }
 
 /**
  * Janelas vedadas de publicidade institucional para eleições municipais.
  * Hardcoded para 2024, 2026 e 2028 (eleições no 1º domingo de outubro).
  *
- * O início da janela é exatamente "3 meses antes" do 1º turno.
- * O fim é 31/12 do ano eleitoral — após a posse (1º/01) reabre.
+ * O início da janela é exatamente "3 meses antes" do 1º turno; o fim é a
+ * véspera do pleito (a vedação alcança o período que ANTECEDE a eleição).
  *
  * TODO: parametrizar via config quando cobrir eleições estaduais (anos ímpares).
  */
 const JANELAS_VEDADAS_PUBLICIDADE: JanelaVedada[] = [
-  { inicio: '2024-07-06', fim: '2024-12-31', eleicao: '2024-10-06' },
-  { inicio: '2026-07-04', fim: '2026-12-31', eleicao: '2026-10-04' },
-  { inicio: '2028-07-01', fim: '2028-12-31', eleicao: '2028-10-01' },
+  { inicio: '2024-07-06', eleicao: '2024-10-06' },
+  { inicio: '2026-07-04', eleicao: '2026-10-04' },
+  { inicio: '2028-07-01', eleicao: '2028-10-01' },
 ]
 
 function dentroJanelaVedada(dateISO: string): JanelaVedada | null {
   for (const janela of JANELAS_VEDADAS_PUBLICIDADE) {
-    if (dateISO >= janela.inicio && dateISO <= janela.fim) {
+    if (dateISO >= janela.inicio && dateISO < janela.eleicao) {
       return janela
     }
   }
@@ -137,9 +140,9 @@ const VALOR_MINIMO_PUBLICIDADE = 1
 export const fiscalPublicidade: Fiscal = {
   id: FISCAL_ID,
   description:
-    'Detecta gastos com publicidade institucional dentro da janela vedada (3 meses ' +
-    'antes da eleição até 31/12 do ano eleitoral) e menções promocionais ao alcaide ' +
-    'em mídia paga no período eleitoral. Base legal: Lei 9.504/97, Art. 73, VI, "b" e VII.',
+    'Detecta gastos com publicidade institucional dentro da janela vedada (os 3 meses ' +
+    'que antecedem o pleito) e menções promocionais ao alcaide em mídia paga no ' +
+    'período eleitoral. Base legal: Lei 9.504/97, Art. 73, VI, "b" e VII.',
 
   async analisar(input: AnalisarInput): Promise<Finding[]> {
     const { gazette, cityId, context = {} } = input
@@ -193,8 +196,8 @@ export const fiscalPublicidade: Fiscal = {
           value: 90,
           description:
             `Gazette de ${formatDate(gazette.date)} dentro da janela vedada ` +
-            `(${formatDate(janela.inicio)} – ${formatDate(janela.fim)}, ` +
-            `eleição ${formatDate(janela.eleicao)})`,
+            `(${formatDate(janela.inicio)} até a véspera da eleição de ` +
+            `${formatDate(janela.eleicao)})`,
         },
         {
           type: 'contratacao_publicitaria_detectada',
