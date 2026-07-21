@@ -381,8 +381,8 @@ Base legal: Lei 13.019/2014 (Marco Regulatório das OSCs)
 Detecta: indício de nepotismo por sobrenome incomum coincidente em cargo comissionado (threshold confidence ≥ 0.95)
 Base legal: STF Súmula Vinculante 13, CF Art. 37
 
-**Fiscal de Publicidade** (entregue 2026-05-02)
-Detecta: contratação publicitária na janela vedada (3 meses antes da eleição até 31/12)
+**Fiscal de Publicidade** (entregue 2026-05-02; janela corrigida 2026-07-20 — BUG-FSC-003)
+Detecta: contratação publicitária na janela vedada (os 3 meses que antecedem o pleito, fim exclusivo no dia da eleição)
 Base legal: Lei 9.504/97 Art. 73 VI "b" + VII
 
 **Fiscal de Locação** (entregue 2026-05-02)
