@@ -21,3 +21,7 @@ output "gazettes_dlq_name" {
 output "alerts_dlq_name" {
   value = aws_sqs_queue.alerts_dlq.name
 }
+
+output "gazettes_queue_name" {
+  value = aws_sqs_queue.gazettes.name
+}

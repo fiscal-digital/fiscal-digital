@@ -13,3 +13,8 @@ variable "alert_email" {
   type        = string
   default     = "diegovieira.ti@gmail.com"
 }
+
+variable "gazettes_queue_name" {
+  description = "Name of the gazettes ingestion queue (freshness alarm)"
+  type        = string
+}
