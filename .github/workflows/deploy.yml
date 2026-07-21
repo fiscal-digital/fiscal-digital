@@ -35,7 +35,7 @@ jobs:
     # (2026-07-19: apply ficou 21min num waiter que nunca passaria).
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
