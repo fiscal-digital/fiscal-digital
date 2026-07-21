@@ -21,11 +21,15 @@ resource "aws_lambda_function" "analyzer" {
   runtime       = "nodejs24.x"
   timeout       = 300
   memory_size   = 512
-  # reserved_concurrent_executions: conta tem limite de 10 (padrão novo account).
-  # Ativar após solicitar aumento de cota: Service Quotas > Lambda > Concurrent executions.
-  # Valor alvo: analyzer=10, publisher=5 (BLK-IAC-001).
-  filename         = data.archive_file.placeholder.output_path
-  source_code_hash = data.archive_file.placeholder.output_base64sha256
+  # TEC-ANL-001: concorrência 1 é DELIBERADA — o dedup de fracionamento por
+  # âncora (licitacoes.ts Etapa 8) só converge com processamento sequencial
+  # por CNPJ; concorrência 1 garante isso estruturalmente também no caminho
+  # SQS. Volume diário (~20 gazettes, batch 5) drena em segundos; reanálise
+  # em massa usa scripts/replay-fiscal.mjs (local), não esta Lambda.
+  # Quota verificada 2026-07-21: ConcurrentExecutions=1000 (LRN-20260503-020).
+  reserved_concurrent_executions = 1
+  filename                       = data.archive_file.placeholder.output_path
+  source_code_hash               = data.archive_file.placeholder.output_base64sha256
 
   environment {
     variables = merge(local.common_env, {

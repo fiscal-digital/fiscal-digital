@@ -124,14 +124,32 @@ async function markFiscalProcessed(gazetteId: string, fiscalIds: string[]): Prom
   }
 }
 
-async function persistFinding(finding: Finding): Promise<void> {
+/** @returns true se persistiu; false quando o finding não tem fonte estável. */
+async function persistFinding(finding: Finding): Promise<boolean> {
   const createdAt = finding.createdAt ?? new Date().toISOString()
   // Idempotência: pk derivado da gazette de origem (não do timestamp).
   // Reprocessamento da mesma gazette sobrescreve o finding em vez de criar
-  // duplicata. Fallback para createdAt se evidence ausente (LRN-20260503-022).
+  // duplicata.
+  //
+  // TEC-ANL-001: o fallback antigo (`stableKey ?? createdAt`) violava a
+  // idempotência — cada reanálise criava um item NOVO com pk-timestamp
+  // (duplicação silenciosa) — e um finding sem URL de fonte válida fere o
+  // princípio "sempre citar a fonte" (não é publicável nem verificável).
+  // Agora: sem stableKey → não persiste, loga ERROR com contexto (o alarme
+  // analyzer-errors não dispara por log, mas a métrica fica rastreável via
+  // CloudWatch Insights).
   const sourceUrl = finding.evidence?.[0]?.source
   const stableKey = sourceUrl ? gazetteKey(sourceUrl) : null
-  const pk = `FINDING#${finding.fiscalId}#${finding.cityId}#${finding.type}#${stableKey ?? createdAt}`
+  if (!stableKey) {
+    logger.error('finding sem fonte estável — não persistido (TEC-ANL-001)', {
+      fiscalId: finding.fiscalId,
+      cityId: finding.cityId,
+      type: finding.type,
+      sourceUrl: sourceUrl ?? null,
+    })
+    return false
+  }
+  const pk = `FINDING#${finding.fiscalId}#${finding.cityId}#${finding.type}#${stableKey}`
   // Hydrate id so publisher can use it for deduplication
   finding.id = pk
   finding.createdAt = createdAt
@@ -148,6 +166,7 @@ async function persistFinding(finding: Finding): Promise<void> {
   // para habilitar cross-supplier (FiscalContratos + FiscalFornecedores Sprint 9).
   // Best-effort: try/catch + feature flag SSM; falha não derruba o finding.
   await maybeWriteSupplier(finding, createdAt)
+  return true
 }
 
 const SUPPLIERS_TABLE = process.env.SUPPLIERS_TABLE ?? 'fiscal-digital-suppliers-prod'
@@ -397,14 +416,18 @@ async function processRecord(body: string): Promise<void> {
   // Persist all Findings regardless of riskScore, then selectively enqueue for publish
   await Promise.allSettled(
     allFindings.map(async finding => {
+      let persisted = false
       try {
-        await persistFinding(finding)
+        persisted = await persistFinding(finding)
       } catch (err) {
         logger.error('falha ao persistir finding', { type: finding.type, err })
       }
 
       const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
+      // TEC-ANL-001: finding sem fonte estável não persiste nem publica —
+      // "sempre citar a fonte" vale para o feed também.
       const shouldPublish =
+        persisted &&
         finding.riskScore >= riskThreshold &&
         finding.confidence >= confidenceThreshold
 

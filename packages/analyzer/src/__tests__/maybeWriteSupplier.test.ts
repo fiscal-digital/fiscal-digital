@@ -79,7 +79,9 @@ jest.mock('@fiscal-digital/engine', () => ({
     }),
   },
   querySuppliersContract: { name: 'query_suppliers_contract', description: 'mock', execute: jest.fn() },
-  gazetteKey: jest.fn(() => null),
+  // TEC-ANL-001: null aqui faria persistFinding pular (e maybeWriteSupplier
+  // nunca rodar) — retorna key estável para URL presente, como o contrato real.
+  gazetteKey: jest.fn((url?: string) => (url ? `MOCK#${url.slice(-10)}` : null)),
   requireEnv: jest.fn(
     (_name: string) => 'https://sqs.us-east-1.amazonaws.com/123456789012/fiscal-digital-queue-prod',
   ),
