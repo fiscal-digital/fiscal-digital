@@ -71,9 +71,11 @@ jest.mock('@fiscal-digital/engine', () => ({
   saveMemory: { name: 'save_memory', description: 'mock', execute: mockSaveMemoryExecute },
   generateNarrative: { name: 'generate_narrative', description: 'mock', execute: mockGenerateNarrativeExecute },
   // gazetteKey — helper para pk determinístico de FINDING (LRN-20260503-022).
+  // TEC-ANL-001: retorna key estável para URL presente e null caso contrário —
+  // espelha o contrato real (persistFinding NÃO persiste quando null).
   // Stub retorna null => fallback para createdAt no pk (preserva comportamento
   // antigo do teste sem precisar reescrever expectations).
-  gazetteKey: jest.fn(() => null),
+  gazetteKey: jest.fn((url?: string) => (url ? `MOCK#${url.slice(-10)}` : null)),
   // requireEnv — adicionado em hardening Sprint 6 (TEC-ENG-001). Como ele é
   // chamado em module-load (linha 46 do index.ts) ANTES de beforeEach rodar,
   // retornamos um valor válido como default. beforeEach reescreve
@@ -270,6 +272,27 @@ test('finding com riskScore >= 60 e confidence >= 0.70 é enfileirado para publi
   const sent = JSON.parse((sendCommand as { MessageBody: string }).MessageBody) as Finding
   expect(sent.riskScore).toBe(75)
   expect(sent.type).toBe('dispensa_irregular')
+})
+
+// ---------------------------------------------------------------------------
+// TEC-ANL-001: finding sem fonte estável não é persistido (fim do fallback
+// por createdAt — cada reanálise criava item novo = duplicação silenciosa)
+// ---------------------------------------------------------------------------
+
+test('finding sem evidence source não é persistido nem publicado (TEC-ANL-001)', async () => {
+  const semFonte = makeFinding({ riskScore: 90, confidence: 0.95, evidence: [] })
+  mockAnalisarLicitacoes.mockResolvedValue([semFonte])
+
+  const msg = makeCollectorMessage()
+  const event = makeSQSEvent([makeSQSRecord(msg)])
+
+  await handler(event)
+
+  const persistCalls = mockSaveMemoryExecute.mock.calls.filter(
+    ([input]) => typeof (input as { pk?: string })?.pk === 'string' && (input as { pk: string }).pk.startsWith('FINDING#'),
+  )
+  expect(persistCalls).toHaveLength(0)
+  expect(mockSqsSend).not.toHaveBeenCalled()
 })
 
 // ---------------------------------------------------------------------------
