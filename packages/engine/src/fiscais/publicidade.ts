@@ -37,7 +37,12 @@ const STOPWORDS_PUBLICIDADE: ReadonlyArray<RegExp> = [
   // Cabeçalho do Diário Oficial (não é contratação).
   // Nota: \b não funciona antes de "Órgão" porque "Ó" não está na classe word
   // ASCII do JavaScript — usar (?:^|\s|[.,;:-]) como boundary alternativo.
-  /(?:^|[\s.,;:-])[óo]rg[ãa]o\s+de\s+divulga[çc][ãa]o\s+do\s+(?:munic[íi]pio|estado)/i,
+  //
+  // BUG-FSC-004: a versão anterior exigia "divulgação do município" e deixava
+  // passar o boilerplate real "Órgão de divulgação oficial dos atos do
+  // Município" (golden set SYN-PUB-FP-005/104..113 — todos escapavam; era a
+  // maior fonte dos ~11 FPs da avaliação Ciclo 4 §4.2).
+  /(?:^|[\s.,;:-])[óo]rg[ãa]o\s+de\s+divulga[çc][ãa]o\s+(?:oficial\s+)?(?:d[oa]s?\s+atos\s+)?d[oe]\s+(?:munic[íi]pio|estado)/i,
   /\bjornal\s+oficial\s+n[º°]/i,
   /\bpublica[çc][ãa]o\s+di[áa]ria\b/i,
   // Designação de Fiscal de Contrato (não é contratação publicitária)
@@ -59,6 +64,25 @@ const STOPWORDS_PUBLICIDADE: ReadonlyArray<RegExp> = [
   /\bdivulga[çc][ãa]o\s+do\s+servi[çc]o\b/i,
   // Outro padrão C2: "Fiscal" como cargo/sobrenome, não contratação publicitária
   /\bfiscais?\s+de\s+impress[ãa]o\b/i,
+  // ── BUG-FSC-004 (avaliação Ciclo 4 §4.2 — vazamento de contexto) ──────────
+  // Decreto orçamentário: "Abre crédito ..." com linha "Publicidade Oficial" é
+  // remanejamento de dotação, não contratação (golden set SYN-PUB-FP-104..113).
+  /\babre\s+cr[ée]dito\s+(?:suplementar|especial|adicional|extraordin[áa]rio)\b/i,
+  /\bdota[çc][ãa]o\s+or[çc]ament[áa]ri/i,
+  /\b(?:elemento|natureza)\s+d[ea]\s+despesa\b/i,
+  // Sumário/índice do diário: lista de seções cita "Publicidade" com nº de página
+  /\bsum[áa]rio\b[\s\S]{0,200}\bp[áa]g(?:\.|ina)/i,
+  // Seleção/processo seletivo de agentes de saúde (SESA/SGTES) — "divulgação"
+  // do edital, não contratação publicitária
+  /\b(?:processo\s+seletivo|sele[çc][ãa]o\s+p[úu]blica|edital\s+de\s+chamamento)\b[\s\S]{0,160}\bagentes?\s+(?:comunit[áa]rios?\s+)?de\s+sa[úu]de\b/i,
+  // Concessão de exploração de jogos/loteria (município outorga, não contrata mídia)
+  /\bconcess[ãa]o\b[\s\S]{0,100}\b(?:jogos|loteria)\b/i,
+  // Concessão de mobiliário urbano p/ exploração publicitária: o município
+  // RECEBE outorga (receita patrimonial), não contrata mídia — polaridade
+  // invertida (golden set SYN-PUB-FP-094..099). O filtro `concessão…outdoor`
+  // acima tem alcance de 80 chars e não cobre "mobiliário urbano … outdoors".
+  /\bmobili[áa]rio\s+urbano\b/i,
+  /\breceita\s+patrimonial\b/i,
 ]
 
 function isPublicidadeExcluida(excerpt: string): boolean {
