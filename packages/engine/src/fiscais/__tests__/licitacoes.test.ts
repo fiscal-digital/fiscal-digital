@@ -17,6 +17,7 @@ import {
   gazetteDispensaObraFallbackRegex,
   gazetteFracionamentoContinuacao,
   gazetteFracionamentoComIsento,
+  gazetteAtoAtualIsentoComHistorico,
 } from './fixtures'
 
 // ─── Mock helpers ────────────────────────────────────────────────────────────
@@ -273,6 +274,46 @@ describe('fiscalLicitacoes', () => {
     expect(fracionamentos).toHaveLength(1)
     expect(fracionamentos[0].legalBasis).toBe('Lei 14.133/2021, Art. 75, §1º')
     expect(fracionamentos[0].value).toBe(75000) // soma total
+  })
+
+  it('8z. Correção C2: ato ATUAL sem teto (Art. 75 IX) não inicia fracionamento mesmo com histórico', async () => {
+    // Caso real CODECA/Caxias: Termo de contrato Art. 75 IX de R$ 23,34M somava
+    // com dispensa histórica de R$ 1,1M e emitia "fracionamento de R$ 24,4M".
+    const cnpjCodeca = '88.113.477/0001-24'
+
+    const historicoNormal: Finding[] = [
+      {
+        fiscalId: FISCAL_ID,
+        cityId: '4305108',
+        type: 'dispensa_irregular',
+        riskScore: 0,
+        confidence: 0.85,
+        evidence: [],
+        narrative: '',
+        legalBasis: 'Lei 14.133/2021, Art. 75, II',
+        cnpj: cnpjCodeca,
+        ...(({ actType: 'dispensa', valor: 1105943.52, temTeto: true }) as unknown as Record<string, unknown>),
+      },
+    ]
+
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        cnpjs: [cnpjCodeca],
+        values: [23340057.06],
+        legalBasis: 'Lei 14.133/2021, Art. 75, IX',
+      }),
+      queryAlertsByCnpj: makeQueryAlertsByCnpjMock(historicoNormal),
+    })
+
+    const findings = await fiscalLicitacoes.analisar({
+      gazette: gazetteAtoAtualIsentoComHistorico,
+      cityId: '4305108',
+      context,
+    })
+
+    // Sem teto: nem dispensa_irregular (Etapa 4, já coberto) nem fracionamento (C2)
+    expect(findings.filter(f => f.type === 'fracionamento')).toHaveLength(0)
+    expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(0)
   })
 
   it('8a. fracionamento: dispensa atual só entra no histórico depois da consulta', async () => {
