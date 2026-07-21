@@ -1,6 +1,11 @@
 name: Deploy
 
 on:
+  # INF-CI-001: disparo manual de emergência — merges em rajada cancelam
+  # deploys na fila (concurrency deploy-prod) e um run pode ficar preso em
+  # pending/0-jobs (wedge do GitHub, 2026-07-21); sem dispatch manual a única
+  # saída era empurrar commit novo na main.
+  workflow_dispatch:
   push:
     branches: [main]
     # Commits sem artefato deployavel nao disparam pipeline (incidente

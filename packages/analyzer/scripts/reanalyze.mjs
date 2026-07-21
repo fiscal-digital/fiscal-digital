@@ -225,6 +225,7 @@ async function main() {
   const poc = args.includes('--poc')
   const force = args.includes('--force')
   const dryRun = args.includes('--dry-run')
+  const unsafeConcurrent = args.includes('--unsafe-concurrent')
 
   // Resolve fiscais alvo
   let fiscals
@@ -242,6 +243,22 @@ async function main() {
     if (!VALID_FISCALS.includes(f)) {
       console.warn(`[warn] Fiscal "${f}" não está na lista padrão. Continuando (Fiscal novo?).`)
     }
+  }
+
+  // TEC-ANL-001: fiscais com dedup por âncora (fracionamento) exigem
+  // processamento SEQUENCIAL por CNPJ — este script enfileira via SQS com
+  // Lambda concorrente e quebra a convergência (ver docstring no topo).
+  // Caminho oficial: scripts/replay-fiscal.mjs. Bloqueado por padrão.
+  const ANCHOR_FISCALS = ['fiscal-licitacoes']
+  const blocked = fiscals.filter(f => ANCHOR_FISCALS.includes(f))
+  if (blocked.length > 0 && !dryRun && !unsafeConcurrent) {
+    console.error(
+      `\n[BLOQUEADO] ${blocked.join(', ')}: reanalyze via SQS quebra o dedup por âncora ` +
+      `(1 finding por gazette em vez de 1 por padrão — BUG-FSC-002).\n` +
+      `Use scripts/replay-fiscal.mjs (sequencial) para estes fiscais, ou force ` +
+      `com --unsafe-concurrent se souber exatamente o que está fazendo.`,
+    )
+    process.exit(1)
   }
 
   const cities = cityArg ? [cityArg] : poc ? POC_CITIES : null

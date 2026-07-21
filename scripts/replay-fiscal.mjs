@@ -110,7 +110,14 @@ async function persistFinding(finding) {
   const createdAt = finding.createdAt ?? new Date().toISOString()
   const sourceUrl = finding.evidence?.[0]?.source
   const stableKey = sourceUrl ? gazetteKey(sourceUrl) : null
-  const pk = `FINDING#${finding.fiscalId}#${finding.cityId}#${finding.type}#${stableKey ?? createdAt}`
+  // TEC-ANL-001: espelho do analyzer — sem stableKey não persiste (o fallback
+  // por createdAt criava item novo a cada reanálise; finding sem fonte válida
+  // não é verificável).
+  if (!stableKey) {
+    console.error(`[persist-skip] finding sem fonte estável: ${finding.fiscalId} ${finding.cityId} ${finding.type} src=${sourceUrl ?? 'null'}`)
+    return null
+  }
+  const pk = `FINDING#${finding.fiscalId}#${finding.cityId}#${finding.type}#${stableKey}`
   finding.id = pk
   finding.createdAt = createdAt
   await saveMemory.execute({
