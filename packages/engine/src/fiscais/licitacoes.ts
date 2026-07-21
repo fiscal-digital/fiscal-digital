@@ -276,7 +276,14 @@ export const fiscalLicitacoes: Fiscal = {
       }
 
       // Etapa 8 — Fracionamento
-      if (cnpj && context.queryAlertsByCnpj) {
+      //
+      // BUG-FSC-002 (Correção C2 — residual, 2026-07-21): a Correção C filtrava
+      // itens sem teto apenas do HISTÓRICO; o ato ATUAL entrava na soma
+      // incondicionalmente. Caso real (Caxias/CODECA): "Termo de contrato"
+      // Art. 75 IX de R$ 23,34M somado a uma dispensa de R$ 1,1M gerava
+      // "fracionamento de R$ 24,4M". Ato atual sem teto não inicia nem compõe
+      // fracionamento — pula a etapa inteira.
+      if (cnpj && !semTeto && context.queryAlertsByCnpj) {
         const twelveMonthsAgo = new Date(now)
         twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear() - 1)
         const sinceISO = twelveMonthsAgo.toISOString().slice(0, 10)
