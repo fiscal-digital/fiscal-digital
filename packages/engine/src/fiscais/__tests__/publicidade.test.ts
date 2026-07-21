@@ -402,6 +402,53 @@ describe('fiscalPublicidade', () => {
       'c2-legal',
     ))
 
+    // ── BUG-FSC-004: vazamento de contexto (avaliação Ciclo 4 §4.2) ─────────
+    // Datas DENTRO da janela vedada de 2024 (06/07 → 05/10) de propósito:
+    // pós-#117 uma data fora da janela passaria vácuo, sem exercitar o filtro.
+    it('FSC004-HEADER: boilerplate "Órgão de divulgação oficial dos atos do Município" (golden SYN-PUB-FP-108)', expectNoFinding(
+      'DIÁRIO OFICIAL DO MUNICÍPIO DE FORTALEZA\nÓrgão de divulgação oficial dos atos do Município de Fortaleza - Lei Municipal nº 5068/2014\n' +
+      'DECRETO Nº 4052/2024\nAbre crédito especial no valor de R$ 500.000,00 em favor da Secretaria de Saúde para cobertura de despesas de custeio.',
+      'fsc004-header',
+      '2024-07-15',
+    ))
+
+    it('FSC004-ORCAMENTO: decreto "Abre crédito suplementar" com linha Publicidade Oficial', expectNoFinding(
+      'DECRETO Nº 4078/2024. Abre crédito suplementar no valor de R$ 320.000,00. ' +
+      'Dotação orçamentária: 04.131.0004.2012 — Publicidade Oficial. Elemento de despesa: 3.3.90.39. ' +
+      'Fica alterado o Orçamento Geral do Município para cobertura de despesa.',
+      'fsc004-orcamento',
+      '2024-08-19',
+    ))
+
+    it('FSC004-SUMARIO: sumário do diário citando seção Publicidade com página', expectNoFinding(
+      'SUMÁRIO\nAtos do Prefeito ......... pág. 2\nContratos e Licitações ......... pág. 5\n' +
+      'Publicidade Oficial e Divulgação ......... página 12\nSecretaria de Comunicação ......... pág. 14. Despesa geral do exercício.',
+      'fsc004-sumario',
+      '2024-09-03',
+    ))
+
+    it('FSC004-AGENTES: processo seletivo de agentes de saúde (SESA) com divulgação de edital', expectNoFinding(
+      'EDITAL SESA Nº 22/2024. Processo seletivo simplificado para contratação de agentes comunitários de saúde. ' +
+      'A divulgação do resultado ocorrerá no site oficial. Despesa correrá pela dotação própria da Secretaria de Saúde.',
+      'fsc004-agentes',
+      '2024-08-02',
+    ))
+
+    it('FSC004-JOGOS: concessão de exploração de jogos (outorga, não mídia)', expectNoFinding(
+      'TERMO DE CONCESSÃO. Objeto: concessão onerosa de exploração de jogos lotéricos municipais, com contrapartida de marketing ' +
+      'institucional do concessionário. Pagamento de outorga: R$ 150.000,00.',
+      'fsc004-jogos',
+      '2024-09-17',
+    ))
+
+    it('FSC004-MOBILIARIO: concessão de mobiliário urbano p/ outdoors — município recebe outorga (golden SYN-PUB-FP-094)', expectNoFinding(
+      'EXTRATO DO CONTRATO DE CONCESSÃO Nº 55/2024. CONCEDENTE: Município. CONCESSIONÁRIA: EXTERNA MÍDIA URBANA LTDA. ' +
+      'OBJETO: Concessão de uso do mobiliário urbano e logradouros públicos para exploração comercial de outdoors e painéis publicitários. ' +
+      'CONTRAPARTIDA: Outorga mensal devida pela CONCESSIONÁRIA ao MUNICÍPIO no valor de R$ 140.000,00/mês. NATUREZA DO INGRESSO: receita patrimonial municipal.',
+      'fsc004-mobiliario',
+      '2024-07-15',
+    ))
+
     it('C2-PRESTACAO: prestação de contas trimestral (transparência, não contratação)', expectNoFinding(
       'PUBLICAÇÃO da prestação de contas trimestral da Secretaria de Comunicação Social, conforme Lei Orgânica Art. 62. Período: jul-set/2024. Divulgação no portal de transparência.',
       'c2-prestacao',
