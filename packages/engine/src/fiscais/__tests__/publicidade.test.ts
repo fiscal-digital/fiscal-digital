@@ -454,4 +454,61 @@ describe('fiscalPublicidade', () => {
       'c2-prestacao',
     ))
   })
+
+  // ── BUG-FSC-005: exceções legais — INFORMAR, não suprimir ──────────────────
+  // Decisão do Diego 2026-07-21: a exceção do Art. 73, VI, "b" só afasta a
+  // vedação se reconhecida pela Justiça Eleitoral; o documento invocá-la não
+  // comprova. Mantém o finding (não-supressão), anota a exceção na narrativa e
+  // fixa a confiança abaixo do gate de publicação (revisão humana decide).
+  // DELIBERADAMENTE diverge do golden set, que rotula estes casos no_finding
+  // citando "Art. 73 §3º" (mis-citação — §3º trata de esfera administrativa).
+  describe('BUG-FSC-005: exceção legal alegada (não-supressão)', () => {
+    async function analisarExcerpt(excerpt: string, date = '2024-09-05') {
+      return fiscalPublicidade.analisar({
+        gazette: { ...BASE_GAZETTE, id: 'fsc005', date, excerpts: [excerpt] },
+        cityId: '4305108',
+        context: makeContext({ now: () => new Date(`${date}T10:00:00.000Z`) }),
+      })
+    }
+
+    it('emergencial/calamidade (golden SYN-PUB-FP-007): GERA finding com nota + confiança < 0.70', async () => {
+      const findings = await analisarExcerpt(
+        'EXTRATO DO CONTRATO EMERGENCIAL Nº 311/2024. Contratação emergencial de serviços de mídia para ' +
+        'campanha publicitária de utilidade pública relativa à situação de calamidade pública decretada ' +
+        '(enchentes) — inserções em rádio e TV. Valor: R$ 380.000,00.',
+      )
+      expect(findings).toHaveLength(1)
+      expect(findings[0].type).toBe('publicidade_eleitoral')
+      // não-supressão + informa a exceção e o requisito de reconhecimento da JE
+      expect(findings[0].narrative).toMatch(/emergencial|calamidade/i)
+      expect(findings[0].narrative).toMatch(/Justi[çc]a Eleitoral/i)
+      // abaixo do gate de publicação (0.70) → não auto-publica, fica p/ revisão
+      expect(findings[0].confidence).toBeLessThan(0.70)
+      // linguagem factual, não acusatória
+      expect(findings[0].narrative).not.toMatch(/fraudou|desviou|corrup|ilícito|ilegal/i)
+    })
+
+    it('campanha de saúde/vacinação (golden SYN-PUB-FP-008): GERA finding com nota + confiança < 0.70', async () => {
+      const findings = await analisarExcerpt(
+        'EXTRATO DO CONTRATO Nº 542/2024 - SECRETARIA DE SAÚDE. Serviços de publicidade para campanha ' +
+        'educativa de vacinação contra Influenza e Sarampo, conscientização sobre o calendário do SUS, ' +
+        'peças em rádio, TV e mídia digital com chamada às UBS. Valor: R$ 510.000,00.',
+        '2024-08-30',
+      )
+      expect(findings).toHaveLength(1)
+      expect(findings[0].narrative).toMatch(/sa[úu]de/i)
+      expect(findings[0].narrative).toMatch(/Justi[çc]a Eleitoral/i)
+      expect(findings[0].confidence).toBeLessThan(0.70)
+    })
+
+    it('publicidade comum na janela (sem exceção) mantém confiança de publicação', async () => {
+      const findings = await analisarExcerpt(
+        'EXTRATO DE CONTRATO Nº 900/2024. Contratação de agência de propaganda para veiculação de ' +
+        'publicidade institucional em mídia televisiva. Valor: R$ 800.000,00. Secretaria de Comunicação.',
+      )
+      expect(findings).toHaveLength(1)
+      expect(findings[0].confidence).toBeGreaterThanOrEqual(0.70)
+      expect(findings[0].narrative).not.toMatch(/campanha educativa de saúde/i)
+    })
+  })
 })
