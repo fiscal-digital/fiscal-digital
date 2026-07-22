@@ -220,6 +220,35 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "arn:aws:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:fiscal-digital-*"
       },
       {
+        # SNS ops-alerts (PR #118) — o role de deploy cria/gere o tópico e as
+        # subscriptions do monitoring module. Faltava no #118: apply falhou com
+        # AuthorizationError SNS:CreateTopic (LRN-20260503-020 — verificar IAM
+        # antes de infra). Escopado ao tópico fiscal-digital-*-prod.
+        Sid    = "SnsOpsAlertsManage"
+        Effect = "Allow"
+        Action = [
+          "sns:CreateTopic",
+          "sns:DeleteTopic",
+          "sns:GetTopicAttributes",
+          "sns:SetTopicAttributes",
+          "sns:Subscribe",
+          "sns:Unsubscribe",
+          "sns:GetSubscriptionAttributes",
+          "sns:SetSubscriptionAttributes",
+          "sns:ListSubscriptionsByTopic",
+          "sns:ListTagsForResource",
+          "sns:TagResource",
+          "sns:UntagResource",
+        ]
+        # Tópico (fiscal-digital-*-prod) e subscriptions (…-prod:<uuid>) — o
+        # segundo ARN cobre Get/Set/UnsubscribeSubscription em applies futuros
+        # e no destroy (o padrão do tópico não casa o sufixo :uuid).
+        Resource = [
+          "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:fiscal-digital-*-prod",
+          "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:fiscal-digital-*-prod:*",
+        ]
+      },
+      {
         # AWS Budgets — Resource = "*" obrigatório (budgets não suporta resource-level em todas as ações)
         Sid      = "BudgetsManage"
         Effect   = "Allow"
