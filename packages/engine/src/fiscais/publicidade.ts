@@ -28,6 +28,28 @@ const CONTRATACAO_RE =
 const NOME_PREFEITO_RE =
   /\b(?:prefeit[oa](?:\s+municipal)?|alcaide|gest[ãa]o(?:\s+municipal)?|administra[çc][ãa]o\s+do\s+prefeit[oa])\b/i
 
+// ── BUG-FSC-005: exceção legal ALEGADA (informar, não suprimir) ───────────────
+// A exceção do Art. 73, VI, "b" (grave e urgente necessidade pública) só afasta
+// a vedação quando "assim reconhecida pela Justiça Eleitoral" — o texto oficial
+// lido no legal-corpus (lei-9504-1997/art-73.md). Um contrato que apenas INVOCA
+// caráter emergencial/calamidade ou campanha de saúde NÃO comprova a exceção;
+// suprimir por essas palavras geraria falso-negativo (violação disfarçada).
+// Decisão do Diego 2026-07-21: manter o finding e anotar a exceção na narrativa.
+// Nota: o golden set de fiscal-digital-evaluations rotula estes casos como
+// no_finding citando "Art. 73 §3º" — o §3º trata da esfera administrativa em
+// disputa, não cria exceção de saúde/calamidade (mis-citação; ADR à parte).
+const EXCECAO_EMERGENCIAL_RE =
+  /\b(?:calamidade\s+p[úu]blica|estado\s+de\s+emerg[êe]ncia|contrata[çc][ãa]o\s+emergencial|car[áa]ter\s+emergencial)\b/i
+const EXCECAO_SAUDE_RE =
+  /\bcampanha\s+(?:educativa|informativa|de\s+orienta[çc][ãa]o(?:\s+social)?)\b[\s\S]{0,120}\b(?:sa[úu]de|vacina[çc][ãa]o|vacine|SUS|UBS|dengue|influenza|sarampo|HPV|imuniza[çc][ãa]o)\b/i
+
+/** Retorna o tipo de exceção alegada no excerpt, ou null. */
+function excecaoAlegada(excerpt: string): 'emergencial' | 'saude' | null {
+  if (EXCECAO_EMERGENCIAL_RE.test(excerpt)) return 'emergencial'
+  if (EXCECAO_SAUDE_RE.test(excerpt)) return 'saude'
+  return null
+}
+
 // ── Filtros de exclusão (ADR-001 — patch 2026-05-10) ────────────────────────
 // Padrões identificados nos 6 FPs originais (Ciclo 1+2, universo esgotado n=23).
 // Reduz overmatch sistemático em "divulgação", header do DO, designação fiscal,
@@ -252,14 +274,35 @@ export const fiscalPublicidade: Fiscal = {
         `Lei 9.504/97, Art. 73, VI, "b" veda publicidade institucional no período, ` +
         `salvo grave e urgente necessidade pública autorizada pela Justiça Eleitoral.`
 
-      const narrativa = mencionaPrefeito
+      // BUG-FSC-005: exceção alegada → informar, não suprimir. A exceção do
+      // Art. 73, VI, "b" só afasta a vedação se reconhecida pela Justiça
+      // Eleitoral; o documento invocá-la não a comprova.
+      const excecao = excecaoAlegada(excerpt)
+      const notaExcecao = excecao === 'emergencial'
+        ? ' O documento invoca caráter emergencial ou de calamidade pública. ' +
+          'A exceção do Art. 73, VI, "b" só afasta a vedação quando a grave e urgente ' +
+          'necessidade pública é reconhecida pela Justiça Eleitoral — recomenda-se ' +
+          'verificar a existência dessa autorização específica.'
+        : excecao === 'saude'
+          ? ' O documento descreve campanha educativa de saúde pública. ' +
+            'Campanhas dessa natureza podem ser admitidas, mas a exceção depende de ' +
+            'reconhecimento pela Justiça Eleitoral e de ausência de promoção pessoal ' +
+            '(Art. 73, §1º) — recomenda-se verificação.'
+          : ''
+
+      const narrativa = (mencionaPrefeito
         ? baseNarrativa +
           ' O excerpt menciona o(a) prefeito(a) ou a gestão municipal — ' +
           'Art. 73, VII também veda uso promocional em favor de candidato.'
-        : baseNarrativa
+        : baseNarrativa) + notaExcecao
 
       // confidence: alta quando valor é conhecido; reduzida quando inferida.
-      const confidence = valorConhecido ? 0.80 : 0.72
+      // BUG-FSC-005: exceção alegada fixa a confiança logo ABAIXO do gate de
+      // publicação (DEFAULT 0.70). O finding é persistido e visível na API/feed
+      // com a narrativa completa (não-supressão), mas não AUTO-publica um caso
+      // limítrofe — revisão humana decide. Equilíbrio "não acusar / informar".
+      const confidenceBase = valorConhecido ? 0.80 : 0.72
+      const confidence = excecao ? 0.69 : confidenceBase
 
       const finding: Finding = {
         fiscalId: FISCAL_ID,
