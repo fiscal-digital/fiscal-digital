@@ -1362,7 +1362,23 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         currency: 'BRL',
         days,
         updatedAt,
-        monthly,
+        // TST-010..014: projeta o item em vez de serializar o registro DDB cru —
+        // `pk` (chave interna) vazava na resposta pública. Contrato em
+        // @fiscal-digital/contracts costMonthlySchema.
+        monthly: monthly
+          ? {
+              month: monthly.month,
+              mtdUsd: monthly.mtdUsd,
+              mtdBrl: monthly.mtdBrl,
+              projectedUsd: monthly.projectedUsd,
+              projectedBrl: monthly.projectedBrl,
+              prevMonthBrl: monthly.prevMonthBrl,
+              deltaPct: monthly.deltaPct,
+              byService: monthly.byService,
+              ptaxBrl: monthly.ptaxBrl,
+              capturedAt: monthly.capturedAt,
+            }
+          : null,
         daily: daily.map(d => ({
           date: d.date,
           totalBrl: d.totalBrl,
