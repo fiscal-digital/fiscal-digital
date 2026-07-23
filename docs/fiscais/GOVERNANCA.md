@@ -70,7 +70,7 @@
 
 ## Documentação Obrigatória por Fiscal
 
-Cada Fiscal deve ter 2 documentos versionados:
+Cada Fiscal deve ter 3 documentos versionados:
 
 ### `<fiscal>.legal.md`
 - Referência legal (Lei 14.133/2021 Art. X, etc.)
@@ -83,6 +83,14 @@ Cada Fiscal deve ter 2 documentos versionados:
 - Última execução: timestamp + commit
 - Métricas observadas: erros, findings, latência
 - Calibração: quantos findings esperados em Caxias + PA por mês
+
+### `<fiscal>.eval.md` (NOVO — EVO-004)
+- Ficha de avaliação por ciclo nas 5 dimensões da metodologia: **Precisão,
+  Recall, Calibração de score, Robustez de evidência, Defensibilidade legal**
+- Só amostras reais de `alerts-prod`; baselines numéricos no repo
+  `fiscal-digital-evaluations`
+- Veredito SSM (ligar/desligar/reativar) + bloqueios para reativação
+- Template: [`_TEMPLATE.eval.md`](_TEMPLATE.eval.md)
 
 ---
 
