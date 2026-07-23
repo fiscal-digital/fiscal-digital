@@ -53,7 +53,9 @@ jobs:
       - name: Build shared libs
         env:
           GH_TOKEN: ${{ github.token }}
-        run: npm run build -w packages/engine
+        run: |
+          npm run build -w packages/contracts
+          npm run build -w packages/engine
 
       - name: Bundle Lambdas
         run: |

@@ -4,6 +4,7 @@ module.exports = {
   testMatch: ['**/*.test.ts'],
   moduleNameMapper: {
     '^@fiscal-digital/engine$': '<rootDir>/../engine/src/index.ts',
+    '^@fiscal-digital/contracts$': '<rootDir>/../contracts/src/index.ts',
   },
   transform: {
     '^.+\\.tsx?$': [

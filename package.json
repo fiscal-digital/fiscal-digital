@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "packages/engine",
+    "packages/contracts",
     "packages/analyzer",
     "packages/publisher",
     "packages/api",
