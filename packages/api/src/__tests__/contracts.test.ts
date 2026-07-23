@@ -247,6 +247,8 @@ describe('contrato: schemas exportados', () => {
     const detail = {
       id: 'x', fiscalId: 'fiscal-licitacoes', type: 'dispensa_irregular', cityId: '4305108',
       city: 'Caxias do Sul', state: 'RS', riskScore: 75, confidence: 0.85,
+      narrative: 'Identificamos dispensa publicada em 15/04/2026.',
+      legalBasis: 'Lei 14.133/2021, Art. 75, II',
       cachedPdfUrl: null, evidence: [], createdAt: '2026-04-15T00:00:00.000Z',
     }
     expect(alertDetailSchema.safeParse(detail).success).toBe(true)
