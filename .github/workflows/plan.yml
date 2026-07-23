@@ -46,10 +46,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: npm run lint
 
-      - name: Build engine (consumido pelos outros workspaces)
+      # LRN-20260509-002: workspaces que importam libs compartilhadas falham com
+      # "Cannot find module" se elas não foram compiladas (ts-jest precisa dos
+      # .d.ts). contracts entra aqui junto do engine — packages/api importa os
+      # dois (TST-010..014).
+      - name: Build libs compartilhadas (engine + contracts)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: npm run build -w packages/engine
+        run: |
+          npm run build -w packages/contracts
+          npm run build -w packages/engine
 
       - name: Wait for DynamoDB Local
         run: |
