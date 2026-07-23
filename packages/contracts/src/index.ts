@@ -97,8 +97,10 @@ export const alertItemSchema = z.object({
   cnpj: z.string().optional(),
   contractNumber: z.string().optional(),
   secretaria: z.string().optional(),
-  legalBasis: z.string().optional(),
-  narrative: z.string().optional(),
+  // Obrigatórios na interface Finding da engine (types/index.ts) — todo finding
+  // persistido os tem.
+  legalBasis: z.string(),
+  narrative: z.string(),
   // A API só emite `source` quando existe evidence[0].source — o web tipava
   // como obrigatório e recebia undefined em runtime.
   source: z.string().optional(),
@@ -107,7 +109,9 @@ export const alertItemSchema = z.object({
   evidence: z.array(evidenceSchema),
   published: z.boolean().optional(),
   publishedAt: z.string().optional(),
-  createdAt: z.string().optional(),
+  // `required` no OpenAPI (openapi.ts:511) e sempre setado por persistFinding —
+  // não é opcional na resposta, ainda que opcional na interface interna.
+  createdAt: z.string(),
 })
 export type AlertItem = z.infer<typeof alertItemSchema>
 
