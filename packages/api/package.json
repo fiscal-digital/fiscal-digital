@@ -15,7 +15,8 @@
     "@aws-sdk/client-dynamodb": "^3.0.0",
     "@aws-sdk/client-s3": "^3.0.0",
     "@aws-sdk/lib-dynamodb": "^3.0.0",
-    "@fiscal-digital/engine": "*"
+    "@fiscal-digital/engine": "*",
+    "@fiscal-digital/contracts": "*"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.0.0",
