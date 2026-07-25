@@ -2,13 +2,13 @@
   "sources": {
     "lei-14133-2021": {
       "url": "https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm",
-      "fetchedAt": "2026-05-24T13:22:45.790Z",
-      "checksum": "66611bcde031b3fc9c01607ab4fd38d1a7f4a20cd6dc1a5c18369eab56c6dc66",
-      "bytes": 276655
+      "fetchedAt": "2026-07-25T09:30:13.196Z",
+      "checksum": "028ea4cfd1efbda2c3e30ce9b6c70117295429fe9125b97a68c2259d291c784b",
+      "bytes": 277512
     },
     "lei-13019-2014": {
       "url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2014/lei/l13019.htm",
-      "fetchedAt": "2026-05-24T13:22:46.134Z",
+      "fetchedAt": "2026-07-25T09:30:13.915Z",
       "checksum": "e9d4969d8c9633bf12c6aeec62fd66dcc229ec90dc2a3d92e0572116d713aa8b",
       "bytes": 154271
     },
@@ -32,8 +32,8 @@
     },
     "lei-8666-1993": {
       "url": "https://www.planalto.gov.br/ccivil_03/leis/l8666cons.htm",
-      "fetchedAt": "2026-05-24T13:22:47.051Z",
-      "checksum": "83834203165617eba98b0e866fd8087a13b0fca24674eb5f8a6946396c548ad0",
+      "fetchedAt": "2026-07-25T09:30:12.280Z",
+      "checksum": "6a575bedaeb18efbe92a868784d0c04599889933d860568745bea12e0e52664c",
       "bytes": 199490
     },
     "lei-14759-2023": {
@@ -73,5 +73,5 @@
       "bytes": 33598
     }
   },
-  "lastRun": "2026-05-24T13:22:49.296Z"
+  "lastRun": "2026-07-25T09:30:13.920Z"
 }

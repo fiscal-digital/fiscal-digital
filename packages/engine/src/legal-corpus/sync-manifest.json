@@ -9,7 +9,7 @@
       "url": "https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm",
       "fonte": "planalto",
       "tipo": "lei",
-      "artigos": ["11", "14", "67", "74", "75", "107", "124", "125", "135"],
+      "artigos": ["11", "14", "67", "74", "75", "107", "117", "124", "125", "135"],
       "usadoPor": ["fiscal-licitacoes", "fiscal-contratos", "fiscal-fornecedores", "fiscal-locacao"]
     },
     {
@@ -19,7 +19,7 @@
       "url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2014/lei/l13019.htm",
       "fonte": "planalto",
       "tipo": "lei",
-      "artigos": ["2", "24", "29", "30", "33", "35"],
+      "artigos": ["2", "24", "29", "30", "33", "35", "57"],
       "usadoPor": ["fiscal-convenios"]
     },
     {
@@ -59,8 +59,8 @@
       "url": "https://www.planalto.gov.br/ccivil_03/leis/l8666cons.htm",
       "fonte": "planalto",
       "tipo": "lei",
-      "artigos": ["87"],
-      "usadoPor": ["fiscal-fornecedores"]
+      "artigos": ["24", "87"],
+      "usadoPor": ["fiscal-fornecedores", "fiscal-licitacoes"]
     },
     {
       "id": "lei-14759-2023",
