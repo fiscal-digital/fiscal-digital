@@ -104,6 +104,37 @@ function dentroJanelaEleitoral(dateISO: string): JanelaEleitoral | null {
   return null
 }
 
+// ─── Ressalva do Art. 73, V, "a" (BUG-FSC-006) ───────────────────────────────
+//
+// O Art. 73, V da Lei 9.504/97 fecha a vedação com "ressalvados:" e a alínea "a"
+// ressalva literalmente "a nomeação ou exoneração de cargos em comissão e
+// designação ou dispensa de funções de confiança"
+// (legal-corpus/lei-9504-1997/art-73.md, linhas 32-41).
+//
+// Ou seja: exatamente os atos que este Fiscal conta são os que o inciso V
+// EXCETUA. Publicar esses atos como violação do Art. 73, V é apontar como
+// ilícito o que a própria lei ressalva.
+//
+// Agrava o quadro que os filtros de exclusão (h) — "concurso público regular" e
+// "nomeação em caráter efetivo" — removem justamente os atos NÃO ressalvados,
+// de modo que o que sobra para contagem é desproporcionalmente da natureza
+// ressalvada.
+//
+// Decisão (mesma linha do BUG-FSC-005, informar-não-suprimir): o finding
+// continua existindo como sinal de volume/transparência, mas com base legal
+// corrigida, narrativa que explicita a ressalva e confiança rebaixada.
+const RESSALVA_73V_A_RE =
+  /cargos?\s+(?:em\s+)?comiss[ãa]o|cargos?\s+comissionados?|comissionad[oa]s?|fun[çc][õo]?[ãa]?[eo]?s?\s+de\s+confian[çc]a/i
+
+function atosSobRessalva73VA(excerpts: readonly string[]): boolean {
+  return excerpts.some((e) => RESSALVA_73V_A_RE.test(e))
+}
+
+// Confiança de finding atingido pela ressalva: abaixo do gate de publicação
+// (0.70) porque a tese de ilicitude sob o Art. 73, V não se sustenta. O achado
+// permanece consultável na API — deixa de ser publicado automaticamente.
+const CONFIANCA_SOB_RESSALVA = 0.55
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string): string {
@@ -221,7 +252,8 @@ Regras inegociáveis:
 - Máximo 3 frases curtas (até 350 caracteres total)
 - NÃO cite nomes de pessoas físicas (privacidade — Lei 12.527 obriga publicar atos, não dossiês)
 - CITE secretarias e cargos específicos QUANDO o contexto os fornecer (especificidade > genericidade)
-- Em janela eleitoral: mencionar Lei 9.504/97 Art. 73 V
+- Em janela eleitoral, quando os atos NÃO são de cargo em comissão nem de função de confiança: mencionar Lei 9.504/97 Art. 73 V
+- Em janela eleitoral, quando os atos SÃO de cargo em comissão ou função de confiança: a Lei 9.504/97, Art. 73, V, alínea "a" RESSALVA expressamente esses atos — eles NÃO são vedados. É obrigatório dizer que a lei os ressalva e NUNCA afirmar, sugerir ou insinuar vedação, irregularidade ou ilegalidade. Enquadre como registro informativo de volume de movimentação
 - Fora de janela: tom informativo, sem alarmismo
 - Indique o porte da cidade em português natural: "cidade de grande porte (mais de 1 milhão de habitantes)", "cidade de médio porte", "cidade de pequeno porte". NÃO use os termos técnicos "large", "medium" ou "small".
 
@@ -237,6 +269,8 @@ interface NarrativaInput {
   eleicaoDate?: string
   gazetteDate: string
   contexto: ContextoAtos
+  /** Atos contados caem na ressalva do Art. 73, V, "a" (cargo em comissão / FC). */
+  sobRessalva: boolean
 }
 
 /**
@@ -264,6 +298,9 @@ async function gerarNarrativaPicoViaHaiku(input: NarrativaInput): Promise<string
     input.isEleitoral
       ? `Contexto: dentro da janela eleitoral municipal (eleição em ${formatDate(input.eleicaoDate ?? '')})`
       : `Contexto: fora da janela eleitoral`,
+    input.sobRessalva
+      ? 'Natureza dos atos: cargos em comissão / funções de confiança — RESSALVADOS pelo Art. 73, V, "a" da Lei 9.504/97 (NÃO vedados)'
+      : 'Natureza dos atos: não identificados como cargo em comissão ou função de confiança',
     '',
     'Contexto extraído dos excerpts:',
     contextoStr,
@@ -288,9 +325,32 @@ async function gerarNarrativaPicoViaHaiku(input: NarrativaInput): Promise<string
   }
 
   // Fallback resiliente — nunca trava o Fiscal por causa de LLM.
-  return input.isEleitoral
-    ? `Identificamos ${input.totalAtos} atos de nomeação, exoneração e designação de cargos comissionados em gazette de ${formatDate(input.gazetteDate)} em ${input.cityName}/${input.cityUf} (porte ${input.cityBucket}), dentro da janela eleitoral municipal. Volume acima do limiar de ${input.limiar}. Lei 9.504/97 Art. 73 V veda nomeações para cargos em comissão no período eleitoral.`
-    : `Identificamos ${input.totalAtos} atos de nomeação, exoneração e designação em gazette de ${formatDate(input.gazetteDate)} em ${input.cityName}/${input.cityUf} (porte ${input.cityBucket}), acima do limiar de ${input.limiar} para o porte da cidade. Registro informativo para monitoramento.`
+  const cabecalho =
+    `Identificamos ${input.totalAtos} atos de nomeação, exoneração e designação em gazette de ` +
+    `${formatDate(input.gazetteDate)} em ${input.cityName}/${input.cityUf} (porte ${input.cityBucket}), ` +
+    `acima do limiar de ${input.limiar} para o porte da cidade`
+
+  if (!input.isEleitoral) {
+    return `${cabecalho}. Registro informativo para monitoramento.`
+  }
+
+  // Em janela eleitoral com atos ressalvados, a narrativa NÃO pode afirmar
+  // vedação — a alínea "a" do Art. 73, V excetua justamente esses atos.
+  if (input.sobRessalva) {
+    return (
+      `${cabecalho}, dentro da janela eleitoral municipal. ` +
+      `A Lei 9.504/97, Art. 73, V, alínea "a" ressalva expressamente a nomeação e a exoneração de ` +
+      `cargos em comissão e a designação e dispensa de funções de confiança — atos dessa natureza ` +
+      `não estão vedados no período. Registro informativo sobre o volume de movimentação.`
+    )
+  }
+
+  return (
+    `${cabecalho}, dentro da janela eleitoral municipal. ` +
+    `A Lei 9.504/97, Art. 73, V veda nomear, contratar ou admitir servidor público na circunscrição ` +
+    `do pleito nos três meses que o antecedem e até a posse dos eleitos, com as ressalvas das ` +
+    `alíneas "a" a "e".`
+  )
 }
 
 /**
@@ -441,6 +501,9 @@ export const fiscalPessoal: Fiscal = {
         // disponíveis. Fallback resiliente em caso de falha do Bedrock.
         const cidade = getCityOrFallback(cityId)
         const contexto = extrairContextoAtos(relevantExcerpts)
+        // BUG-FSC-006: atos de cargo em comissão / função de confiança são
+        // ressalvados pelo Art. 73, V, "a" — muda base legal, narrativa e confiança.
+        const sobRessalva = atosSobRessalva73VA(relevantExcerpts)
         const narrativa = await gerarNarrativaPicoViaHaiku({
           cityName: cidade.name,
           cityUf: cidade.uf,
@@ -451,6 +514,7 @@ export const fiscalPessoal: Fiscal = {
           eleicaoDate: janela?.eleicao,
           gazetteDate: gazette.date,
           contexto,
+          sobRessalva,
         })
 
         const finding: Finding = {
@@ -461,7 +525,11 @@ export const fiscalPessoal: Fiscal = {
           // Confiança reflete o método de detecção:
           // - pessoas únicas (regex nomeação): mais preciso → 0.82
           // - fallback contagem de palavras: menos preciso → 0.65
-          confidence: pessoasUnicas >= 1 ? 0.82 : 0.65,
+          // Ressalva do Art. 73, V, "a" rebaixa para abaixo do gate: a tese de
+          // ilicitude não se sustenta, mas o achado permanece consultável.
+          confidence: sobRessalva
+            ? CONFIANCA_SOB_RESSALVA
+            : (pessoasUnicas >= 1 ? 0.82 : 0.65),
           evidence: [
             {
               source: gazette.url,
@@ -470,7 +538,12 @@ export const fiscalPessoal: Fiscal = {
             },
           ],
           narrative: narrativa,
-          legalBasis: 'Lei 9.504/97, Art. 73, V; CF, Art. 37, V',
+          // Com a ressalva incidindo, o Art. 73, V não é fundamento de ilicitude:
+          // é citado como a norma que EXCETUA o ato. O interesse público remanescente
+          // é de impessoalidade/moralidade (CF, Art. 37, caput), não de conduta vedada.
+          legalBasis: sobRessalva
+            ? 'Lei 9.504/97, Art. 73, V, "a" (ressalva expressa — ato não vedado); CF, Art. 37, caput'
+            : 'Lei 9.504/97, Art. 73, V; CF, Art. 37, V',
           createdAt: now.toISOString(),
         }
 
@@ -522,7 +595,11 @@ export const fiscalPessoal: Fiscal = {
             },
           ],
           narrative: narrativa,
-          legalBasis: 'CF, Art. 37, V; Lei 9.504/97, Art. 73, V',
+          // BUG-FSC-006: este achado é, por construção, sobre cargo comissionado —
+          // exatamente o que o Art. 73, V, "a" ressalva. Citar o inciso V aqui
+          // insinuava vedação eleitoral que a lei afasta. O fundamento real é a
+          // destinação constitucional do cargo em comissão (CF, Art. 37, V).
+          legalBasis: 'CF, Art. 37, V',
           createdAt: now.toISOString(),
         }
 
