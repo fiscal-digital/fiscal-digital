@@ -13,6 +13,7 @@ export { scoreRisk } from './skills/score_risk'
 export { generateNarrative } from './skills/generate_narrative'
 export { regenerateNarrative } from './skills/regenerate_narrative'
 export { querySuppliersContract } from './skills/query_suppliers_contract'
+export { maybeWriteSupplier } from './skills/maybe_write_supplier'
 export { pdfCacheUrl, pdfCacheS3Key, gazetteKey, GAZETTES_CDN_HOST } from './utils/pdf_cache'
 
 export type { QueryDiarioInput } from './skills/query_diario'
@@ -25,6 +26,11 @@ export type { CheckSanctionsInput, SanctionResult, SanctionRecord } from './skil
 export type { ScoreRiskInput } from './skills/score_risk'
 export type { GenerateNarrativeInput } from './skills/generate_narrative'
 export type { QuerySuppliersContractInput, SupplierContractRecord } from './skills/query_suppliers_contract'
+export type {
+  MaybeWriteSupplierInput,
+  MaybeWriteSupplierResult,
+  MaybeWriteSupplierSkipReason,
+} from './skills/maybe_write_supplier'
 
 export { fiscalLicitacoes } from './fiscais/licitacoes'
 export { fiscalContratos } from './fiscais/contratos'
