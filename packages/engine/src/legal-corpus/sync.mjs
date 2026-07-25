@@ -44,6 +44,7 @@ async function main() {
     try {
       const html = await fetchSource(src)
       const text = htmlToText(html)
+      assertNoC1Controls(text, src.id)
       const checksum = sha256(text)
 
       const dir = join(__dirname, src.id)
@@ -138,11 +139,56 @@ function decodeHtml(buf, contentType) {
     charset = detectLegacyCharset(buf)
   }
   charset = (charset || 'utf-8').toLowerCase()
+  if (isCp1252Family(charset)) return decodeCp1252(buf)
   try {
     return new TextDecoder(charset, { fatal: false }).decode(buf)
   } catch {
-    return new TextDecoder('windows-1252').decode(buf)
+    return decodeCp1252(buf)
   }
+}
+
+function isCp1252Family(charset) {
+  return ['windows-1252', 'cp1252', 'iso-8859-1', 'latin1', 'ascii'].includes(charset)
+}
+
+// Faixa 0x80-0x9F: unico intervalo onde windows-1252 diverge de ISO-8859-1.
+// Tabela oficial WHATWG (encoding.spec.whatwg.org/index-windows-1252.txt).
+const CP1252_C1 = {
+  0x80: '€', 0x82: '‚', 0x83: 'ƒ', 0x84: '„', 0x85: '…',
+  0x86: '†', 0x87: '‡', 0x88: 'ˆ', 0x89: '‰', 0x8a: 'Š',
+  0x8b: '‹', 0x8c: 'Œ', 0x8e: 'Ž', 0x91: '‘', 0x92: '’',
+  0x93: '“', 0x94: '”', 0x95: '•', 0x96: '–', 0x97: '—',
+  0x98: '˜', 0x99: '™', 0x9a: 'š', 0x9b: '›', 0x9c: 'œ',
+  0x9e: 'ž', 0x9f: 'Ÿ',
+}
+
+// Node 24 resolve TextDecoder('windows-1252') como latin1 puro: o byte 0x96
+// (travessao) vira U+0096, um controle C1 invisivel, em vez de U+2013. O planalto
+// serve travessao e aspas curvas nesses bytes e nao declara charset algum, entao o
+// remapeamento precisa ser explicito — senao o texto legal canonico fica com
+// caractere de controle no lugar da pontuacao. Ver ERR-20260725-001.
+function decodeCp1252(buf) {
+  return remapC1Punctuation(buf.toString('latin1'))
+}
+
+// O planalto tambem escreve a mesma pontuacao como entidade numerica decimal
+// (`&#150;` = travessao), que decodifica para o controle U+0096. Entao o remap
+// precisa rodar nos dois caminhos: bytes crus e entidades ja decodificadas.
+function remapC1Punctuation(s) {
+  return s.replace(/[\u0080-\u009F]/g, (c) => CP1252_C1[c.charCodeAt(0)] ?? c)
+}
+
+// Guarda: nenhum controle C1 pode sobreviver ate o disco. Se sobrar, a decodificacao
+// errou e o texto legal esta corrompido — falhar alto em vez de persistir silenciosamente.
+function assertNoC1Controls(text, srcId) {
+  const m = text.match(/[\u0080-\u009F]/)
+  if (!m) return
+  const at = text.indexOf(m[0])
+  const ctx = text.slice(Math.max(0, at - 60), at + 60).replace(/\n/g, ' ')
+  throw new Error(
+    `[${srcId}] controle C1 U+${m[0].charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')} ` +
+    `no texto decodificado (charset errado). Contexto: ...${ctx}...`
+  )
 }
 
 function detectLegacyCharset(buf) {
@@ -184,6 +230,7 @@ function htmlToText(html) {
   t = t.replace(/<[^>]+>/g, '')
   // Decode entidades comuns
   t = decodeEntities(t)
+  t = remapC1Punctuation(t)
   // Normaliza whitespace
   t = t.replace(/\r\n?/g, '\n')
   t = t.replace(/ /g, ' ')

@@ -2,7 +2,7 @@
 norma: Lei 13.019/2014
 artigo: Art. 24
 urlFonte: https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2014/lei/l13019.htm#art24
-syncEm: 2026-05-24T13:22:46.135Z
+syncEm: 2026-07-25T09:30:13.917Z
 fonte: planalto
 usadoPor: [fiscal-convenios]
 ---

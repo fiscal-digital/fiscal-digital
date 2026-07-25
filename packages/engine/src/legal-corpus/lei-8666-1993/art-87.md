@@ -2,9 +2,9 @@
 norma: Lei 8.666/1993
 artigo: Art. 87
 urlFonte: https://www.planalto.gov.br/ccivil_03/leis/l8666cons.htm#art87
-syncEm: 2026-05-24T13:22:47.051Z
+syncEm: 2026-07-25T09:30:12.282Z
 fonte: planalto
-usadoPor: [fiscal-fornecedores]
+usadoPor: [fiscal-fornecedores, fiscal-licitacoes]
 ---
 Art. 87. Pela inexecução total ou parcial do contrato a Administração
 poderá, garantida a prévia defesa, aplicar ao contratado as seguintes sanções:
