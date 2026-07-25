@@ -2,7 +2,7 @@
 norma: Lei 14.133/2021
 artigo: Art. 75
 urlFonte: https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm#art75
-syncEm: 2026-05-24T13:22:45.797Z
+syncEm: 2026-07-25T09:30:13.202Z
 fonte: planalto
 usadoPor: [fiscal-licitacoes, fiscal-contratos, fiscal-fornecedores, fiscal-locacao]
 ---
@@ -277,6 +277,21 @@ esse fim específico em data anterior à entrada em vigor desta Lei, desde que
 o preço contratado seja compatível com o praticado no mercado;
 (Redação dada
 pela Lei nº 14.628, de 2023)
+
+XVI -
+para aquisição, por pessoa jurídica de direito público interno, de produtos
+estratégicos para a saúde fornecidos por produtores públicos por intermédio
+de fundação que, regimental ou estatutariamente, tenha por finalidade apoiar
+órgão da Administração Pública direta, sua autarquia ou fundação em projetos
+de ensino, pesquisa, extensão, desenvolvimento institucional, científico e
+tecnológico e de estímulo à inovação, inclusive na gestão administrativa e
+financeira necessária à execução desses projetos, ou em parcerias que
+envolvam transferência de tecnologia de produtos estratégicos para o SUS,
+nos termos do inciso XII deste caput, e que tenha sido criada para
+esse fim específico em data anterior à entrada em vigor desta Lei, desde que
+o preço contratado seja compatível com o praticado no mercado;
+(Redação dada
+pela Lei nº 15.471, de 2026)
 
 XVII - para a contratação de entidades privadas sem ﬁns lucrativos para a
 implementação de cisternas ou outras tecnologias sociais de acesso à água
