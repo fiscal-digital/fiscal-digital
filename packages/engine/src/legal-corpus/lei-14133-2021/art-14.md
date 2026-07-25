@@ -2,7 +2,7 @@
 norma: Lei 14.133/2021
 artigo: Art. 14
 urlFonte: https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm#art14
-syncEm: 2026-05-24T13:22:45.794Z
+syncEm: 2026-07-25T09:30:13.199Z
 fonte: planalto
 usadoPor: [fiscal-licitacoes, fiscal-contratos, fiscal-fornecedores, fiscal-locacao]
 ---

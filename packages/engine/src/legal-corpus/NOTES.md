@@ -42,11 +42,41 @@ const check = validateCitation('Lei 14.133/2021, Art. 75, II — limite R$ 65.49
 ### Bypass do hook check-legal-citation
 Citações verificadas contra esta base ganham bypass automático via marca `[legal-verified: legal-corpus/<norma>/<arquivo>]` injetada pelo `validateCitation`.
 
+## Codificação — por que o sync não usa `TextDecoder('windows-1252')`
+
+O planalto serve travessão e aspas curvas como **bytes windows-1252 crus** (`0x96`, `0x93`,
+`0x94`, `0x92`) e, em algumas páginas, como **entidade numérica decimal** (`&#150;`) — sem
+declarar `charset` em header nem em `<meta>`. Dois problemas:
+
+1. No Node 24, `new TextDecoder('windows-1252')` **não** aplica a tabela cp1252 — resolve como
+   latin1 puro, mapeando `0x96` para `U+0096` (controle C1 invisível) em vez de `–` (`U+2013`).
+2. `&#150;` decodifica literalmente para o mesmo controle `U+0096`.
+
+Nos dois casos o texto legal canônico ficava com **caractere de controle invisível no lugar da
+pontuação** — o tipo de corrupção que passa despercebida em review e quebra comparação exata de
+citação. Por isso o `sync.mjs`:
+
+- decodifica a família cp1252/latin1 via `decodeCp1252()` (latin1 + remap explícito da faixa
+  `0x80–0x9F` pela tabela WHATWG), e
+- reaplica `remapC1Punctuation()` **depois** da decodificação de entidades, cobrindo o caminho `&#150;`.
+
+Guarda: `assertNoC1Controls()` aborta o sync da norma se algum controle C1 sobreviver até o disco —
+falha alta em vez de persistir texto corrompido silenciosamente.
+
+> Pendência conhecida: `stf-sv-13/` ainda tem 27 controles C1 de um sync anterior ao fix (fonte
+> STF, caminho PowerShell). Re-sincronizar essa norma resolve — a guarda agora impede regressão.
+
 ## Política de atualização
 
 - Reajustes anuais (decretos de IPCA): rodar sync em janeiro.
 - Alteração legislativa: rodar sync quando publicada no DOU.
 - Checksum: `_meta.json` registra hash do texto baixado; mudança aciona revisão de prompts/regras que dependem do dispositivo.
+
+### Alterações detectadas por checksum (registro)
+
+| Data do sync | Norma | Mudança | Ação |
+|---|---|---|---|
+| 2026-07-25 | Lei 14.133/2021, Art. 75 | Novo **inciso XVI** (dispensa para aquisição de produtos estratégicos para a saúde), redação dada pela **Lei 15.471/2026** — posterior ao sync de 2026-05-24 | Revisar `fiscal-licitacoes`: nova hipótese de dispensa legal não coberta pelas regras atuais (risco de FP) |
 
 ## Escopo
 

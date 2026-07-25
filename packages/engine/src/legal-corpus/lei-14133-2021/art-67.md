@@ -2,7 +2,7 @@
 norma: Lei 14.133/2021
 artigo: Art. 67
 urlFonte: https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm#art67
-syncEm: 2026-05-24T13:22:45.795Z
+syncEm: 2026-07-25T09:30:13.200Z
 fonte: planalto
 usadoPor: [fiscal-licitacoes, fiscal-contratos, fiscal-fornecedores, fiscal-locacao]
 ---
