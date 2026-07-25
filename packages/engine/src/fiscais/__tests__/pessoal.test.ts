@@ -7,6 +7,8 @@ import {
   gazettePicoJanelaEleitoral3Atos,
   gazetteRotatividadeAnormal,
   gazettesSemTermosPessoal,
+  gazetteRessalvaCargoComissao,
+  gazetteSemRessalvaJanelaEleitoral,
 } from './pessoal-fixtures'
 
 // ─── Mock helpers ────────────────────────────────────────────────────────────
@@ -247,5 +249,80 @@ describe('fiscalPessoal', () => {
       ],
       'c3-a-pedido',
     ))
+  })
+
+  // ─── BUG-FSC-006: ressalva do Art. 73, V, "a" ───────────────────────────────
+  //
+  // Fonte canônica: legal-corpus/lei-9504-1997/art-73.md (linhas 32-41). O inciso
+  // V encerra com "ressalvados:" e a alínea "a" ressalva "a nomeação ou exoneração
+  // de cargos em comissão e designação ou dispensa de funções de confiança".
+  //
+  // Antes do patch de 2026-07-25 o Fiscal publicava esses atos afirmando que o
+  // Art. 73 V "veda nomeações para cargos em comissão no período eleitoral" — o
+  // oposto do que a lei diz. Estes testes falham naquele estado.
+  describe('BUG-FSC-006 — ressalva de cargos em comissão (Art. 73, V, "a")', () => {
+    it('atos de cargo em comissão em janela eleitoral: NÃO afirma vedação', async () => {
+      const findings = await fiscalPessoal.analisar({
+        gazette: gazetteRessalvaCargoComissao,
+        cityId: '4305108',
+        context: makeContext({ now: () => new Date('2026-08-20T10:00:00.000Z') }),
+      })
+
+      const pico = findings.filter(f => f.type === 'pico_nomeacoes')
+      expect(pico).toHaveLength(1)
+
+      // O achado permanece — informar, não suprimir (linha do BUG-FSC-005).
+      const f = pico[0]
+
+      // A narrativa não pode afirmar nem insinuar vedação sobre ato ressalvado.
+      expect(f.narrative).not.toMatch(/veda\s+nomea[çc][õo]es\s+para\s+cargos?\s+em\s+comiss/i)
+      expect(f.narrative).not.toMatch(/proibid|irregular|ilícit|ilegal/i)
+      // "vedados" só pode aparecer negado ("não estão vedados").
+      expect(f.narrative).not.toMatch(/(?<!n[ãa]o\s)est[ãa]o\s+vedados/i)
+      // E precisa explicitar a ressalva.
+      expect(f.narrative).toMatch(/ressalva/i)
+      expect(f.narrative).toMatch(/n[ãa]o\s+est[ãa]o\s+vedados/i)
+
+      // Base legal cita a alínea "a" como ressalva, não como fundamento de ilicitude.
+      expect(f.legalBasis).toMatch(/Art\. 73, V, "a"/)
+      expect(f.legalBasis).toMatch(/ressalva/i)
+
+      // Confiança rebaixada abaixo do gate de publicação (0.70).
+      expect(f.confidence).toBeLessThan(0.70)
+      expect(f.confidence).toBe(0.55)
+    })
+
+    it('atos sem indicação de cargo em comissão: mantém base legal cheia do inciso V', async () => {
+      const findings = await fiscalPessoal.analisar({
+        gazette: gazetteSemRessalvaJanelaEleitoral,
+        cityId: '4305108',
+        context: makeContext({ now: () => new Date('2026-08-20T10:00:00.000Z') }),
+      })
+
+      const pico = findings.filter(f => f.type === 'pico_nomeacoes')
+      expect(pico).toHaveLength(1)
+      const f = pico[0]
+
+      expect(f.legalBasis).toBe('Lei 9.504/97, Art. 73, V; CF, Art. 37, V')
+      expect(f.confidence).toBeGreaterThanOrEqual(0.70)
+      // Mesmo aqui a narrativa sinaliza que o inciso tem ressalvas — não afirma
+      // vedação absoluta sobre ato cuja natureza a gazette não declara.
+      expect(f.narrative).toMatch(/ressalvas das alíneas/i)
+    })
+
+    it('rotatividade_anormal não cita Art. 73 V (achado é sobre cargo comissionado)', async () => {
+      const findings = await fiscalPessoal.analisar({
+        gazette: gazetteRotatividadeAnormal,
+        cityId: '4305108',
+        context: makeContext({ now: () => new Date('2026-05-15T10:00:00.000Z') }),
+      })
+
+      const rot = findings.filter(f => f.type === 'rotatividade_anormal')
+      expect(rot).toHaveLength(1)
+      // Por construção o achado é sobre cargo em comissão — ressalvado pelo
+      // inciso V. Citá-lo insinuava vedação eleitoral que a lei afasta.
+      expect(rot[0].legalBasis).not.toMatch(/9\.504|Art\. 73/)
+      expect(rot[0].legalBasis).toBe('CF, Art. 37, V')
+    })
   })
 })
