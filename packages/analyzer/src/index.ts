@@ -24,6 +24,7 @@ import {
   createLogger,
   getPublishThresholds,
   isFeatureEnabled,
+  maybeWriteSupplier,
 } from '@fiscal-digital/engine'
 import type {
   CollectorMessage,
@@ -165,62 +166,69 @@ async function persistFinding(finding: Finding): Promise<boolean> {
   // EVO-002 / MIT-02: deriva SUPPLIER do Finding e grava em suppliers-prod
   // para habilitar cross-supplier (FiscalContratos + FiscalFornecedores Sprint 9).
   // Best-effort: try/catch + feature flag SSM; falha não derruba o finding.
-  await maybeWriteSupplier(finding, createdAt)
+  await writeSupplierFromFinding(finding)
   return true
 }
 
 const SUPPLIERS_TABLE = process.env.SUPPLIERS_TABLE ?? 'fiscal-digital-suppliers-prod'
 
 /**
- * Grava SUPPLIER no `suppliers-prod` se o finding tem CNPJ.
- * Best-effort: erros são logados mas não falham o finding.
- * Controlado por feature flag SSM `/fiscal-digital/prod/enable-supplier-write`
- * (default false — flip via CLI quando smoke validar).
+ * Deriva um registro de fornecedor do Finding e delega `maybeWriteSupplier`
+ * (engine), que aplica a feature flag e o gate de qualidade de dado.
+ *
+ * ## Por que isto substituiu o writer local (EVO-005, 2026-07-25)
+ *
+ * Havia dois writers para a mesma tabela. O local, que rodou de 2026-05-09 a
+ * 2026-07-25, gravou 251 registros e **nenhum** era legível:
+ *
+ *   - `pk` COM MÁSCARA em 250 deles (`SUPPLIER#02.321.000/0001-19`) enquanto o
+ *     leitor `querySuppliersContract` consulta a pk normalizada → nunca achava nada.
+ *   - `contractedAt` = timestamp da ANÁLISE, não a data do contrato → corrompia
+ *     o cálculo de aditivo% e a janela de 12 meses do GSI2.
+ *   - gravava `secretariaCityKey` em vez de `secretariaId`/`mesCNPJ` → o
+ *     `GSI2_ConcentracaoSecretaria` ficou 100% vazio (0 de 359 itens).
+ *   - `contractId` = a pk inteira do FINDING, não um número de contrato.
+ *
+ * A skill do engine é a fonte única: normalização de CNPJ byte-a-byte idêntica
+ * à do leitor, chaves derivadas do contrato (idempotência real) e gate que
+ * **pula** o registro parcial em vez de gravá-lo pela metade.
+ *
+ * ## Estado conhecido: o gate pula quase tudo hoje
+ *
+ * `Finding` não carrega `contractedAt` — nenhum Fiscal popula o campo, porque a
+ * extração devolve `dates: string[]` sem rotular qual é a data de assinatura.
+ * Sem ela a skill responde `contracted_at_invalido` e não grava. Isso é
+ * proposital: não gravar é melhor do que gravar com a data errada, que foi o
+ * defeito original. Acender aditivo% e concentração depende de a extração passar
+ * a produzir `contractedAt` + `contractNumber` — trabalho separado.
+ *
+ * Best-effort: falha de write nunca derruba o finding.
  */
-async function maybeWriteSupplier(finding: Finding, createdAt: string): Promise<void> {
+async function writeSupplierFromFinding(finding: Finding): Promise<void> {
   if (!finding.cnpj) return
-  // Normaliza CNPJ removendo máscara — alinha write com leitura da
-  // `querySuppliersContract`. EVO-024: CNPJ alfanumérico (Lei 14.973/2024)
-  // tem letras nas 12 primeiras posições — usar /\D/g aqui destruiria esses
-  // caracteres e corromperia a pk. Remove só máscara/espaços e uppercase;
-  // o comprimento continua 14 (numérico ou alfanumérico).
-  const cnpjN = finding.cnpj.replace(/[.\-/\s]/g, '').toUpperCase()
-  if (cnpjN.length !== 14) return
-  if (!(await isFeatureEnabled('enable-supplier-write'))) return
   try {
-    // sk: {contractedAtDay YYYY-MM-DD}#{contractId} — granularidade diária
-    // garante idempotência em reanalyze: o mesmo finding processado de novo
-    // no mesmo dia sobrescreve o item ao invés de criar duplicata. O timestamp
-    // completo preserva-se em `contractedAtIso`.
-    const contractedAtDay = createdAt.slice(0, 10)
-    const contractId = finding.contractNumber ?? finding.id ?? 'unknown'
-    await saveMemory.execute({
-      pk: `SUPPLIER#${cnpjN}`,
+    const result = await maybeWriteSupplier.execute({
+      cnpj: finding.cnpj,
+      cityId: finding.cityId,
+      contractNumber: finding.contractNumber ?? '',
+      contractedAt: finding.contractedAt ?? '',
+      valueAmount: finding.value ?? 0,
+      secretaria: finding.secretaria ?? '',
+      sourceFindingId: finding.id,
       table: SUPPLIERS_TABLE,
-      item: {
-        sk: `${contractedAtDay}#${contractId}`,
-        cnpj: cnpjN,
-        cityId: finding.cityId,
-        contractedAt: contractedAtDay,
-        contractedAtIso: createdAt,
-        contractId,
-        contractNumber: finding.contractNumber,
-        valueAmount: finding.value,
-        // LRN-20260502-019: secretaria participa de GSI (`GSI3-secretaria-date`
-        // existente + futuro `secretariaCityKey` para GSI2 de outro PR). Campos
-        // de GSI key NUNCA podem ser `null` — omitir o atributo se ausente.
-        ...(finding.secretaria && {
-          secretaria: finding.secretaria,
-          secretariaCityKey: `${finding.secretaria}#${finding.cityId}`,
-        }),
-        sourceFindingId: finding.id,
-        sourceFiscalId: finding.fiscalId,
-        capturedAt: new Date().toISOString(),
-      },
     })
+    const { written, skipReason } = result.data
+    // `feature_flag_off` é no-op esperado e não vira log (a skill já silencia).
+    if (!written && skipReason && skipReason !== 'feature_flag_off') {
+      logger.info('supplier nao gravado — registro incompleto', {
+        reason: skipReason,
+        findingId: finding.id,
+        fiscalId: finding.fiscalId,
+      })
+    }
   } catch (err) {
     logger.warn('supplier write falhou — finding preservado', {
-      cnpj: cnpjN,
+      cnpj: finding.cnpj,
       findingId: finding.id,
       err: (err as Error).message,
     })
