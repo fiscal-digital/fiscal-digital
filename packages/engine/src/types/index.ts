@@ -50,6 +50,18 @@ export interface Finding {
   secretaria?: string
   value?: number
   contractNumber?: string
+  /**
+   * Data de assinatura do contrato (`YYYY-MM-DD`) — NÃO é a data da gazette nem
+   * o instante da análise.
+   *
+   * Range key do `sk` e do `GSI1-city-date` em `suppliers-prod`, e base da janela
+   * de 12 meses do `GSI2_ConcentracaoSecretaria`. Nenhum Fiscal popula este campo
+   * ainda: a extração devolve `dates: string[]` genérico, sem rotular qual data é
+   * a da assinatura. Enquanto ficar `undefined`, o `maybeWriteSupplier` pula o
+   * registro (`contracted_at_invalido`) em vez de inventar uma data — foi
+   * exatamente o que corrompeu 250 registros até 2026-07-25 (EVO-005).
+   */
+  contractedAt?: string
   published?: boolean
   publishedAt?: string
   createdAt?: string
