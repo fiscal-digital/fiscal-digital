@@ -1,20 +1,60 @@
 # Base Legal — Fiscal de Pessoal
 
+<!-- legal-verified -->
+
 ## Normas aplicáveis
 
 ### Lei das Eleições — Lei 9.504/97, Art. 73, V
-Veda a nomeação, contratação ou admissão de pessoal para cargos em comissão
-no período de 3 meses antes da eleição até a posse dos eleitos.
-Exceções: vacância decorrente de falecimento, exoneração a pedido, aposentadoria.
 
-> "Art. 73. São proibidas aos agentes públicos, servidores ou não, as seguintes condutas
-> tendentes a afetar a igualdade de oportunidades entre candidatos nos pleitos eleitorais:
-> V - nomear, contratar ou de qualquer forma admitir, demitir sem justa causa, suprimir
-> ou readaptar vantagens ou por outros meios dificultar ou impedir o exercício funcional
-> e, ao mesmo tempo, prejudicar candidato ou favorecer candidato de quem dependa ou
-> com quem se relacione a autoridade responsável pelos atos, não se incluindo nessa
-> vedação a nomeação ou demissão de cargos em comissão e designação ou dispensa de funções
-> de confiança, desde que não destinadas ao favorecimento ou prejuízo de candidato."
+Veda **nomear, contratar ou de qualquer forma admitir, demitir sem justa causa**, suprimir ou
+readaptar vantagens, dificultar ou impedir o exercício funcional e, ainda, **ex officio, remover,
+transferir ou exonerar servidor público**, na circunscrição do pleito, **nos três meses que
+antecedem a eleição e até a posse dos eleitos**, sob pena de nulidade de pleno direito.
+
+Texto integral verificado em [`legal-corpus/lei-9504-1997/art-73.md`](../legal-corpus/lei-9504-1997/art-73.md)
+(linhas 32-58, sync planalto):
+
+> V - nomear, contratar ou de qualquer forma admitir, demitir sem justa causa, suprimir ou
+> readaptar vantagens ou por outros meios dificultar ou impedir o exercício funcional e,
+> ainda, ex officio, remover, transferir ou exonerar servidor público, na circunscrição do
+> pleito, nos três meses que o antecedem e até a posse dos eleitos, sob pena de nulidade de
+> pleno direito, **ressalvados:**
+>
+> **a) a nomeação ou exoneração de cargos em comissão e designação ou dispensa de funções de
+> confiança;**
+>
+> b) a nomeação para cargos do Poder Judiciário, do Ministério Público, dos Tribunais ou
+> Conselhos de Contas e dos órgãos da Presidência da República;
+>
+> c) a nomeação dos aprovados em concursos públicos homologados até o início daquele prazo;
+>
+> d) a nomeação ou contratação necessária à instalação ou ao funcionamento inadiável de
+> serviços públicos essenciais, com prévia e expressa autorização do Chefe do Poder Executivo;
+>
+> e) a transferência ou remoção ex officio de militares, policiais civis e de agentes
+> penitenciários;
+
+#### ⚠️ A alínea "a" é determinante para este Fiscal (BUG-FSC-006)
+
+**Nomeação e exoneração de cargo em comissão — e designação e dispensa de função de confiança —
+são expressamente RESSALVADAS. Não são condutas vedadas pelo inciso V.**
+
+Isso atinge a tese central do `pico_nomeacoes`, que conta exatamente esses atos. Agrava o quadro
+que os filtros de exclusão (h) — "concurso público regular" e "nomeação em caráter efetivo" —
+removem justamente os atos **não** ressalvados, de modo que o que sobra para contagem é
+desproporcionalmente da natureza ressalvada.
+
+Consequência operacional (patch 2026-07-25): quando os atos contados são de cargo em comissão ou
+função de confiança, o Fiscal **não afirma vedação** — corrige a base legal para citar a ressalva,
+explicita na narrativa que a lei excetua o ato e rebaixa a confiança para `0.55`, abaixo do gate de
+publicação. O achado **não é suprimido**: permanece consultável como sinal de volume/transparência
+(mesma linha do BUG-FSC-005, informar-não-suprimir).
+
+> **Histórico do erro.** Até 2026-07-25 este documento afirmava que as exceções eram "vacância
+> decorrente de falecimento, exoneração a pedido, aposentadoria" e reproduzia um trecho do inciso V
+> que **não existe na Lei 9.504/97** — as expressões "não se incluindo nessa vedação", "ao mesmo
+> tempo, prejudicar candidato" e "desde que não destinadas ao favorecimento" têm **zero ocorrências**
+> no texto integral da lei. Nem a lista de exceções nem a citação correspondiam à fonte canônica.
 
 ### Constituição Federal, Art. 37, V
 Define que cargos em comissão são de livre nomeação e exoneração, destinando-se

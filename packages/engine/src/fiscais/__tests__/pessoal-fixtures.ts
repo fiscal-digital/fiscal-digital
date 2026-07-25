@@ -114,6 +114,50 @@ export const gazetteRotatividadeAnormal: Gazette = {
   ],
 }
 
+// ─── Ressalva do Art. 73, V, "a" (BUG-FSC-006) ───────────────────────────────
+
+/**
+ * Caso 7 — Janela eleitoral + 7 atos explicitamente de CARGO EM COMISSÃO.
+ * A alínea "a" do Art. 73, V ressalva esses atos: o Fiscal deve registrar o
+ * volume sem afirmar vedação, e rebaixar a confiança abaixo do gate.
+ */
+export const gazetteRessalvaCargoComissao: Gazette = {
+  ...BASE_GAZETTE,
+  id: 'gazette-pessoal-007',
+  date: '2026-08-20', // janela eleitoral 2026 (01/07 – 04/10)
+  excerpts: [
+    'PORTARIAS DE PESSOAL — Secretaria Municipal de Administração. ' +
+    'NOMEIA Helena Prado para o cargo em comissão de Chefe de Gabinete. ' +
+    'NOMEIA Ricardo Alves para o cargo em comissão de Diretor de Departamento. ' +
+    'EXONERA Marcos Vieira do cargo em comissão de Assessor Especial. ' +
+    'NOMEIA Patricia Nunes para o cargo em comissão de Coordenadora. ' +
+    'DESIGNA Fernando Bastos para função de confiança de Supervisor. ' +
+    'EXONERA Teresa Campos do cargo em comissão de Chefe de Seção. ' +
+    'NOMEIA Gustavo Reis para o cargo em comissão de Assessor Técnico.',
+  ],
+}
+
+/**
+ * Caso 8 — Janela eleitoral + 7 atos SEM indicação de cargo em comissão ou
+ * função de confiança. A ressalva da alínea "a" não é identificável no texto,
+ * então o Fiscal mantém a base legal cheia do inciso V.
+ */
+export const gazetteSemRessalvaJanelaEleitoral: Gazette = {
+  ...BASE_GAZETTE,
+  id: 'gazette-pessoal-008',
+  date: '2026-08-20',
+  excerpts: [
+    'PORTARIAS DE PESSOAL — Secretaria Municipal de Obras. ' +
+    'NOMEIA Sonia Barreto para o quadro de Agente Administrativo. ' +
+    'NOMEIA Julio Tavares para o quadro de Fiscal de Posturas. ' +
+    'EXONERA Marta Siqueira do quadro de Agente de Endemias. ' +
+    'NOMEIA Otavio Freire para o quadro de Auxiliar de Serviços. ' +
+    'DESIGNA Beatriz Lemos para o quadro de Agente Comunitário. ' +
+    'EXONERA Rafael Pontes do quadro de Motorista. ' +
+    'NOMEIA Camila Duarte para o quadro de Técnico em Enfermagem.',
+  ],
+}
+
 /**
  * Caso 6 — Excerpt sem palavras-chave de pessoal → filtro etapa 1 retorna [].
  */
