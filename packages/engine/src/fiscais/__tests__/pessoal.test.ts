@@ -1,3 +1,13 @@
+// Bedrock mockado para falhar: força o caminho de FALLBACK, que é o único
+// determinístico. Sem isso o teste depende de haver credencial AWS na máquina —
+// com Bedrock acessível a narrativa vem do Haiku e o texto varia a cada run.
+// A instrução da ressalva no system prompt é assertada separadamente.
+jest.mock('../../utils/bedrock', () => ({
+  ...jest.requireActual('../../utils/bedrock'),
+  invokeModel: jest.fn().mockRejectedValue(new Error('bedrock desabilitado no teste')),
+}))
+
+import { invokeModel } from '../../utils/bedrock'
 import { fiscalPessoal } from '../pessoal'
 import type { FiscalContext } from '../types'
 import {
@@ -308,6 +318,25 @@ describe('fiscalPessoal', () => {
       // Mesmo aqui a narrativa sinaliza que o inciso tem ressalvas — não afirma
       // vedação absoluta sobre ato cuja natureza a gazette não declara.
       expect(f.narrative).toMatch(/ressalvas das alíneas/i)
+    })
+
+    it('system prompt instrui o Haiku sobre a ressalva e proíbe afirmar vedação', async () => {
+      // O fallback é só a rede de segurança. Em prod a narrativa vem do Haiku,
+      // então a regra da ressalva tem que estar no prompt — senão o modelo
+      // reproduz a tese errada mesmo com o fallback corrigido.
+      await fiscalPessoal.analisar({
+        gazette: gazetteRessalvaCargoComissao,
+        cityId: '4305108',
+        context: makeContext({ now: () => new Date('2026-08-20T10:00:00.000Z') }),
+      })
+
+      const call = (invokeModel as jest.Mock).mock.calls[0]?.[0]
+      expect(call).toBeDefined()
+      expect(call.systemPrompt).toMatch(/RESSALVA/)
+      expect(call.systemPrompt).toMatch(/N[ÃA]O são vedados/i)
+      expect(call.systemPrompt).toMatch(/NUNCA afirmar, sugerir ou insinuar vedação/i)
+      // E o contexto do ato ressalvado chega no userMessage.
+      expect(call.userMessage).toMatch(/RESSALVADOS pelo Art\. 73, V, "a"/)
     })
 
     it('rotatividade_anormal não cita Art. 73 V (achado é sobre cargo comissionado)', async () => {

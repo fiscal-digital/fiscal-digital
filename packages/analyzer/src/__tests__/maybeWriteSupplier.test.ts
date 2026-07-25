@@ -1,16 +1,22 @@
 /**
- * Tests for `maybeWriteSupplier` — derivação de SUPPLIER a partir de Finding.
+ * Tests do `writeSupplierFromFinding` — a ponte Finding → skill do engine.
  *
- * Cobre os 2 bugs fixados em PR 1 (MIT-02 / EVO-002):
- *   1. Normalização CNPJ (alinhada com leitura em `querySuppliersContract`).
- *   2. Idempotência diária no `sk` (reanalyze do mesmo gazette/dia sobrescreve).
+ * Escopo desde EVO-005 (2026-07-25): o analyzer **não grava mais** em
+ * `suppliers-prod`. Ele monta o input a partir do Finding e delega para
+ * `maybeWriteSupplier` (engine), que detém normalização de CNPJ, feature flag e
+ * gate de qualidade. A gravação em si é testada em
+ * `packages/engine/src/skills/__tests__/maybe_write_supplier.test.ts`.
  *
- * Também garante:
- *   - feature flag OFF → no-op
- *   - CNPJ inválido → no-op
- *   - GSI key safety: secretariaCityKey só é gravado quando truthy
- *     (LRN-20260502-019 — null em GSI key causa ValidationException em prod)
- *   - Write best-effort: falha de DDB não lança
+ * Os testes anteriores afirmavam o comportamento do writer local — inclusive
+ * `contractedAt` em granularidade diária derivado do timestamp da análise, que
+ * era justamente o defeito que corrompeu 250 registros em prod.
+ *
+ * Cobertura aqui:
+ *   - mapeamento Finding → input da skill (incluindo campos ausentes)
+ *   - CNPJ repassado cru: um único ponto de normalização, alinhado ao leitor
+ *   - `contractedAt` vem do Finding, nunca do instante da análise (regressão)
+ *   - sem cnpj / sem fonte estável → skill não é chamada
+ *   - erro da skill é best-effort: não derruba o finding
  */
 
 import type { SQSEvent, SQSRecord } from 'aws-lambda'
@@ -50,6 +56,13 @@ const mockSaveMemoryExecute = jest.fn().mockResolvedValue({
   confidence: 1.0,
 })
 const mockIsFeatureEnabled = jest.fn().mockResolvedValue(false)
+// EVO-005: o analyzer delega para a skill do engine — o teste observa a chamada,
+// não o PutCommand (a gravação em si é testada em maybe_write_supplier.test.ts).
+const mockMaybeWriteSupplierExecute = jest.fn().mockResolvedValue({
+  data: { written: false, skipReason: 'feature_flag_off' },
+  source: 'noop:feature-flag:enable-supplier-write',
+  confidence: 1.0,
+})
 
 jest.mock('@fiscal-digital/engine', () => ({
   fiscalLicitacoes: { id: 'fiscal-licitacoes', description: 'mock', analisar: mockAnalisarLicitacoes },
@@ -79,6 +92,7 @@ jest.mock('@fiscal-digital/engine', () => ({
     }),
   },
   querySuppliersContract: { name: 'query_suppliers_contract', description: 'mock', execute: jest.fn() },
+  maybeWriteSupplier: { name: 'maybe_write_supplier', description: 'mock', execute: mockMaybeWriteSupplierExecute },
   // TEC-ANL-001: null aqui faria persistFinding pular (e maybeWriteSupplier
   // nunca rodar) — retorna key estável para URL presente, como o contrato real.
   gazetteKey: jest.fn((url?: string) => (url ? `MOCK#${url.slice(-10)}` : null)),
@@ -176,18 +190,20 @@ function makeSQSEvent(records: SQSRecord[]): SQSEvent {
   return { Records: records }
 }
 
-/**
- * Retorna apenas as chamadas a `saveMemory.execute` que gravaram em
- * `fiscal-digital-suppliers-prod` (ignora as gravações de FINDING# em alerts-prod).
- */
-function supplierWrites(): Array<{
-  pk: string
-  table: string
-  item: Record<string, unknown>
-}> {
-  return mockSaveMemoryExecute.mock.calls
-    .map(args => args[0] as { pk: string; table: string; item: Record<string, unknown> })
-    .filter(arg => typeof arg.pk === 'string' && arg.pk.startsWith('SUPPLIER#'))
+interface SupplierCall {
+  cnpj: string
+  cityId: string
+  contractNumber: string
+  contractedAt: string
+  valueAmount: number
+  secretaria: string
+  sourceFindingId?: string
+  table?: string
+}
+
+/** Chamadas ao `maybeWriteSupplier.execute` do engine. */
+function supplierCalls(): SupplierCall[] {
+  return mockMaybeWriteSupplierExecute.mock.calls.map(args => args[0] as SupplierCall)
 }
 
 // ---------------------------------------------------------------------------
@@ -209,186 +225,144 @@ beforeEach(() => {
   mockAnalisarPessoal.mockResolvedValue([])
   mockConsolidar.mockImplementation(({ findings }: { findings: unknown[] }) => findings)
   mockIsFeatureEnabled.mockResolvedValue(false)
+  mockMaybeWriteSupplierExecute.mockResolvedValue({
+    data: { written: false, skipReason: 'feature_flag_off' },
+    source: 'noop:feature-flag:enable-supplier-write',
+    confidence: 1.0,
+  })
   process.env.ALERTS_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789012/fiscal-digital-queue-prod'
   process.env.ALERTS_TABLE = 'fiscal-digital-alerts-prod'
   process.env.SUPPLIERS_TABLE = 'fiscal-digital-suppliers-prod'
 })
 
 // ---------------------------------------------------------------------------
-// Tests
+// Tests — EVO-005: o analyzer delega para a skill do engine
+//
+// O writer local do analyzer foi removido em 2026-07-25. Ele gravou 251
+// registros em prod e nenhum era legivel: pk com mascara (leitor consulta a
+// normalizada), contractedAt = timestamp da analise, secretariaCityKey no lugar
+// de secretariaId/mesCNPJ (GSI2 ficou 100% vazio) e contractId = pk inteira do
+// FINDING. Os testes antigos afirmavam esse comportamento como correto.
+//
+// Agora o contrato e: montar o input a partir do Finding e delegar. Normalizacao,
+// feature flag e gate de qualidade sao responsabilidade da skill (testada em
+// packages/engine/src/skills/__tests__/maybe_write_supplier.test.ts).
 // ---------------------------------------------------------------------------
 
-test('flag OFF → saveMemory NÃO é chamado para SUPPLIER#', async () => {
-  mockIsFeatureEnabled.mockResolvedValue(false)
+test('finding com cnpj → delega para a skill do engine', async () => {
   const finding = makeFinding()
   mockAnalisarLicitacoes.mockResolvedValue([finding])
 
   await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
 
-  expect(supplierWrites()).toHaveLength(0)
-  // Mas a gravação do FINDING# em alerts-prod ainda deve ter ocorrido
-  expect(mockSaveMemoryExecute).toHaveBeenCalled()
+  const calls = supplierCalls()
+  expect(calls).toHaveLength(1)
+  expect(calls[0].cnpj).toBe('12.345.678/0001-99')
+  expect(calls[0].cityId).toBe('4305108')
+  expect(calls[0].contractNumber).toBe('CT-2026-001')
+  expect(calls[0].valueAmount).toBe(80000)
+  expect(calls[0].secretaria).toBe('Saúde')
+  expect(calls[0].table).toBe('fiscal-digital-suppliers-prod')
 })
 
-test('flag ON + cnpj com máscara → item gravado com pk normalizado (14 dígitos)', async () => {
-  mockIsFeatureEnabled.mockResolvedValue(true)
-  const finding = makeFinding({ cnpj: '12.345.678/0001-99' })
+test('CNPJ é repassado cru — a normalização é da skill, não do analyzer', async () => {
+  // Regressao: o analyzer local normalizava por conta propria e divergia do
+  // leitor, produzindo pk mascarada. Agora ha um unico ponto de normalizacao.
+  mockAnalisarLicitacoes.mockResolvedValue([makeFinding({ cnpj: '02.321.000/0001-19' })])
+
+  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
+
+  expect(supplierCalls()[0].cnpj).toBe('02.321.000/0001-19')
+})
+
+test('contractedAt do Finding é repassado — NUNCA o timestamp da análise', async () => {
+  // Regressao do defeito que corrompeu 250 registros: o writer antigo usava
+  // createdAt (instante da analise) como data do contrato.
+  const finding = makeFinding({
+    contractedAt: '2024-04-16',
+    createdAt: '2026-05-23T20:54:12.840Z',
+  })
   mockAnalisarLicitacoes.mockResolvedValue([finding])
 
   await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
 
-  const writes = supplierWrites()
-  expect(writes).toHaveLength(1)
-  expect(writes[0].pk).toBe('SUPPLIER#12345678000199')
-  expect(writes[0].table).toBe('fiscal-digital-suppliers-prod')
-  expect(writes[0].item.cnpj).toBe('12345678000199')
+  const call = supplierCalls()[0]
+  expect(call.contractedAt).toBe('2024-04-16')
+  expect(call.contractedAt).not.toContain('2026-05-23')
+  expect(call.contractedAt).not.toMatch(/T\d{2}:/)
 })
 
-test('flag ON + reanalyze no mesmo dia (createdAt diferente) → mesmo sk (idempotência diária)', async () => {
-  mockIsFeatureEnabled.mockResolvedValue(true)
-
-  // Primeira execução
-  mockAnalisarLicitacoes.mockResolvedValue([
-    makeFinding({ createdAt: '2026-03-15T08:00:00.000Z' }),
-  ])
-  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
-
-  // Reanalyze: mesmo finding, novo createdAt mais tarde no mesmo dia
-  jest.clearAllMocks()
-  mockSaveMemoryExecute.mockResolvedValue({
-    data: undefined,
-    source: 'dynamodb:mock',
+test('Finding sem contractedAt → repassa vazio para a skill pular (não inventa data)', async () => {
+  // Hoje nenhum Fiscal popula contractedAt. O comportamento correto e a skill
+  // responder contracted_at_invalido — nao gravar com data fabricada.
+  mockMaybeWriteSupplierExecute.mockResolvedValue({
+    data: { written: false, skipReason: 'contracted_at_invalido' },
+    source: 'skip:contracted_at_invalido',
     confidence: 1.0,
   })
-  mockIsFeatureEnabled.mockResolvedValue(true)
-  mockConsolidar.mockImplementation(({ findings }: { findings: unknown[] }) => findings)
-  mockAnalisarLicitacoes.mockResolvedValue([
-    makeFinding({ createdAt: '2026-03-15T20:45:00.000Z' }),
-  ])
-  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
-
-  const writes = supplierWrites()
-  expect(writes).toHaveLength(1)
-  // sk deve ter granularidade diária — mesmo dia => mesmo sk
-  expect(writes[0].item.sk).toBe('2026-03-15#CT-2026-001')
-})
-
-test('flag ON + reanalyze em dia diferente → sk diferente', async () => {
-  mockIsFeatureEnabled.mockResolvedValue(true)
-
-  mockAnalisarLicitacoes.mockResolvedValue([
-    makeFinding({ createdAt: '2026-03-15T08:00:00.000Z' }),
-  ])
-  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
-  const skDay1 = supplierWrites()[0].item.sk
-
-  jest.clearAllMocks()
-  mockSaveMemoryExecute.mockResolvedValue({
-    data: undefined,
-    source: 'dynamodb:mock',
-    confidence: 1.0,
-  })
-  mockIsFeatureEnabled.mockResolvedValue(true)
-  mockConsolidar.mockImplementation(({ findings }: { findings: unknown[] }) => findings)
-  mockAnalisarLicitacoes.mockResolvedValue([
-    makeFinding({ createdAt: '2026-03-16T08:00:00.000Z' }),
-  ])
-  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
-  const skDay2 = supplierWrites()[0].item.sk
-
-  expect(skDay1).toBe('2026-03-15#CT-2026-001')
-  expect(skDay2).toBe('2026-03-16#CT-2026-001')
-  expect(skDay1).not.toBe(skDay2)
-})
-
-test('flag ON + cnpj inválido (poucos dígitos) → no-op', async () => {
-  mockIsFeatureEnabled.mockResolvedValue(true)
-  mockAnalisarLicitacoes.mockResolvedValue([makeFinding({ cnpj: '123' })])
-
-  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
-
-  expect(supplierWrites()).toHaveLength(0)
-})
-
-test('flag ON + cnpj não-numérico ("abc") → no-op', async () => {
-  mockIsFeatureEnabled.mockResolvedValue(true)
-  mockAnalisarLicitacoes.mockResolvedValue([makeFinding({ cnpj: 'abc' })])
-
-  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
-
-  expect(supplierWrites()).toHaveLength(0)
-})
-
-test('EVO-024: flag ON + cnpj alfanumérico (Lei 14.973/2024) com máscara → pk grava letras em UPPERCASE (não corrompe como /\\D/g faria)', async () => {
-  mockIsFeatureEnabled.mockResolvedValue(true)
-  const finding = makeFinding({ cnpj: '12.34a.bcd/0001-16' })
-  mockAnalisarLicitacoes.mockResolvedValue([finding])
-
-  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
-
-  const writes = supplierWrites()
-  expect(writes).toHaveLength(1)
-  expect(writes[0].pk).toBe('SUPPLIER#1234ABCD000116')
-  expect(writes[0].item.cnpj).toBe('1234ABCD000116')
-})
-
-test('flag ON + finding sem secretaria → item gravado SEM atributo secretariaCityKey (LRN-20260502-019)', async () => {
-  mockIsFeatureEnabled.mockResolvedValue(true)
-  mockAnalisarLicitacoes.mockResolvedValue([makeFinding({ secretaria: undefined })])
-
-  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
-
-  const writes = supplierWrites()
-  expect(writes).toHaveLength(1)
-  // Atributo de GSI key deve estar AUSENTE (não `null` — null em GSI key
-  // causa ValidationException em prod silenciosamente).
-  expect(writes[0].item).not.toHaveProperty('secretariaCityKey')
-  expect(writes[0].item).not.toHaveProperty('secretaria')
-})
-
-test('flag ON + finding com secretaria → item gravado COM secretariaCityKey composto', async () => {
-  mockIsFeatureEnabled.mockResolvedValue(true)
-  mockAnalisarLicitacoes.mockResolvedValue([
-    makeFinding({ secretaria: 'Saúde', cityId: '4305108' }),
-  ])
-
-  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
-
-  const writes = supplierWrites()
-  expect(writes).toHaveLength(1)
-  expect(writes[0].item.secretaria).toBe('Saúde')
-  expect(writes[0].item.secretariaCityKey).toBe('Saúde#4305108')
-})
-
-test('flag ON + saveMemory.execute lança → função não propaga erro (best-effort)', async () => {
-  mockIsFeatureEnabled.mockResolvedValue(true)
   const finding = makeFinding()
+  delete finding.contractedAt
   mockAnalisarLicitacoes.mockResolvedValue([finding])
 
-  // 1ª chamada (persistFinding) sucede; 2ª chamada (maybeWriteSupplier) falha
-  mockSaveMemoryExecute
-    .mockResolvedValueOnce({
-      data: undefined,
-      source: 'dynamodb:mock',
-      confidence: 1.0,
-    })
-    .mockRejectedValueOnce(new Error('DDB ProvisionedThroughputExceeded'))
+  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
 
-  // Não deve lançar — o handler nem mesmo o finding deve ser afetado
+  expect(supplierCalls()[0].contractedAt).toBe('')
+})
+
+test('finding SEM cnpj → skill não é chamada', async () => {
+  const finding = makeFinding()
+  delete finding.cnpj
+  mockAnalisarLicitacoes.mockResolvedValue([finding])
+
+  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
+
+  expect(supplierCalls()).toHaveLength(0)
+})
+
+test('campos ausentes viram string vazia / zero — a skill decide o skip', async () => {
+  const finding = makeFinding()
+  delete finding.secretaria
+  delete finding.value
+  delete finding.contractNumber
+  mockAnalisarLicitacoes.mockResolvedValue([finding])
+
+  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
+
+  const call = supplierCalls()[0]
+  expect(call.secretaria).toBe('')
+  expect(call.contractNumber).toBe('')
+  expect(call.valueAmount).toBe(0)
+})
+
+test('sourceFindingId propagado para rastreabilidade', async () => {
+  mockAnalisarLicitacoes.mockResolvedValue([makeFinding()])
+
+  await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
+
+  // persistFinding hidrata finding.id com a pk antes de chamar o writer.
+  expect(supplierCalls()[0].sourceFindingId).toMatch(/^FINDING#fiscal-licitacoes#4305108#/)
+})
+
+test('skill lançando erro NÃO derruba o finding (best-effort)', async () => {
+  mockMaybeWriteSupplierExecute.mockRejectedValue(new Error('ValidationException'))
+  mockAnalisarLicitacoes.mockResolvedValue([makeFinding()])
+
   await expect(
     handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())])),
-  ).resolves.toBeUndefined()
+  ).resolves.not.toThrow()
+
+  // O FINDING# em alerts-prod continua gravado.
+  const findingWrites = mockSaveMemoryExecute.mock.calls
+    .map(a => a[0] as { pk: string })
+    .filter(a => typeof a.pk === 'string' && a.pk.startsWith('FINDING#'))
+  expect(findingWrites.length).toBeGreaterThan(0)
 })
 
-test('contractedAtIso preserva timestamp completo enquanto contractedAt fica em granularidade diária', async () => {
-  mockIsFeatureEnabled.mockResolvedValue(true)
-  const finding = makeFinding({ createdAt: '2026-03-15T12:34:56.789Z' })
+test('finding sem fonte estável não persiste e não chama a skill (TEC-ANL-001)', async () => {
+  const finding = makeFinding({ evidence: [] })
   mockAnalisarLicitacoes.mockResolvedValue([finding])
 
   await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
 
-  const writes = supplierWrites()
-  expect(writes).toHaveLength(1)
-  expect(writes[0].item.contractedAt).toBe('2026-03-15')
-  expect(writes[0].item.contractedAtIso).toBe('2026-03-15T12:34:56.789Z')
+  expect(supplierCalls()).toHaveLength(0)
 })
