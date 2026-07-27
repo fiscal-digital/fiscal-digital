@@ -37,7 +37,7 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.112.4",
+    "@anthropic-ai/sdk": "^0.115.0",
     "@aws-lambda-powertools/logger": "^2.33.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1095.0",
     "@aws-sdk/client-dynamodb": "^3.1095.0",
