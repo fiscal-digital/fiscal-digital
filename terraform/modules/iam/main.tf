@@ -981,3 +981,141 @@ resource "aws_iam_role_policy" "github_actions_collectors" {
     ]
   })
 }
+
+# ── Roles read-only das automações (issues #151/#154) ─────────────────────────
+# Sentinela de frescor (repo collectors) e auditoria mensal (repo engine) rodam
+# em GH Actions com OIDC. Princípios: (1) READ-ONLY absoluto — nenhuma action de
+# escrita; (2) trust restrito ao branch main do repo dono (cron/workflow_dispatch
+# rodam no default branch, então o sub é sempre ref:refs/heads/main — mais
+# estreito que o "repo:*" das roles de CI, que precisam atender PRs); (3)
+# kms:Decrypt incluído porque as tabelas usam SSE com a CMK do projeto — Scan
+# sem Decrypt falha com AccessDenied mascarado pelo SDK.
+
+data "aws_iam_policy_document" "sentinel_ro_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_org}/fiscal-digital-collectors:ref:refs/heads/main"]
+    }
+  }
+}
+
+resource "aws_iam_role" "sentinel_ro" {
+  name               = "fiscal-digital-sentinel-ro"
+  assume_role_policy = data.aws_iam_policy_document.sentinel_ro_trust.json
+}
+
+resource "aws_iam_role_policy" "sentinel_ro" {
+  role = aws_iam_role.sentinel_ro.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # v1: Scan da gazettes-prod (máximo real de GAZETTE# por cidade).
+        # v2 (pós watermark veraz, collectors#21): BatchGetItem dos 50 BACKFILL#.
+        Sid      = "GazettesReadOnly"
+        Effect   = "Allow"
+        Action   = ["dynamodb:Scan", "dynamodb:BatchGetItem", "dynamodb:DescribeTable"]
+        Resource = var.gazettes_table_arn
+      },
+      {
+        Sid      = "DecryptTableCMK"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = var.kms_key_arn
+      },
+    ]
+  })
+}
+
+data "aws_iam_policy_document" "audit_ro_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main"]
+    }
+  }
+}
+
+resource "aws_iam_role" "audit_ro" {
+  name               = "fiscal-digital-audit-ro"
+  assume_role_policy = data.aws_iam_policy_document.audit_ro_trust.json
+}
+
+resource "aws_iam_role_policy" "audit_ro" {
+  role = aws_iam_role.audit_ro.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "TablesReadOnly"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Scan", "dynamodb:Query", "dynamodb:GetItem",
+          "dynamodb:BatchGetItem", "dynamodb:DescribeTable",
+        ]
+        Resource = [
+          var.alerts_table_arn, "${var.alerts_table_arn}/index/*",
+          var.gazettes_table_arn,
+          var.suppliers_table_arn, "${var.suppliers_table_arn}/index/*",
+          var.costs_table_arn,
+        ]
+      },
+      {
+        Sid      = "FlagsReadOnly"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/fiscal-digital/prod/*"
+      },
+      {
+        Sid      = "QueuesReadOnly"
+        Effect   = "Allow"
+        Action   = ["sqs:GetQueueAttributes", "sqs:GetQueueUrl"]
+        Resource = "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:fiscal-digital-*"
+      },
+      {
+        # DescribeAlarms/ListRules/ListFunctions não suportam resource-level —
+        # "*" é o mínimo possível para essas actions (todas read-only).
+        Sid    = "DescribeOnly"
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:DescribeAlarms",
+          "events:ListRules", "events:DescribeRule", "events:ListTargetsByRule",
+          "lambda:ListFunctions", "lambda:GetFunction", "lambda:GetFunctionConfiguration",
+          "sqs:ListQueues",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid      = "DecryptTableCMK"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = var.kms_key_arn
+      },
+    ]
+  })
+}

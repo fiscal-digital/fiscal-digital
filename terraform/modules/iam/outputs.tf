@@ -27,3 +27,13 @@ output "github_actions_web_role_arn" {
   value       = aws_iam_role.github_actions_web.arn
   description = "ARN da role IAM dedicada ao repo fiscal-digital-web via OIDC"
 }
+
+output "sentinel_ro_role_arn" {
+  description = "Role OIDC read-only da sentinela de frescor (GH Actions, repo collectors)"
+  value       = aws_iam_role.sentinel_ro.arn
+}
+
+output "audit_ro_role_arn" {
+  description = "Role OIDC read-only da auditoria mensal (GH Actions, repo engine)"
+  value       = aws_iam_role.audit_ro.arn
+}
