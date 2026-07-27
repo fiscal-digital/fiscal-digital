@@ -1,0 +1,49 @@
+# Auditoria mensal de confiabilidade (issue #154) — a única automação com LLM.
+# claude-code-action (Sonnet) + role AWS read-only via OIDC; escopo fixo
+# versionado em .github/audit-prompt.md; saída = comentário na issue #153.
+# Custos: AWS < R$0,01/run · plano Claude via CLAUDE_CODE_OAUTH_TOKEN (Max).
+name: Auditoria mensal
+
+on:
+  schedule:
+    - cron: "0 12 1 * *" # dia 1 de cada mês, 12:00 UTC (09:00 BRT)
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write # OIDC → fiscal-digital-audit-ro (read-only)
+  contents: read
+  issues: write   # comentário na issue de rastreio #153
+
+concurrency:
+  group: monthly-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Credenciais AWS (role read-only)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_AUDIT_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Rodar auditoria (Sonnet, escopo fixo)
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: "Leia .github/audit-prompt.md e execute exatamente aquele escopo."
+          claude_args: |
+            --model claude-sonnet-5
+            --allowedTools "Bash(aws ssm get-parameters:*),Bash(aws cloudwatch describe-alarms:*),Bash(aws sqs:*),Bash(aws dynamodb scan:*),Bash(aws dynamodb describe-table:*),Bash(gh issue:*),Bash(gh pr list:*),Bash(gh api:*),Read,Grep,Glob"
+
+      - name: Falha vira issue (não silencia)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment 153 --repo "$GITHUB_REPOSITORY" --body \
+            "⚠️ Auditoria mensal FALHOU no run $GITHUB_RUN_ID ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID). Investigar antes do próximo mês."

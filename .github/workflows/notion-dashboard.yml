@@ -1,0 +1,40 @@
+# Dashboard do Ciclo de Confiabilidade no Notion (issue #150).
+# GitHub é a fonte de verdade; a página Notion é visão gerada, write-only.
+# Custo: zero AWS, zero LLM. Requer secrets NOTION_TOKEN (integration com acesso
+# só à página) e a variable NOTION_DASHBOARD_PAGE_ID.
+name: Dashboard Notion
+
+on:
+  schedule:
+    - cron: "0 10 * * *" # diário 10:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: notion-dashboard
+  cancel-in-progress: true
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Testes do modelo
+        run: node --test scripts/notion-dashboard.test.mjs
+
+      - name: Gerar dashboard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DASHBOARD_PAGE_ID: ${{ vars.NOTION_DASHBOARD_PAGE_ID }}
+        run: node scripts/notion-dashboard.mjs
