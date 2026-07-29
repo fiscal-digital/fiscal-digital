@@ -76,7 +76,7 @@ falha alta em vez de persistir texto corrompido silenciosamente.
 
 | Data do sync | Norma | Mudança | Ação |
 |---|---|---|---|
-| 2026-07-25 | Lei 14.133/2021, Art. 75 | Novo **inciso XVI** (dispensa para aquisição de produtos estratégicos para a saúde), redação dada pela **Lei 15.471/2026** — posterior ao sync de 2026-05-24 | Revisar `fiscal-licitacoes`: nova hipótese de dispensa legal não coberta pelas regras atuais (risco de FP) |
+| 2026-07-25 | Lei 14.133/2021, Art. 75 | **Nova redação do inciso XVI** pela **Lei 15.471/2026** ("produtos estratégicos para a saúde fornecidos por produtores públicos"). Correção (2026-07-28): o registro original desta linha dizia "novo inciso" — errado; o XVI é **original da Lei 14.133** e já teve 4 redações (original, MP 1.166/2023, Lei 14.628/2023, Lei 15.471/2026), todas em `art-75.md:236-294` | `fiscal-licitacoes` coberto pela issue #139: citação explícita de inciso passou a ter precedência e o vocabulário do XVI vigente foi incluído |
 
 ## Escopo
 
