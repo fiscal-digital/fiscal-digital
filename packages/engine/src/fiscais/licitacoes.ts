@@ -57,8 +57,12 @@ const INCISOS_ART_75 = new Set([
   'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII',
 ])
 
+// Sem alternância ambígua com \s dentro de `*` — a versão anterior causava
+// backtracking exponencial (CodeQL js/redos) sobre input não-controlado (o
+// excerpt vem de PDF do Querido Diário). A cláusula "da Lei ..." é opcional,
+// limitada ({0,40}) e ancorada em vírgula/ponto-e-vírgula final — linear.
 const INCISO_CITADO_RE =
-  /\bart(?:igo)?\.?\s*75\s*(?:,|;|\s|da\s+lei[^,;]{0,40})*\s*(?:inciso\s+)?\b([IVX]+)\b/i
+  /\bart(?:igo)?\.?\s*75\b(?:\s+da\s+lei\b[^,;]{0,40}[,;])?[,;]?\s*(?:inciso\s+)?([IVX]+)\b/i
 
 /**
  * Extrai o inciso do Art. 75 citado EXPLICITAMENTE no texto (excerpt ou
