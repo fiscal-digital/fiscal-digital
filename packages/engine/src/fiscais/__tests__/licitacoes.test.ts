@@ -963,3 +963,156 @@ describe('fiscalLicitacoes', () => {
 
 // Variável dummy para evitar erro no teste 8 (actType como campo extra)
 const FISCAL_ID = 'fiscal-licitacoes'
+
+// ─── BUG #139 — inciso citado na gazette tem precedência ─────────────────────
+//
+// Base legal verificada em legal-corpus/lei-14133-2021/art-75.md (2026-07-28):
+// VIII = emergência/calamidade (linha 177), III = licitação deserta/fracassada
+// (linha 53), XVI = produtos estratégicos para a saúde, redação Lei 15.471/2026
+// (linha 281). Só I e II têm teto de valor.
+//
+// Caso real de prod que motivou o fix: dispensa de R$ 16.139.237,28 (4305108)
+// cuja gazette diz "Fundamento Legal: Art. 75, inciso VIII" e cuja narrativa
+// afirmava "inciso II" — 27 de 129 findings dispensa_irregular citavam inciso
+// sem teto no excerpt e nenhum era capturado. Estes testes falham no código
+// anterior ao fix.
+
+import { parseIncisoCitado } from '../licitacoes'
+import type { Gazette } from '../../types'
+
+const BASE_GAZ: Gazette = {
+  id: 'gazette-139',
+  territory_id: '4305108',
+  date: '2026-03-15',
+  url: 'https://queridodiario.ok.org.br/api/gazettes/4305108?excerpt=bug139',
+  excerpts: [],
+  edition: '1',
+  is_extra: false,
+}
+
+describe('BUG #139 — parseIncisoCitado', () => {
+  it('extrai o inciso de formas reais de citação', () => {
+    expect(parseIncisoCitado('Fundamento Legal: Art. 75, inciso VIII, da Lei 14.133/2021')).toBe('VIII')
+    expect(parseIncisoCitado('com fundamento no art. 75, VIII da Lei Federal nº 14.133/2021')).toBe('VIII')
+    expect(parseIncisoCitado('Artigo 75, inciso III')).toBe('III')
+    expect(parseIncisoCitado('Art. 75 XVI')).toBe('XVI')
+    expect(parseIncisoCitado('Lei 14.133/2021, Art. 75, II')).toBe('II')
+  })
+
+  it('XVI nunca é lido como XV (regressão do boundary)', () => {
+    expect(parseIncisoCitado('nos termos do Art. 75, XVI, da Lei 14.133')).toBe('XVI')
+    expect(parseIncisoCitado('nos termos do Art. 75, XV')).toBe('XV')
+  })
+
+  it('não inventa citação: sem Art. 75, retorna null', () => {
+    expect(parseIncisoCitado('dispensa de licitação para aquisição de material')).toBeNull()
+    expect(parseIncisoCitado('Lei 14.133/2021, Art. 74, III')).toBeNull()
+    expect(parseIncisoCitado('')).toBeNull()
+    expect(parseIncisoCitado(null)).toBeNull()
+  })
+})
+
+describe('BUG #139 — precedência do inciso citado no fluxo', () => {
+  it('REGRESSÃO (caso R$ 16,1M): gazette cita Art. 75 VIII → NÃO emite dispensa_irregular por valor', async () => {
+    const gazette: Gazette = {
+      ...BASE_GAZ,
+      excerpts: [
+        'AVISO DE DISPENSA DE LICITAÇÃO. Objeto: contratação para atendimento da situação. ' +
+        'Valor global: R$ 16.139.237,28. Fundamento Legal: Art. 75, inciso VIII, da Lei nº 14.133/2021. ' +
+        'Contratada: EMPRESA XYZ LTDA, CNPJ 12.345.678/0001-90.',
+      ],
+    }
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        values: [16139237.28],
+        legalBasis: 'Art. 75, inciso VIII, da Lei nº 14.133/2021',
+      }),
+    })
+
+    const findings = await fiscalLicitacoes.analisar({ gazette, cityId: '4305108', context })
+
+    expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(0)
+    // E jamais uma narrativa atribuindo inciso II a um ato que cita VIII
+    for (const f of findings) {
+      expect(f.legalBasis).not.toMatch(/Art\. 75, (I|II)$/)
+    }
+  })
+
+  it('gazette cita Art. 75 III (deserta/fracassada) → sem teto, nenhum finding por valor', async () => {
+    const gazette: Gazette = {
+      ...BASE_GAZ,
+      excerpts: [
+        'DISPENSA DE LICITAÇÃO nº 12/2026, com fundamento no art. 75, III, "a", da Lei 14.133/2021, ' +
+        'ante a ausência de licitantes interessados no certame anterior. Valor: R$ 900.000,00.',
+      ],
+    }
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        values: [900000],
+        legalBasis: 'art. 75, III, da Lei 14.133/2021',
+      }),
+    })
+
+    const findings = await fiscalLicitacoes.analisar({ gazette, cityId: '4305108', context })
+    expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(0)
+  })
+
+  it('citação explícita de inciso I herda na classificação mesmo com subtype de serviço', async () => {
+    const gazette: Gazette = {
+      ...BASE_GAZ,
+      excerpts: [
+        'DISPENSA. Contratação com fundamento no Art. 75, I, da Lei 14.133/2021. Valor: R$ 150.000,00.',
+      ],
+    }
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        values: [150000],
+        subtype: 'servico', // heurística antiga diria II — a citação I prevalece
+        legalBasis: 'Art. 75, I',
+      }),
+    })
+
+    const findings = await fiscalLicitacoes.analisar({ gazette, cityId: '4305108', context })
+    const irregular = findings.filter(f => f.type === 'dispensa_irregular')
+    expect(irregular).toHaveLength(1)
+    expect(irregular[0].legalBasis).toBe('Lei 14.133/2021, Art. 75, I')
+  })
+
+  it('XVI vigente (Lei 15.471/2026) é reconhecido pelo vocabulário mesmo sem citação numérica', async () => {
+    const gazette: Gazette = {
+      ...BASE_GAZ,
+      excerpts: [
+        'DISPENSA DE LICITAÇÃO. Aquisição de produtos estratégicos para a saúde fornecidos por ' +
+        'produtores públicos por intermédio de fundação de apoio. Valor: R$ 2.400.000,00.',
+      ],
+    }
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        values: [2400000],
+        legalBasis: 'dispensa de licitação',
+      }),
+    })
+
+    const findings = await fiscalLicitacoes.analisar({ gazette, cityId: '4305108', context })
+    expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(0)
+  })
+
+  it('sem citação nenhuma: heurística por subtype segue funcionando (não-regressão)', async () => {
+    const gazette: Gazette = {
+      ...BASE_GAZ,
+      excerpts: ['DISPENSA DE LICITAÇÃO. Contratação de serviços de manutenção predial. Valor: R$ 80.000,00.'],
+    }
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        values: [80000],
+        subtype: 'servico',
+        legalBasis: 'dispensa',
+      }),
+    })
+
+    const findings = await fiscalLicitacoes.analisar({ gazette, cityId: '4305108', context })
+    const irregular = findings.filter(f => f.type === 'dispensa_irregular')
+    expect(irregular).toHaveLength(1)
+    expect(irregular[0].legalBasis).toBe('Lei 14.133/2021, Art. 75, II')
+  })
+})
