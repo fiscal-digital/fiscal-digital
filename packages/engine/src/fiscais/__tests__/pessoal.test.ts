@@ -335,6 +335,11 @@ describe('fiscalPessoal', () => {
       expect(call.systemPrompt).toMatch(/RESSALVA/)
       expect(call.systemPrompt).toMatch(/N[ÃA]O são vedados/i)
       expect(call.systemPrompt).toMatch(/NUNCA afirmar, sugerir ou insinuar vedação/i)
+      // Ramo SEM ressalva identificada também precisa caveat: 48 dos 126 findings
+      // em prod (Joinville, 38%) vêm de gazette que não declara a natureza do
+      // cargo — asseverar vedação ali é over-claim.
+      expect(call.systemPrompt).toMatch(/ressalvas \(alíneas "a" a "e"\)/i)
+      expect(call.systemPrompt).toMatch(/n[ãa]o declara a natureza do cargo/i)
       // E o contexto do ato ressalvado chega no userMessage.
       expect(call.userMessage).toMatch(/RESSALVADOS pelo Art\. 73, V, "a"/)
     })
