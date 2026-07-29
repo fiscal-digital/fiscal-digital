@@ -29,18 +29,58 @@ const TERMO_ADITIVO_LICITACOES_RE = /\b(termo\s+aditivo|aditamento|prorrog\w+|ap
 const DESIGNAR_FISCAL_LICITACOES_RE = /\b(designar|nomear|nomeia|designa)\b[\s\S]{0,200}\b(gestor|fiscal)\b[\s\S]{0,300}\b(de\s+|do\s+)?contrato\b/i
 
 // ── Hipóteses sem teto da Lei 14.133 Art. 75 ────────────────────────────────
-// III: fornecedor exclusivo / única fornecedora (notória especialização)
-// IV: emergência / calamidade pública / urgência declarada / sanitária
-// VIII: insumos / medicamentos / produtos de saúde
-// IX: contratação entre entes da administração pública
-// XV: ciência/tecnologia (universidade pública, fundação de apoio)
+// Atribuições verificadas contra legal-corpus/lei-14133-2021/art-75.md em
+// 2026-07-28 (BUG #139 — os comentários anteriores atribuíam VIII a "insumos/
+// medicamentos" e III a "fornecedor exclusivo", ambos errados):
+//   III  (art-75.md:53)  — licitação deserta/fracassada há menos de 1 ano
+//   IV   (art-75.md:67)  — rol de objetos específicos (alíneas)
+//   VII  (art-75.md:173) — guerra, estado de defesa/sítio, intervenção federal
+//   VIII (art-75.md:177) — EMERGÊNCIA ou calamidade pública
+//   IX   (art-75.md:191) — entes da administração pública
+//   XV   (art-75.md:227) — instituição de ensino/pesquisa/inovação sem fins lucrativos
+//   XVI  (art-75.md:281) — produtos estratégicos para a saúde via produtores
+//        públicos (redação da Lei 15.471/2026; anteriores diziam "insumos
+//        estratégicos ... produzidos por fundação")
+//
+// Só I e II têm teto de VALOR. Qualquer inciso citado de III a XVIII afasta a
+// tese de dispensa_irregular por valor.
+//
+// Os regex de vocabulário abaixo são SINAIS de hipótese sem teto quando a
+// gazette não cita inciso — a citação explícita (parseIncisoCitado) tem
+// precedência sobre qualquer heurística de vocabulário.
+
+// Numerais romanos válidos do Art. 75 (I..XVIII). Ordem/greedy do [IVX]+ com
+// \b garante que "XVI" nunca é lido como "XV" + sobra (regressão do bug em que
+// o regex de XV casava dentro de atos do XVI).
+const INCISOS_ART_75 = new Set([
+  'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII',
+  'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII',
+])
+
+const INCISO_CITADO_RE =
+  /\bart(?:igo)?\.?\s*75\s*(?:,|;|\s|da\s+lei[^,;]{0,40})*\s*(?:inciso\s+)?\b([IVX]+)\b/i
+
+/**
+ * Extrai o inciso do Art. 75 citado EXPLICITAMENTE no texto (excerpt ou
+ * legalBasis extraído). Retorna null quando não há citação identificável.
+ * A citação da própria gazette é a fonte primária de classificação — o Fiscal
+ * nunca deve "corrigir" o inciso citado pelo ato (BUG #139: caso real de
+ * R$ 16,1M citando VIII na fonte e narrado como II).
+ */
+export function parseIncisoCitado(texto: string | null | undefined): string | null {
+  if (!texto) return null
+  const m = INCISO_CITADO_RE.exec(texto)
+  if (!m) return null
+  const numeral = m[1].toUpperCase()
+  return INCISOS_ART_75.has(numeral) ? numeral : null
+}
 
 const HIPOTESE_FORNECEDOR_EXCLUSIVO_RE =
   /\b(fornecedor\s+exclusivo|[úu]nica\s+(?:fornecedora|fabricante)|not[óo]ria\s+especializa[çc][ãa]o|exclusividade\s+comprovada)\b/i
 const HIPOTESE_EMERGENCIA_RE =
   /\b(emerg[êe]ncia|calamidade(\s+p[úu]blica)?|urg[êe]ncia\s+(?:declarada|sanit[áa]ria)|estado\s+de\s+(?:emerg[êe]ncia|calamidade)\s+p[úu]blica|contrata[çc][ãa]o\s+emergencial)\b/i
 const HIPOTESE_INSUMOS_SAUDE_RE =
-  /\b(medicamento|insumo\s+(?:m[ée]dico|hospitalar|farmac[êe]utico|de\s+sa[úu]de)|[óo]rtese|pr[óo]tese|vacina|imunobiol[óo]gico|equipamento\s+hospitalar)\b/i
+  /\b(medicamento|insumo\s+(?:m[ée]dico|hospitalar|farmac[êe]utico|de\s+sa[úu]de)|[óo]rtese|pr[óo]tese|vacina|imunobiol[óo]gico|equipamento\s+hospitalar|(?:insumos?|produtos?)\s+estrat[ée]gicos?\s+para\s+a\s+sa[úu]de)\b/i
 const HIPOTESE_ENTES_PUBLICOS_RE =
   /\b(?:art(?:igo)?\.?\s*75\s*(?:,|\s)?\s*(?:inciso\s+)?IX|Art\.\s*75\s+IX)\b|\bcontrata[çc][ãa]o\s+entre\s+entes\s+da\s+administra[çc][ãa]o\b/i
 const HIPOTESE_CIENCIA_TECNOLOGIA_RE =
@@ -53,7 +93,14 @@ function isVazamentoEscopo(excerpt: string): boolean {
   return false
 }
 
-function isHipoteseSemTeto(excerpt: string): boolean {
+/**
+ * @param incisoCitado numeral extraído por `parseIncisoCitado` (excerpt ou
+ *        legalBasis da extração). Citação explícita tem PRECEDÊNCIA: qualquer
+ *        inciso de III a XVIII afasta o teto por valor, mesmo que o vocabulário
+ *        não reconheça a hipótese (era o furo dos 27 findings do BUG #139).
+ */
+function isHipoteseSemTeto(excerpt: string, incisoCitado: string | null = null): boolean {
+  if (incisoCitado && incisoCitado !== 'I' && incisoCitado !== 'II') return true
   if (HIPOTESE_FORNECEDOR_EXCLUSIVO_RE.test(excerpt)) return true
   if (HIPOTESE_EMERGENCIA_RE.test(excerpt)) return true
   if (HIPOTESE_INSUMOS_SAUDE_RE.test(excerpt)) return true
@@ -85,7 +132,15 @@ function narrativaFactual(
   )
 }
 
-function classificarInciso(excerpt: string, subtype?: string | null): 'I' | 'II' {
+function classificarInciso(
+  excerpt: string,
+  subtype?: string | null,
+  incisoCitado: string | null = null,
+): 'I' | 'II' {
+  // O inciso citado pela PRÓPRIA gazette tem precedência absoluta (BUG #139):
+  // o Fiscal nunca reclassifica o que a fonte declara. Citações de III..XVIII
+  // nunca chegam aqui — são barradas antes por isHipoteseSemTeto.
+  if (incisoCitado === 'I' || incisoCitado === 'II') return incisoCitado
   if (subtype === 'obra_engenharia') return 'I'
   if (subtype === 'servico' || subtype === 'compra') return 'II'
   // Fallback: heurística regex quando LLM não classificou
@@ -158,15 +213,22 @@ export const fiscalLicitacoes: Fiscal = {
       const valor = values[0]
       const cnpj = cnpjs[0] ?? undefined
 
-      // Etapa 3 — Classificação Art. 75 I vs II
-      const inciso: 'I' | 'II' = classificarInciso(excerpt, entities.subtype)
+      // BUG #139 — o inciso citado pela própria gazette (no excerpt ou no
+      // legalBasis extraído) é a fonte primária de classificação. Caso real:
+      // dispensa de R$ 16,1M citando "Art. 75, inciso VIII" (emergência, sem
+      // teto) era narrada como "inciso II" — o Fiscal contradizia a fonte.
+      const incisoCitado = parseIncisoCitado(excerpt) ?? parseIncisoCitado(legalBasis)
+
+      // Etapa 3 — Classificação Art. 75 I vs II (herda a citação quando I/II)
+      const inciso: 'I' | 'II' = classificarInciso(excerpt, entities.subtype, incisoCitado)
       const teto = inciso === 'I' ? LEI_14133_ART_75_I_LIMITE : LEI_14133_ART_75_II_LIMITE
       const legalBasisStr = `Lei 14.133/2021, Art. 75, ${inciso}`
 
       // BUG-FSC-002 (Correção C): calculado uma vez, usado tanto na Etapa 4
       // (pular dispensa_irregular se hipótese sem teto) quanto no campo `temTeto`
       // persistido abaixo (usado para filtrar a soma de fracionamento na Etapa 8).
-      const semTeto = isHipoteseSemTeto(excerpt)
+      // BUG #139: citação explícita de III..XVIII afasta o teto por valor.
+      const semTeto = isHipoteseSemTeto(excerpt, incisoCitado)
 
       // Para histórico de fracionamento: persistir todas as dispensas (mesmo legais)
       // com actType='dispensa', sem findingType.
@@ -191,9 +253,12 @@ export const fiscalLicitacoes: Fiscal = {
         ...(supplier && { supplier }),
         valor,
         inciso,
+        // BUG #139: preserva a citação da fonte quando existir — auditável e
+        // insumo do replay (nunca é GSI key, seguro omitir quando ausente).
+        ...(incisoCitado && { incisoCitado }),
         // BUG-FSC-002 (Correção C): marca se este ato está sujeito ao teto do Art. 75
-        // (false = hipótese sem teto, ex. Art. 75 III/IV/VIII/IX/XV — fornecedor
-        // exclusivo, emergência, insumo de saúde, ente público, ciência/tecnologia).
+        // (false = hipótese sem teto: inciso citado III..XVIII ou vocabulário de
+        // emergência/saúde/entes públicos/ciência — atribuições canônicas no topo).
         // Itens sem este campo (gravados antes deste fix) são tratados como sujeitos
         // a teto por compatibilidade — corrigido definitivamente via reanalyze.
         temTeto: !semTeto,
