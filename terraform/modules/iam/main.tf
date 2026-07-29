@@ -724,8 +724,12 @@ resource "aws_iam_role_policy" "api" {
       {
         # Scan COUNT em gazettes-prod para /stats (totalGazettesProcessed).
         # GetItem/Query também necessários para expor cachedPdfUrl na Fase 2.
+        # BatchGetItem (#144): /cities lê os 52 watermarks BACKFILL# num único
+        # BatchGet para freshness — a ação nunca existiu na role e o try/catch
+        # do handler mascarava o AccessDenied como "sem-dados" (151 ocorrências
+        # em 24h medidas em 2026-07-25).
         Effect = "Allow"
-        Action = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:Query"]
+        Action = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:Query", "dynamodb:BatchGetItem"]
         Resource = [
           var.gazettes_table_arn,
           "${var.gazettes_table_arn}/index/*",
