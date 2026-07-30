@@ -1199,3 +1199,73 @@ describe('Lei 8.666 Art. 24 — precedência no fluxo', () => {
     expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(1)
   })
 })
+
+// ─── #142 — confiança por domínio (não mais hasAllFields) ───────────────────
+//
+// Medição em prod (2026-07-30) que motivou: dos 83 dispensa_irregular, os 83
+// tinham valor e inciso identificados, mas só 24 passavam o gate de 0.70 —
+// exatamente os 24 com CNPJ. E dos 595 findings sem CNPJ da plataforma, ZERO
+// tinha padrão de CNPJ no excerpt: o dado não está no texto, não é falha de
+// extração. A tese de dispensa_irregular é "valor acima do teto do inciso" —
+// sustenta-se com valor + inciso; o CNPJ identifica o fornecedor.
+describe('#142 — confiança reflete a tese, não campos de contrato', () => {
+  const excerptComInciso =
+    'DISPENSA DE LICITAÇÃO nº 07/2026. Objeto: serviços de consultoria. ' +
+    'Valor: R$ 200.000,00. Base Legal: Lei 14.133/2021, Art. 75, II.'
+
+  it('inciso da fonte + CNPJ → teto de domínio 0.90, limitado pela confiança da extração', async () => {
+    // `Math.min(extractResult.confidence, confiancaDominio)` é pré-existente e
+    // permanece: a confiança da extração é o teto absoluto. Com o mock em 0.85,
+    // o resultado é 0.85 — o 0.90 do domínio não "inventa" confiança que a
+    // extração não teve.
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        values: [200000], cnpjs: ['12.345.678/0001-90'],
+        legalBasis: 'Lei 14.133/2021, Art. 75, II',
+      }),
+    })
+    const findings = await fiscalLicitacoes.analisar({
+      gazette: { ...BASE_GAZ, excerpts: [excerptComInciso] }, cityId: '4305108', context,
+    })
+    const f = findings.filter(x => x.type === 'dispensa_irregular')
+    expect(f).toHaveLength(1)
+    expect(f[0].confidence).toBe(0.85) // = min(0.85 da extração, 0.90 do domínio)
+    expect(f[0].confidence).toBeGreaterThanOrEqual(0.70)
+  })
+
+  it('inciso da fonte SEM CNPJ → 0.75, acima do gate (era 0.65, travado para sempre)', async () => {
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        values: [200000], cnpjs: [],
+        legalBasis: 'Lei 14.133/2021, Art. 75, II',
+      }),
+    })
+    const findings = await fiscalLicitacoes.analisar({
+      gazette: { ...BASE_GAZ, excerpts: [excerptComInciso] }, cityId: '4305108', context,
+    })
+    const f = findings.filter(x => x.type === 'dispensa_irregular')
+    expect(f).toHaveLength(1)
+    expect(f[0].confidence).toBe(0.75)
+    expect(f[0].confidence).toBeGreaterThanOrEqual(0.70) // passa o gate
+    expect(f[0].cnpj).toBeUndefined()
+  })
+
+  it('sem inciso na fonte (classificação inferida) → 0.65, ABAIXO do gate', async () => {
+    // Discriminação preservada: não é subir tudo para o gate. Quando o inciso
+    // vem de heurística (subtype/regex), a tese é mais fraca e não publica.
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({
+        values: [200000], cnpjs: ['12.345.678/0001-90'],
+        subtype: 'servico', legalBasis: 'dispensa de licitação',
+      }),
+    })
+    const findings = await fiscalLicitacoes.analisar({
+      gazette: { ...BASE_GAZ, excerpts: ['DISPENSA DE LICITAÇÃO. Serviços. Valor: R$ 200.000,00.'] },
+      cityId: '4305108', context,
+    })
+    const f = findings.filter(x => x.type === 'dispensa_irregular')
+    expect(f).toHaveLength(1)
+    expect(f[0].confidence).toBe(0.65)
+    expect(f[0].confidence).toBeLessThan(0.70)
+  })
+})
