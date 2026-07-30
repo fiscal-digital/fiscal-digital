@@ -308,7 +308,7 @@ Fiscal Geral (orquestrador, cross-gazette via consolidarAsync)
   ├── Fiscal de Convênios        — Lei 13.019/2014 (OSCs)
   ├── Fiscal de Nepotismo        — STF Súmula Vinculante 13
   ├── Fiscal de Publicidade      — Lei 9.504/97 Art. 73 VI "b"
-  ├── Fiscal de Locação          — Lei 14.133/2021 Art. 74 III
+  ├── Fiscal de Locação          — Lei 14.133/2021 Art. 74 V c/c § 5º
   └── Fiscal de Diárias          — Lei 8.112/90 Art. 58 + BrasilAPI feriados
 ```
 
@@ -387,7 +387,7 @@ Base legal: Lei 9.504/97 Art. 73 VI "b" + VII
 
 **Fiscal de Locação** (entregue 2026-05-02)
 Detecta: locação inexigível citada sem fundamento (TODO: cruzar com IPTU para preço justo)
-Base legal: Lei 14.133/2021 Art. 74 III
+Base legal: Lei 14.133/2021 Art. 74 V c/c § 5º (locação de imóvel; o III trata de serviços técnicos especializados)
 
 **Fiscal de Diárias** (entregue 2026-05-02)
 Detecta: pagamento em final de semana / feriado sem justificativa, valor > limite (R$ 800)
