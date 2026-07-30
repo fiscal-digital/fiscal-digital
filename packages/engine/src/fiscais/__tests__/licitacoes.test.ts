@@ -1116,3 +1116,86 @@ describe('BUG #139 — precedência do inciso citado no fluxo', () => {
     expect(irregular[0].legalBasis).toBe('Lei 14.133/2021, Art. 75, II')
   })
 })
+
+// ─── Lei 8.666/1993, Art. 24 — dispensas do regime anterior ─────────────────
+//
+// 24 dos 129 dispensa_irregular em prod (2026-07-30) citavam o Art. 24 da
+// 8.666 e o matcher do Art. 75 não os via: 7x inciso IV (emergência),
+// 14x inciso X (imóvel), R$ 42,7M somados, nenhum publicado.
+//
+// Base legal verificada em legal-corpus/lei-8666-1993/art-24.md: só I (:23) e
+// II (:36) têm teto de valor ("até 10% do limite previsto na alínea 'a'");
+// III (:43, guerra), IV (:45, emergência) e X (:93, imóvel) são situacionais.
+import { parseIncisoCitado8666 } from '../licitacoes'
+
+describe('Lei 8.666 Art. 24 — parseIncisoCitado8666', () => {
+  it('extrai o inciso nas duas ordens reais de citação', () => {
+    expect(parseIncisoCitado8666('AMPARO LEGAL: Art. 24, inciso IV, da Lei Federal 8.666')).toBe('IV')
+    expect(parseIncisoCitado8666('com fundamento na Lei 8.666/93, art. 24, X')).toBe('X')
+    expect(parseIncisoCitado8666('Art. 24, III, da Lei nº 8.666/1993')).toBe('III')
+  })
+
+  it('NÃO casa o Art. 24 da Lei 13.019 (chamamento público do fiscal-convenios)', () => {
+    expect(parseIncisoCitado8666('Lei 13.019/2014, Art. 24')).toBeNull()
+    expect(parseIncisoCitado8666('dispensa de chamamento público, art. 24, da Lei 13.019/2014')).toBeNull()
+  })
+
+  it('sem citação da 8.666 retorna null', () => {
+    expect(parseIncisoCitado8666('Lei 14.133/2021, Art. 75, II')).toBeNull()
+    expect(parseIncisoCitado8666(null)).toBeNull()
+  })
+})
+
+describe('Lei 8.666 Art. 24 — precedência no fluxo', () => {
+  it('REGRESSÃO (caso real R$ 10,2M): Art. 24 IV emergência → NÃO emite por valor', async () => {
+    const gazette: Gazette = {
+      ...BASE_GAZ,
+      excerpts: [
+        'DISPENSA DE LICITAÇÃO. CONTRATADA: INSTITUTO DE GESTAO INTEGRADA - IGI. ' +
+        'PRAZO: 180 (cento e oitenta) dias. VALOR GLOBAL: R$ 10.241.956,62; ' +
+        'AMPARO LEGAL: Art. 24, inciso IV, da Lei Federal 8.666. Ratifico a Dispensa de Licitação.',
+      ],
+    }
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({ values: [10241956.62], legalBasis: 'Art. 24, inciso IV, da Lei Federal 8.666' }),
+    })
+    const findings = await fiscalLicitacoes.analisar({ gazette, cityId: '2910800', context })
+    expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(0)
+  })
+
+  it('Art. 24 X (compra/locação de imóvel) → sem teto', async () => {
+    const gazette: Gazette = {
+      ...BASE_GAZ,
+      excerpts: ['DISPENSA DE LICITAÇÃO para locação, art. 24, X, da Lei 8.666/93. Valor: R$ 480.000,00.'],
+    }
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({ values: [480000], legalBasis: 'art. 24, X, Lei 8.666/93' }),
+    })
+    const findings = await fiscalLicitacoes.analisar({ gazette, cityId: '3301702', context })
+    expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(0)
+  })
+
+  it('Art. 24 da 8.666 sem inciso legível → também não afirma irregularidade por valor', async () => {
+    const gazette: Gazette = {
+      ...BASE_GAZ,
+      excerpts: ['DISPENSA DE LICITAÇÃO fundamentada no art. 24 da Lei 8.666/93. Valor: R$ 700.000,00.'],
+    }
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({ values: [700000], legalBasis: 'art. 24 da Lei 8.666/93' }),
+    })
+    const findings = await fiscalLicitacoes.analisar({ gazette, cityId: '4305108', context })
+    expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(0)
+  })
+
+  it('NÃO-REGRESSÃO: dispensa da 14.133 sem menção à 8.666 segue disparando', async () => {
+    const gazette: Gazette = {
+      ...BASE_GAZ,
+      excerpts: ['DISPENSA DE LICITAÇÃO. Contratação de serviços. Valor: R$ 80.000,00. Lei 14.133/2021, Art. 75, II.'],
+    }
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({ values: [80000], subtype: 'servico', legalBasis: 'Lei 14.133/2021, Art. 75, II' }),
+    })
+    const findings = await fiscalLicitacoes.analisar({ gazette, cityId: '4305108', context })
+    expect(findings.filter(f => f.type === 'dispensa_irregular')).toHaveLength(1)
+  })
+})
