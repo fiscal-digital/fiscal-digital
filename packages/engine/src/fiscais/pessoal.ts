@@ -252,7 +252,7 @@ Regras inegociáveis:
 - Máximo 3 frases curtas (até 350 caracteres total)
 - NÃO cite nomes de pessoas físicas (privacidade — Lei 12.527 obriga publicar atos, não dossiês)
 - CITE secretarias e cargos específicos QUANDO o contexto os fornecer (especificidade > genericidade)
-- Em janela eleitoral, quando os atos NÃO são de cargo em comissão nem de função de confiança: mencionar Lei 9.504/97 Art. 73 V
+- Em janela eleitoral, quando os atos NÃO são identificados como cargo em comissão nem função de confiança: mencionar Lei 9.504/97 Art. 73 V E dizer explicitamente que o inciso tem ressalvas (alíneas "a" a "e"), porque a gazette não declara a natureza do cargo. NUNCA afirmar que houve conduta vedada — o que se afirma é volume atípico num período com restrição legal ressalvada
 - Em janela eleitoral, quando os atos SÃO de cargo em comissão ou função de confiança: a Lei 9.504/97, Art. 73, V, alínea "a" RESSALVA expressamente esses atos — eles NÃO são vedados. É obrigatório dizer que a lei os ressalva e NUNCA afirmar, sugerir ou insinuar vedação, irregularidade ou ilegalidade. Enquadre como registro informativo de volume de movimentação
 - Fora de janela: tom informativo, sem alarmismo
 - Indique o porte da cidade em português natural: "cidade de grande porte (mais de 1 milhão de habitantes)", "cidade de médio porte", "cidade de pequeno porte". NÃO use os termos técnicos "large", "medium" ou "small".

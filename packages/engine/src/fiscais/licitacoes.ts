@@ -79,6 +79,56 @@ export function parseIncisoCitado(texto: string | null | undefined): string | nu
   return INCISOS_ART_75.has(numeral) ? numeral : null
 }
 
+// ── Lei 8.666/1993, Art. 24 — dispensas do regime anterior ──────────────────
+//
+// Contratos regidos pela lei antiga seguem sendo publicados: 24 dos 129
+// `dispensa_irregular` em prod (2026-07-30) citam o Art. 24 da 8.666, e o
+// matcher do Art. 75 não os enxergava. Medido: 7x inciso IV (emergência),
+// 14x inciso X (imóvel), R$ 42,7M somados.
+//
+// Estrutura idêntica à do Art. 75 (verificado em legal-corpus/lei-8666-1993/
+// art-24.md): SÓ os incisos I e II têm teto de VALOR —
+//   I  (art-24.md:23) "obras e serviços de engenharia de valor até 10% (dez por
+//                      cento) do limite previsto na alínea 'a' do inciso I"
+//   II (art-24.md:36) "outros serviços e compras de valor até 10% (dez por
+//                      cento) do limite previsto na alínea 'a' do inciso II"
+// Os demais são situacionais, sem teto — ex.: III (guerra/grave perturbação da
+// ordem, :43), IV (emergência/calamidade, :45), X (compra ou locação de imóvel, :93).
+//
+// A exigência de "8.666" na mesma citação é OBRIGATÓRIA para desambiguar: o
+// `Art. 24` da Lei 13.019/2014 é o do chamamento público, base do
+// fiscal-convenios — casar por numeral solto quebraria aquele Fiscal.
+const INCISOS_ART_24_8666 = new Set([
+  'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII',
+  'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX', 'XXI', 'XXII',
+  'XXIII', 'XXIV', 'XXV', 'XXVI', 'XXVII', 'XXVIII', 'XXIX', 'XXX', 'XXXI',
+  'XXXII', 'XXXIII', 'XXXIV', 'XXXV',
+])
+
+// Duas ordens reais nas gazettes: "Art. 24, IV, da Lei 8.666" e
+// "Lei 8.666 ... Art. 24, IV". Ambas ancoradas e com quantificador limitado.
+const ART24_ENTAO_LEI_RE =
+  /\bart(?:igo)?\.?\s*24\b[,;]?\s*(?:inciso\s+)?([IVXLC]+)\b[^.]{0,60}?8\.?666/i
+const LEI_ENTAO_ART24_RE =
+  /8\.?666[^.]{0,60}?\bart(?:igo)?\.?\s*24\b[,;]?\s*(?:inciso\s+)?([IVXLC]+)\b/i
+
+/**
+ * Extrai o inciso do Art. 24 da Lei 8.666/1993 citado explicitamente.
+ * Retorna null quando a citação não é dessa lei (evita colidir com o Art. 24
+ * da Lei 13.019/2014, usado pelo fiscal-convenios).
+ */
+export function parseIncisoCitado8666(texto: string | null | undefined): string | null {
+  if (!texto) return null
+  const m = ART24_ENTAO_LEI_RE.exec(texto) ?? LEI_ENTAO_ART24_RE.exec(texto)
+  if (!m) return null
+  const numeral = m[1].toUpperCase()
+  return INCISOS_ART_24_8666.has(numeral) ? numeral : null
+}
+
+/** Cita a Lei 8.666 Art. 24 sem inciso identificável (ainda assim é da lei antiga). */
+const ART24_8666_SEM_INCISO_RE =
+  /\bart(?:igo)?\.?\s*24\b[^.]{0,60}?8\.?666|8\.?666[^.]{0,60}?\bart(?:igo)?\.?\s*24\b/i
+
 const HIPOTESE_FORNECEDOR_EXCLUSIVO_RE =
   /\b(fornecedor\s+exclusivo|[úu]nica\s+(?:fornecedora|fabricante)|not[óo]ria\s+especializa[çc][ãa]o|exclusividade\s+comprovada)\b/i
 const HIPOTESE_EMERGENCIA_RE =
@@ -105,6 +155,12 @@ function isVazamentoEscopo(excerpt: string): boolean {
  */
 function isHipoteseSemTeto(excerpt: string, incisoCitado: string | null = null): boolean {
   if (incisoCitado && incisoCitado !== 'I' && incisoCitado !== 'II') return true
+  // Lei 8.666 Art. 24: mesma regra — só I e II têm teto de valor.
+  const inciso8666 = parseIncisoCitado8666(excerpt)
+  if (inciso8666 && inciso8666 !== 'I' && inciso8666 !== 'II') return true
+  // Cita o Art. 24 da 8.666 sem inciso legível: o teto do Art. 75 da 14.133
+  // (outra lei, outros valores) não se aplica — não afirmar irregularidade.
+  if (!inciso8666 && ART24_8666_SEM_INCISO_RE.test(excerpt)) return true
   if (HIPOTESE_FORNECEDOR_EXCLUSIVO_RE.test(excerpt)) return true
   if (HIPOTESE_EMERGENCIA_RE.test(excerpt)) return true
   if (HIPOTESE_INSUMOS_SAUDE_RE.test(excerpt)) return true
