@@ -74,16 +74,40 @@ const ROL_DOCUMENTAL_RE = /\bc[óo]pia\s+(do\s+|de\s+)?(contrato\s+de\s+loca[çc
 // (k) Cláusulas contratuais listadas (manutenção/obrigações com numeração romana)
 const CLAUSULA_CONTRATUAL_RE = /(^|\s)(I{1,3}V?|IV|VI{0,3}|IX|X{1,2})\s*[-–]\s+[\s\S]{0,80}\b(manuten[çc][ãa]o|obriga[çc][õo]es|cl[áa]usula|arcar\s+com)\b/im
 
-// (l) Modalidades competitivas — locação por inexigibilidade Art. 74 III tem regime próprio
+// (l) Modalidades competitivas — locação por inexigibilidade Art. 74 V tem regime próprio
 const MODALIDADE_COMPETITIVA_RE = /\b(preg[ãa]o\s+(eletr[ôo]nico|presencial)|concorr[êe]ncia|tomada\s+de\s+pre[çc]os)\b/i
 const MODALIDADE_PERMITIDA_RE = /\b(inexigibilidade|dispensa)\b/i
 
-// ── Termos de validação (Art. 74 III exige justificativa) ────────────────────
+// ── Termos de validação ──────────────────────────────────────────────────────
+//
+// Base legal verificada em legal-corpus/lei-14133-2021/art-74.md (2026-07-30).
+// CORREÇÃO: locação de imóvel é o inciso **V** do caput, não o III —
+//   V  (:60) "aquisição ou locação de imóvel cujas características de
+//             instalações e de localização tornem necessária sua escolha"
+//   III (:23) trata de "serviços técnicos especializados de natureza
+//             predominantemente intelectual ... notória especialização" —
+//             nada a ver com imóvel.
+//
+// Os requisitos que este Fiscal procura estão no **§ 5º** (:96), que se aplica
+// justamente às contratações com fundamento no inciso V:
+//   I   (:99)  avaliação prévia do bem, estado de conservação, custos de
+//              adaptação e prazo de amortização
+//   II  (:105) certificação da inexistência de imóveis públicos vagos e
+//              disponíveis que atendam ao objeto
+//   III (:109) justificativas que demonstrem a singularidade do imóvel e a
+//              vantagem para a Administração
+//
+// A confusão vinha de tomar o inciso III do § 5º ("justificativas") como se
+// fosse o inciso III do caput. Os 447 findings em prod citavam "Art. 74, III".
 
-const LAUDO_AVALIACAO_RE = /laudo\s+(de\s+)?avalia[çc][ãa]o/i
+const LAUDO_AVALIACAO_RE = /laudo\s+(de\s+)?avalia[çc][ãa]o|avalia[çc][ãa]o\s+pr[ée]via/i
 const VALOR_MERCADO_RE = /valor\s+(de\s+)?mercado/i
 const JUSTIFICATIVA_RE = /justificativa(\s+(da|de)\s+escolha)?/i
 const RAZAO_ESCOLHA_RE = /raz[ãa]o\s+(da|de)\s+escolha/i
+// § 5º II — certificação de inexistência de imóvel público disponível.
+const IMOVEL_PUBLICO_RE = /inexist[êe]ncia\s+de\s+im[óo]ve(?:l|is)\s+p[úu]blicos?|im[óo]ve(?:l|is)\s+p[úu]blicos?\s+vagos?/i
+// § 5º III — singularidade do imóvel.
+const SINGULARIDADE_RE = /singularidade\s+do\s+im[óo]vel/i
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -99,7 +123,7 @@ function formatDate(iso: string): string {
 
 /**
  * Detecta se o excerpt cita pelo menos um dos termos de validação exigidos
- * pela Lei 14.133/2021, Art. 74 III (laudo de avaliação, valor de mercado,
+ * pela Lei 14.133/2021, Art. 74 § 5º (laudo de avaliação, valor de mercado,
  * justificativa de escolha, razão da escolha do locador).
  */
 function temTermosValidacao(excerpt: string): boolean {
@@ -107,6 +131,8 @@ function temTermosValidacao(excerpt: string): boolean {
     LAUDO_AVALIACAO_RE.test(excerpt) ||
     VALOR_MERCADO_RE.test(excerpt) ||
     JUSTIFICATIVA_RE.test(excerpt) ||
+    IMOVEL_PUBLICO_RE.test(excerpt) ||
+    SINGULARIDADE_RE.test(excerpt) ||
     RAZAO_ESCOLHA_RE.test(excerpt)
   )
 }
@@ -135,7 +161,7 @@ function isExcludedAct(excerpt: string): boolean {
 }
 
 /**
- * Locação por inexigibilidade Art. 74 III tem regime próprio. Excerpts que
+ * Locação por inexigibilidade Art. 74 V tem regime próprio. Excerpts que
  * citam apenas modalidades competitivas (Pregão, Concorrência, Tomada de
  * Preços) sem qualquer menção a inexigibilidade/dispensa não pertencem ao
  * escopo deste Fiscal.
@@ -165,7 +191,7 @@ function narrativaFactual(
     `Identificamos contratação por inexigibilidade para locação de imóvel ` +
     `publicada em ${formatDate(gazetteDate)}${valorStr} sem menção explícita ` +
     `a laudo de avaliação prévia ou justificativa da escolha do locador, ` +
-    `conforme exigido pela Lei 14.133/2021, Art. 74, III.`
+    `conforme exigido pela Lei 14.133/2021, Art. 74, § 5º.`
   )
 }
 
@@ -194,7 +220,7 @@ export const fiscalLocacao: Fiscal = {
   id: FISCAL_ID,
   description:
     'Detecta locação de imóvel pelo município por inexigibilidade (Lei 14.133/2021, ' +
-    'Art. 74, III) sem menção a laudo de avaliação prévia ou justificativa da escolha ' +
+    'Art. 74, V) sem menção aos requisitos do § 5º — avaliação prévia do bem, ' +
     'do locador. Eleva risco quando o valor excede R$ 240k/ano (R$ 20k/mês). ' +
     'Não cruza com IPTU no MVP — escopo futuro.',
 
@@ -270,7 +296,7 @@ export const fiscalLocacao: Fiscal = {
       })
 
       // Etapa 4 — Heurística de validação: se cita termos de avaliação/justificativa,
-      // assumimos que o ato observa o Art. 74 III → não emite alerta.
+      // assumimos que o ato observa o Art. 74 § 5º → não emite alerta.
       if (temTermosValidacao(excerpt)) {
         continue
       }
@@ -358,7 +384,7 @@ export const fiscalLocacao: Fiscal = {
           },
         ],
         narrative: '',
-        legalBasis: 'Lei 14.133/2021, Art. 74, III',
+        legalBasis: 'Lei 14.133/2021, Art. 74, V c/c § 5º',
         ...(cnpj && { cnpj }),
         ...(secretaria && { secretaria }),
         ...(valor !== undefined && { value: valor }),

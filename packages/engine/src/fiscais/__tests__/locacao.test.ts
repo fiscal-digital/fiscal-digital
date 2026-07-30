@@ -17,7 +17,7 @@ function makeExtractEntitiesMock(override: Partial<ExtractedEntities> = {}) {
         secretaria: 'Secretaria Municipal de Administração',
         actType: 'inexigibilidade',
         supplier: 'Imobiliária Centro LTDA',
-        legalBasis: 'Lei 14.133/2021, Art. 74, III',
+        legalBasis: 'Lei 14.133/2021, Art. 74, V c/c § 5º',
         subtype: null,
         ...override,
       } as ExtractedEntities,
@@ -71,7 +71,7 @@ const gazetteLocacaoSemLaudo: Gazette = {
   ...BASE_GAZETTE,
   id: 'gazette-locacao-001',
   excerpts: [
-    'INEXIGIBILIDADE DE LICITAÇÃO n° 008/2026. Objeto: locação de imóvel destinado ao funcionamento da Secretaria Municipal de Cultura. Valor mensal: R$ 18.000,00. Locador: Imobiliária Centro LTDA, CNPJ: 12.345.678/0001-90. Base Legal: Lei 14.133/2021, Art. 74, III.',
+    'INEXIGIBILIDADE DE LICITAÇÃO n° 008/2026. Objeto: locação de imóvel destinado ao funcionamento da Secretaria Municipal de Cultura. Valor mensal: R$ 18.000,00. Locador: Imobiliária Centro LTDA, CNPJ: 12.345.678/0001-90. Base Legal: Lei 14.133/2021, Art. 74, V c/c § 5º.',
   ],
 }
 
@@ -80,7 +80,7 @@ const gazetteLocacaoComLaudo: Gazette = {
   ...BASE_GAZETTE,
   id: 'gazette-locacao-002',
   excerpts: [
-    'INEXIGIBILIDADE DE LICITAÇÃO n° 009/2026. Objeto: locação de imóvel para a Secretaria Municipal de Saúde. Valor mensal: R$ 12.000,00. Laudo de avaliação prévia anexo. Justificativa da escolha: única edificação na região com acesso PNE. Locador: Imobiliária Sul LTDA, CNPJ: 22.333.444/0001-55. Base Legal: Lei 14.133/2021, Art. 74, III.',
+    'INEXIGIBILIDADE DE LICITAÇÃO n° 009/2026. Objeto: locação de imóvel para a Secretaria Municipal de Saúde. Valor mensal: R$ 12.000,00. Laudo de avaliação prévia anexo. Justificativa da escolha: única edificação na região com acesso PNE. Locador: Imobiliária Sul LTDA, CNPJ: 22.333.444/0001-55. Base Legal: Lei 14.133/2021, Art. 74, V c/c § 5º.',
   ],
 }
 
@@ -125,7 +125,7 @@ const gazetteLocacaoAnualAlto: Gazette = {
   ...BASE_GAZETTE,
   id: 'gazette-locacao-007',
   excerpts: [
-    'INEXIGIBILIDADE DE LICITAÇÃO n° 012/2026. Objeto: locação de imóvel para Secretaria de Educação. Valor anual: R$ 300.000,00. Locador: Real Estate LTDA, CNPJ: 55.666.777/0001-88. Base Legal: Lei 14.133/2021, Art. 74, III.',
+    'INEXIGIBILIDADE DE LICITAÇÃO n° 012/2026. Objeto: locação de imóvel para Secretaria de Educação. Valor anual: R$ 300.000,00. Locador: Real Estate LTDA, CNPJ: 55.666.777/0001-88. Base Legal: Lei 14.133/2021, Art. 74, V c/c § 5º.',
   ],
 }
 
@@ -152,7 +152,7 @@ const gazetteLocacaoValorMercado: Gazette = {
   ...BASE_GAZETTE,
   id: 'gazette-locacao-010',
   excerpts: [
-    'INEXIGIBILIDADE n° 014/2026. Objeto: locação de imóvel para arquivo central. Valor mensal: R$ 10.000,00, compatível com valor de mercado da região. Locador: Imobiliária Norte LTDA, CNPJ: 88.999.000/0001-22. Base Legal: Lei 14.133/2021, Art. 74, III.',
+    'INEXIGIBILIDADE n° 014/2026. Objeto: locação de imóvel para arquivo central. Valor mensal: R$ 10.000,00, compatível com valor de mercado da região. Locador: Imobiliária Norte LTDA, CNPJ: 88.999.000/0001-22. Base Legal: Lei 14.133/2021, Art. 74, V c/c § 5º.',
   ],
 }
 
@@ -169,7 +169,7 @@ describe('fiscalLocacao', () => {
 
     expect(findings).toHaveLength(1)
     expect(findings[0].type).toBe('locacao_sem_justificativa')
-    expect(findings[0].legalBasis).toBe('Lei 14.133/2021, Art. 74, III')
+    expect(findings[0].legalBasis).toBe('Lei 14.133/2021, Art. 74, V c/c § 5º')
     expect(findings[0].riskScore).toBeGreaterThanOrEqual(55)
     expect(findings[0].riskScore).toBeLessThanOrEqual(85)
     expect(findings[0].cnpj).toBe('12.345.678/0001-90')
@@ -512,5 +512,58 @@ describe('fiscalLocacao', () => {
     expect('secretaria' in callArg.item).toBe(false)
     expect(callArg.item.cnpj).toBeUndefined()
     expect(callArg.item.secretaria).toBeUndefined()
+  })
+})
+
+// ─── Miscitação legal: locação é Art. 74 V, não III ─────────────────────────
+//
+// Base verificada em legal-corpus/lei-14133-2021/art-74.md (2026-07-30):
+//   V   (:60) "aquisição ou locação de imóvel cujas características de
+//              instalações e de localização tornem necessária sua escolha"
+//   III (:23) "serviços técnicos especializados de natureza predominantemente
+//              intelectual ... notória especialização" — nada a ver com imóvel
+//   § 5º (:96) requisitos das contratações do inciso V: I avaliação prévia,
+//              II certificação de inexistência de imóvel público, III
+//              justificativas de singularidade
+//
+// Os 447 findings em prod citavam "Art. 74, III". A confusão veio de tomar o
+// inciso III do § 5º ("justificativas") como se fosse o III do caput.
+describe('base legal do fiscal-locacao (Art. 74 V c/c § 5º)', () => {
+  it('REGRESSÃO: legalBasis NUNCA cita Art. 74 III (serviços técnicos)', async () => {
+    const findings = await fiscalLocacao.analisar({
+      gazette: gazetteLocacaoSemLaudo,
+      cityId: '4305108',
+      context: makeContext(),
+    })
+    const loc = findings.filter(f => f.type === 'locacao_sem_justificativa')
+    expect(loc.length).toBeGreaterThan(0)
+    for (const f of loc) {
+      expect(f.legalBasis).not.toMatch(/Art\.\s*74,?\s*III\b/)
+      expect(f.legalBasis).toMatch(/Art\.\s*74,\s*V\b/)
+      expect(f.legalBasis).toMatch(/§\s*5/)
+    }
+  })
+
+  it('reconhece os requisitos do § 5º II e III como termos de validação', async () => {
+    // Antes só laudo/valor de mercado/justificativa/razão da escolha eram
+    // reconhecidos. O § 5º II (imóvel público vago) e III (singularidade) são
+    // igualmente cumprimento do requisito — citá-los não pode gerar alerta.
+    for (const termo of [
+      'certificação da inexistência de imóveis públicos vagos e disponíveis',
+      'justificativa que demonstra a singularidade do imóvel escolhido',
+    ]) {
+      const findings = await fiscalLocacao.analisar({
+        gazette: {
+          ...gazetteLocacaoSemLaudo,
+          excerpts: [
+            `INEXIGIBILIDADE. Locação de imóvel para a Secretaria de Educação. ` +
+            `Valor: R$ 8.000,00/mês. ${termo}.`,
+          ],
+        },
+        cityId: '4305108',
+        context: makeContext(),
+      })
+      expect(findings.filter(f => f.type === 'locacao_sem_justificativa')).toHaveLength(0)
+    }
   })
 })
