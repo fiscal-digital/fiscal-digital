@@ -81,7 +81,12 @@ ehthumbs.db
 packages/engine/src/brand/
 
 # ─── AI/Dev meta (não vai para o repo público) ─────────────────
-.claude/
+# .claude/ NAO e ignorado por inteiro: o hook de citacao juridica e a fiacao
+# PreToolUse sao ENFORCEMENT versionado (#141). Ignorar o diretorio inteiro foi
+# a causa raiz de o hook ficar meses declarado no CLAUDE.md sem existir no repo.
+.claude/*.local.json
+.claude/projects/
+.claude/todos/
 .learnings/
 
 # ─── Backfill / migration artifacts ─────────────────────────────
