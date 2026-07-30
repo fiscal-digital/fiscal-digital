@@ -91,3 +91,4 @@ backfill.log
 # Gemini image MCP (dev) — imagens geradas e config local com segredo
 /output/
 .claude/settings.local.json
+backups/
