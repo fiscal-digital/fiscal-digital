@@ -327,8 +327,34 @@ export const fiscalLicitacoes: Fiscal = {
         createdAt: now.toISOString(),
       }
 
-      // Etapa 9 — Confidence final (calculado aqui para uso em ambos os blocos abaixo)
-      const hasAllFields = !!(cnpj && valor && gazette.date)
+      // Etapa 9 — Confiança por domínio (#142)
+      //
+      // Antes: `hasAllFields = cnpj && valor && data` — heurística de CONTRATO
+      // usada como proxy universal de confiança. Sem CNPJ o finding caía para
+      // 0.65 e nunca passava o gate de 0.70, para sempre.
+      //
+      // Medição em prod (2026-07-30) que motivou a mudança: dos 83
+      // `dispensa_irregular`, os 83 têm valor e inciso identificados, mas só 24
+      // passavam o gate — exatamente os 24 com CNPJ. E dos 595 findings sem
+      // CNPJ da plataforma, ZERO tinha sequer padrão de CNPJ no excerpt: o dado
+      // não está no texto analisado (excerpts do QD são janelas de ~307 chars),
+      // não é falha de extração.
+      //
+      // A confiança passa a refletir a força da TESE deste Fiscal, como o
+      // fiscal-publicidade já fazia (17/17 publicados sem nenhum CNPJ). A tese
+      // de `dispensa_irregular` é "valor acima do teto do inciso": sustenta-se
+      // com VALOR + INCISO. O CNPJ identifica o fornecedor — é relevante para a
+      // narrativa e para o cruzamento cross-supplier, não para a tese.
+      //
+      // Escala mantém discriminação (não é subir tudo para o gate):
+      //   valor + inciso citado na fonte + cnpj → 0.90  identificação completa
+      //   valor + inciso citado na fonte        → 0.75  tese sustentada, fornecedor não identificado
+      //   valor + inciso só por heurística      → 0.65  classificação inferida, abaixo do gate
+      const incisoVeioDaFonte = incisoCitado === 'I' || incisoCitado === 'II'
+      const confiancaDominio =
+        incisoVeioDaFonte && cnpj ? 0.9
+        : incisoVeioDaFonte ? 0.75
+        : 0.65
 
       // Etapa 4 — Detecção dispensa irregular
       // ADR-001: pular se o ato cita hipótese sem teto (Art. 75 III/IV/VIII/IX/XV).
@@ -363,7 +389,7 @@ export const fiscalLicitacoes: Fiscal = {
         const riskScore = scoreResult.data
         const confidence = Math.min(
           extractResult.confidence,
-          hasAllFields ? 0.9 : 0.65,
+          confiancaDominio,
         )
 
         const finding: Finding = {
@@ -491,8 +517,9 @@ export const fiscalLicitacoes: Fiscal = {
           const scoreFracResult = await scoreRisk.execute({ factors: riskFactorsFrac })
           const riskScoreFrac = scoreFracResult.data
 
-          const confidenceFrac = hasAllFields ? 0.9 : 0.65
-
+          // Fracionamento: a tese e a SOMA de dispensas no periodo, nao o
+          // fornecedor individual — mesma escala de dominio.
+          const confidenceFrac = confiancaDominio
           const narrativaFrac =
             `Identificamos ${n} dispensas para o fornecedor CNPJ ${cnpj} nos últimos 12 meses, ` +
             `totalizando R$ ${formatBRL(somaTotal)}, acima do limite legal de R$ ${formatBRL(LEI_14133_ART_75_II_LIMITE)} ` +
