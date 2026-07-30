@@ -73,6 +73,13 @@ jobs:
           NODE_OPTIONS: --experimental-vm-modules
         run: npm test
 
+      # Gate anti-confabulação jurídica (#141). Não basta o hook existir: o CI
+      # prova que ele BARRA uma citação não verificada. LRN-20260505-004 — gate
+      # que não barra é gate que mente. O hook ficou declarado no CLAUDE.md por
+      # meses sem existir no repo; este teste impede a recorrência.
+      - name: Hook de citação jurídica (prova que bloqueia)
+        run: node --test .claude/hooks/check-legal-citation.test.mjs
+
       # ─── Pipeline de infra (precisa de secrets) ──────────────────────────
       # Steps abaixo NAO rodam em PR de fork nem de Dependabot: secrets nao
       # sao expostos a forks por design de seguranca do GitHub Actions, e
