@@ -144,3 +144,49 @@ describe('queryDiario', () => {
     expect(calledHeaders['User-Agent']).toContain('fiscaldigital.org')
   })
 })
+
+// ─── #166 — janela de excerpt configurável ──────────────────────────────────
+//
+// `excerpt_size: '300'` era hardcoded e é a raiz de dois gargalos medidos em
+// prod (2026-07-31): zero dos 595 findings sem CNPJ tinha padrão de CNPJ no
+// excerpt; só 11 de 791 textos traziam rótulo de assinatura. O dado ficava
+// fora da janela.
+//
+// O default segue 300 de propósito: canary mostrou que subir muda o
+// comportamento dos Fiscais nos dois sentidos (contagem de atos e filtros de
+// exclusão operam dentro do excerpt). Subir exige recalibração — ver #166.
+describe('#166 — excerpt_size configurável', () => {
+  function urlDaChamada(): URL {
+    return new URL(mockFetch.mock.calls[0][0] as string)
+  }
+
+  it('default permanece 300 — subir exige recalibração dos thresholds', async () => {
+    delete process.env.QD_EXCERPT_SIZE
+    mockFetch.mockReturnValueOnce(makeQDResponse([]))
+    await queryDiario.execute({ territory_id: '4305108' })
+    expect(urlDaChamada().searchParams.get('excerpt_size')).toBe('300')
+    expect(urlDaChamada().searchParams.get('number_of_excerpts')).toBe('5')
+  })
+
+  it('env QD_EXCERPT_SIZE sobrepõe o default (canary por deploy)', async () => {
+    process.env.QD_EXCERPT_SIZE = '2000'
+    mockFetch.mockReturnValueOnce(makeQDResponse([]))
+    await queryDiario.execute({ territory_id: '4305108' })
+    expect(urlDaChamada().searchParams.get('excerpt_size')).toBe('2000')
+    delete process.env.QD_EXCERPT_SIZE
+  })
+
+  it('parâmetro da chamada tem precedência sobre o env', async () => {
+    process.env.QD_EXCERPT_SIZE = '2000'
+    mockFetch.mockReturnValueOnce(makeQDResponse([]))
+    await queryDiario.execute({ territory_id: '4305108', excerptSize: 4000 })
+    expect(urlDaChamada().searchParams.get('excerpt_size')).toBe('4000')
+    delete process.env.QD_EXCERPT_SIZE
+  })
+
+  it('numberOfExcerpts também é configurável', async () => {
+    mockFetch.mockReturnValueOnce(makeQDResponse([]))
+    await queryDiario.execute({ territory_id: '4305108', numberOfExcerpts: 10 })
+    expect(urlDaChamada().searchParams.get('number_of_excerpts')).toBe('10')
+  })
+})
