@@ -254,8 +254,10 @@ describe('fiscalLocacao', () => {
 
     expect(findings).toHaveLength(1)
     expect(findings[0].value).toBeUndefined()
-    // sem cnpj nem valor → confidence cai
-    expect(findings[0].confidence).toBeLessThanOrEqual(0.65)
+    // #142/#143: confianca reflete a TESE, nao campos de contrato. Esta fixture
+    // cita "Art. 74" explicitamente — a norma exata — entao sustenta a tese
+    // mesmo sem cnpj e sem valor. Antes caia para 0.65 por hasAllFields.
+    expect(findings[0].confidence).toBe(0.75)
     // riskScore ainda dentro da faixa indiciária
     expect(findings[0].riskScore).toBeGreaterThanOrEqual(55)
     expect(findings[0].riskScore).toBeLessThanOrEqual(70)
@@ -564,6 +566,67 @@ describe('base legal do fiscal-locacao (Art. 74 V c/c § 5º)', () => {
         context: makeContext(),
       })
       expect(findings.filter(f => f.type === 'locacao_sem_justificativa')).toHaveLength(0)
+    }
+  })
+})
+
+// ─── #143 — a hipótese legal precisa estar evidenciada ──────────────────────
+//
+// Decisão de produto (2026-07-30): credibilidade por achado acima de volume.
+// Medido em prod: 390 dos 447 findings (87%) não citavam Art. 74 nem
+// "inexigibilidade" — não havia evidência de que o contrato seguiu esse rito.
+// E o gatilho era AUSÊNCIA de justificativa inferida de um excerpt de ~306
+// chars (p10 302, p90 313), onde um laudo raramente apareceria mesmo num
+// processo perfeitamente regular.
+describe('#143 — exige marcador de inexigibilidade', () => {
+  const base = (excerpt: string): Gazette => ({ ...BASE_GAZETTE, id: 'gz-143', excerpts: [excerpt] })
+
+  it('locação SEM marcador de inexigibilidade → NÃO emite (era o caso de 87%)', async () => {
+    const findings = await fiscalLocacao.analisar({
+      gazette: base(
+        'OBJETO: O presente contrato tem por objetivo a locação do imóvel situado à ' +
+        'Rua São José, 1439, onde funciona o ANEXO DA SECRETARIA MUNICIPAL DE EDUCAÇÃO. ' +
+        'VIGÊNCIA: até 17/12/2026.',
+      ),
+      cityId: '4305108',
+      context: makeContext(),
+    })
+    expect(findings).toHaveLength(0)
+  })
+
+  it('com "inexigibilidade" explícita → emite', async () => {
+    const findings = await fiscalLocacao.analisar({
+      gazette: base(
+        'INEXIGIBILIDADE DE LICITAÇÃO. Objeto: locação de imóvel para a Secretaria ' +
+        'de Saúde. Valor: R$ 30.000,00 mensais.',
+      ),
+      cityId: '4305108',
+      context: makeContext(),
+    })
+    expect(findings.filter(f => f.type === 'locacao_sem_justificativa')).toHaveLength(1)
+  })
+
+  it('com "Art. 74" citado → emite, ainda que sem a palavra inexigibilidade', async () => {
+    const findings = await fiscalLocacao.analisar({
+      gazette: base('CONTRATO de locação de imóvel. Fundamento: Lei 14.133/2021, Art. 74. Valor: R$ 12.000,00/mês.'),
+      cityId: '4305108',
+      context: makeContext(),
+    })
+    expect(findings.filter(f => f.type === 'locacao_sem_justificativa')).toHaveLength(1)
+  })
+
+  it('escala de confiança gradua pela força da tese', async () => {
+    const casos: Array<[string, number]> = [
+      ['INEXIGIBILIDADE. Locação de imóvel. Art. 74. Valor: R$ 30.000,00 mensais.', 0.85],
+      ['INEXIGIBILIDADE DE LICITAÇÃO. Locação de imóvel. Valor: R$ 30.000,00 mensais.', 0.75],
+    ]
+    for (const [excerpt, esperado] of casos) {
+      const findings = await fiscalLocacao.analisar({
+        gazette: base(excerpt), cityId: '4305108', context: makeContext(),
+      })
+      const f = findings.filter(x => x.type === 'locacao_sem_justificativa')
+      expect(f).toHaveLength(1)
+      expect(f[0].confidence).toBe(esperado)
     }
   })
 })
