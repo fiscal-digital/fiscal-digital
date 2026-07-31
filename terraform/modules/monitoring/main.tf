@@ -166,3 +166,105 @@ resource "aws_budgets_budget" "fiscal_digital" {
     subscriber_email_addresses = [var.alert_email]
   }
 }
+
+# ── Alarmes de Errors por Lambda (#145) ──────────────────────────────────────
+#
+# Auditoria de 2026-07-31: das 8 Lambdas fiscal-digital-*, só analyzer e
+# publisher tinham alarme de Errors. As 6 restantes falhavam em silêncio —
+# incluindo os DOIS collectors, que só rodam por cron. É o cenário que deixou
+# Caxias do Sul 7 meses sem gazette nova sem ninguém saber.
+#
+# `for_each` em vez de 6 blocos repetidos: adicionar Lambda nova é uma linha.
+# Threshold por criticidade — collector e api são caminho de dado/usuário;
+# costs e web-isr são auxiliares e toleram ruído maior antes de acordar alguém.
+
+locals {
+  lambda_error_alarms = {
+    api = {
+      function  = "fiscal-digital-api-prod"
+      threshold = 5
+      descricao = "API pública teve > 5 erros em 5 min — endpoint público degradado"
+    }
+    collector = {
+      function  = "fiscal-digital-collector-prod"
+      threshold = 1
+      descricao = "Collector do Querido Diário falhou — roda por cron, sem retry visível; 1 erro já é sinal"
+    }
+    supplier_collector = {
+      function  = "fiscal-digital-supplier-collector-prod"
+      threshold = 1
+      descricao = "Collector de fornecedores (RFB/CGU) falhou — roda por cron"
+    }
+    costs = {
+      function  = "fiscal-digital-costs-prod"
+      threshold = 2
+      descricao = "FiscalCustos falhou — transparência financeira fica desatualizada"
+    }
+    web_isr = {
+      function  = "fiscal-digital-web-isr-prod"
+      threshold = 5
+      descricao = "Lambda de ISR do site teve > 5 erros em 5 min"
+    }
+    web_isr_revalidate = {
+      function  = "fiscal-digital-web-isr-revalidate-prod"
+      threshold = 5
+      descricao = "Lambda de revalidação do site teve > 5 erros em 5 min"
+    }
+  }
+
+  # DLQs sem alarme na auditoria — as outras 2 já são cobertas acima.
+  dlq_alarms = {
+    supplier_enrich = {
+      queue     = "fiscal-digital-supplier-enrich-dlq-prod"
+      descricao = "DLQ de enriquecimento de fornecedor tem mensagens — investigar RFB/CGU"
+    }
+    web_isr_revalidate = {
+      queue     = "fiscal-digital-web-isr-revalidate-dlq-prod"
+      descricao = "DLQ de revalidação do site tem mensagens"
+    }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
+  for_each = local.lambda_error_alarms
+
+  alarm_name          = "fiscal-digital-${replace(each.key, "_", "-")}-errors-prod"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = each.value.threshold
+  alarm_description   = each.value.descricao
+  alarm_actions       = [aws_sns_topic.ops_alerts.arn]
+  ok_actions          = [aws_sns_topic.ops_alerts.arn]
+  # Lambda sem invocação não emite datapoint — sem isto o alarme vive em
+  # INSUFFICIENT_DATA e nunca notifica (mesma razão do alarme de DLQ acima).
+  treat_missing_data = "notBreaching"
+
+  dimensions = {
+    FunctionName = each.value.function
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "dlq_nonempty" {
+  for_each = local.dlq_alarms
+
+  alarm_name          = "fiscal-digital-${replace(each.key, "_", "-")}-dlq-nonempty-prod"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 0
+  alarm_description   = each.value.descricao
+  alarm_actions       = [aws_sns_topic.ops_alerts.arn]
+  ok_actions          = [aws_sns_topic.ops_alerts.arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = each.value.queue
+  }
+}
