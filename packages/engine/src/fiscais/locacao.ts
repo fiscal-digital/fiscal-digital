@@ -170,6 +170,25 @@ function hasOnlyCompetingModality(excerpt: string): boolean {
   return MODALIDADE_COMPETITIVA_RE.test(excerpt) && !MODALIDADE_PERMITIDA_RE.test(excerpt)
 }
 
+// ── #143 — a hipótese legal precisa estar evidenciada ────────────────────────
+//
+// Decisão de produto (2026-07-30): credibilidade por achado acima de volume.
+//
+// A tese deste Fiscal é "locação por INEXIGIBILIDADE sem os requisitos do
+// Art. 74 § 5º". O gatilho anterior era apenas a AUSÊNCIA de termos de
+// validação — inferida de um excerpt do Querido Diário, que tem tamanho fixo
+// de ~306 caracteres (p10 302, p90 313, medido sobre os 447 findings em prod).
+// Num recorte desse tamanho, um laudo de avaliação raramente apareceria mesmo
+// num processo perfeitamente regular: a ausência não é evidência.
+//
+// Passamos a exigir marcador POSITIVO da hipótese legal. Efeito medido:
+// 447 → ~57 findings, todos com a inexigibilidade evidenciada no próprio ato.
+const MARCADOR_INEXIGIBILIDADE_RE = /\binexigibilidade\b|\binexig[íi]vel\b/i
+
+function temMarcadorInexigibilidade(excerpt: string): boolean {
+  return MARCADOR_INEXIGIBILIDADE_RE.test(excerpt) || ART_74_RE.test(excerpt)
+}
+
 /**
  * Detecta se o excerpt indica explicitamente periodicidade mensal do valor
  * (ex.: "R$ 25.000,00 mensais", "valor mensal de R$ X", "por mês").
@@ -243,6 +262,14 @@ export const fiscalLocacao: Fiscal = {
       // Filtros de exclusão (ADR-001 fiscal-digital-evaluations + padrões Ciclo 2)
       if (isExcludedAct(e)) return false
       if (hasOnlyCompetingModality(e)) return false
+
+      // #143 — a hipótese legal precisa estar EVIDENCIADA no ato.
+      // Este Fiscal afirma "locação por inexigibilidade sem os requisitos do
+      // Art. 74 § 5º". Sem marcador de inexigibilidade, não há evidência de que
+      // o contrato sequer seguiu esse rito — pode ser licitação regular,
+      // renovação, qualquer coisa. Medido em prod (2026-07-30): 390 dos 447
+      // findings (87%) não citavam Art. 74 nem "inexigibilidade".
+      if (!temMarcadorInexigibilidade(e)) return false
 
       return true
     })
@@ -364,11 +391,23 @@ export const fiscalLocacao: Fiscal = {
         riskScore = Math.max(60, Math.min(85, riskScore))
       }
 
-      const hasAllFields = !!(cnpj && valor !== undefined && gazette.date)
-      const confidence = Math.min(
-        extractResult.confidence,
-        hasAllFields ? 0.85 : 0.65,
-      )
+      // Confiança por domínio (#142/#143) — reflete a força da TESE, não a
+      // presença de campos de contrato. `hasAllFields` (cnpj && valor) prendia
+      // 445 dos 447 findings em 0.65: o CNPJ não sustenta a tese de "locação
+      // por inexigibilidade sem os requisitos do § 5º", e em 95% dos casos nem
+      // está no excerpt.
+      //
+      // O que sustenta a tese, em ordem de força:
+      //   1. inexigibilidade citada explicitamente (agora obrigatório)
+      //   2. Art. 74 citado por numeral — a norma exata, não só o rito
+      //   3. valor conhecido — permite dimensionar a materialidade
+      const citaArt74 = ART_74_RE.test(excerpt)
+      const valorConhecido = valor !== undefined
+      const confiancaDominio =
+        citaArt74 && valorConhecido ? 0.85
+        : citaArt74 || valorConhecido ? 0.75
+        : 0.68
+      const confidence = Math.min(extractResult.confidence, confiancaDominio)
 
       const finding: Finding = {
         fiscalId: FISCAL_ID,
