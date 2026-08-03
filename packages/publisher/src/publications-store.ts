@@ -9,8 +9,27 @@ import { AlreadyPublishedError } from './channels/types'
 
 const ALERTS_TABLE = process.env.ALERTS_TABLE ?? 'fiscal-digital-alerts-prod'
 
+/**
+ * pk do item onde a publicação é registrada — é o PRÓPRIO item do FINDING.
+ *
+ * BUG #146: esta função retornava `ALERT#${findingId}`, um namespace que NUNCA
+ * existiu na tabela (scan completo em 2026-08-02: 0 de 2.982 itens com prefixo
+ * `ALERT#`). Como `ensurePublicationsMap` exige `attribute_exists(pk)`, toda
+ * chamada a `recordPublication` lançaria erro e o publish iria para a DLQ — no
+ * dia exato em que o DRY_RUN saísse. O defeito estava mascarado justamente
+ * porque o publisher nunca chegou a gravar em produção.
+ *
+ * O `findingId` JÁ É o pk (`FINDING#{fiscalId}#{cityId}#{type}#{gazetteKey}`),
+ * hidratado por `persistFinding` no analyzer. `markUnpublishable` sempre usou
+ * esse pk direto — o comentário dela já apontava a divergência, tratando
+ * `recordPublication` como "legacy".
+ *
+ * Consequência do bug além da DLQ: o atributo `published` nunca chegava ao item
+ * FINDING#, então o `GSI4-risk-published` ficava vazio (ItemCount 0) e o feed
+ * público não tinha como distinguir publicado de não publicado.
+ */
 function alertPk(findingId: string): string {
-  return `ALERT#${findingId}`
+  return findingId
 }
 
 export class PublicationsStore {
@@ -89,9 +108,10 @@ export class PublicationsStore {
    * finding fica preservado (audit trail) mas é filtrado do feed público
    * pela API.
    *
-   * Importante: o pk usado é o do próprio FINDING# (mesmo item criado pelo
-   * analyzer), não o `ALERT#FINDING#` que `recordPublication` legacy usa.
-   * Itens FINDING# são os que aparecem no /alerts.
+   * O pk usado é o do próprio FINDING# (mesmo item criado pelo analyzer) —
+   * itens FINDING# são os que aparecem no /alerts. Desde a correção do #146,
+   * `recordPublication` usa o mesmo namespace; a divergência que este
+   * comentário apontava deixou de existir.
    */
   async markUnpublishable(
     findingPk: string,
