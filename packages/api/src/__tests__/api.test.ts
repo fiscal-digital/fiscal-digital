@@ -363,10 +363,80 @@ describe('GET /cities', () => {
 })
 
 describe('GET /cities/{cityId}/stats', () => {
-  it('retorna stats agregadas para cidade conhecida — gazettes + findings + período', async () => {
-    // 1ª chamada: scan gazettes filtrado por GAZETTE#4305108#
-    // 2ª chamada: fetchFindings (scan alerts filtrado pela cidade)
+  // Helper: contagem de Scans emitidos contra a tabela de gazettes. O ponto
+  // do counter agregado é que esse número vira 0 no caminho rápido.
+  function gazetteScans() {
+    return mockDdbSend.mock.calls.filter(
+      ([cmd]) => (cmd as { __type?: string; input?: { TableName?: string } })?.__type === 'Scan'
+        && (cmd as { input?: { TableName?: string } })?.input?.TableName?.includes('gazettes'),
+    ).length
+  }
+
+  it('caminho rápido: lê AGG#GAZETTE_COUNT#{cityId} e não faz Scan de gazettes', async () => {
+    // 1ª chamada: GetItem no counter agregado (hit)
+    // 2ª chamada: fetchFindings
     mockDdbSend
+      .mockResolvedValueOnce({
+        Item: { total: 4212, firstDate: '2021-01-04', lastDate: '2026-07-28' },
+      })
+      .mockResolvedValueOnce({
+        Items: [makeFinding({ cityId: '4305108', createdAt: '2026-07-28T10:00:00.000Z' })],
+      })
+
+    const res = asResult(await handler(makeEvent('/cities/4305108/stats')))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+
+    expect(body.totalGazettesProcessed).toBe(4212)
+    expect(body.periodCovered).toEqual({ from: '2021-01-04', to: '2026-07-28' })
+
+    // REGRESSÃO: o Scan da tabela inteira (94 MB / ~90 páginas sequenciais)
+    // era a causa dos 2,8-3,3 s de latência. Se voltar, este teste falha.
+    expect(gazetteScans()).toBe(0)
+
+    const get = mockDdbSend.mock.calls[0][0] as { __type: string; input: { Key: { pk: string } } }
+    expect(get.__type).toBe('Get')
+    expect(get.input.Key.pk).toBe('AGG#GAZETTE_COUNT#4305108')
+  })
+
+  it('counter ausente cai no Scan e produz o mesmo resultado', async () => {
+    // 1ª: GetItem sem Item (cidade ainda não reconciliada) → fallback
+    mockDdbSend
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        Items: [
+          { pk: 'GAZETTE#4305108#2026-01-15#1', date: '2026-01-15' },
+          { pk: 'GAZETTE#4305108#2026-03-20#1', date: '2026-03-20' },
+        ],
+      })
+      .mockResolvedValueOnce({ Items: [] })
+
+    const res = asResult(await handler(makeEvent('/cities/4305108/stats')))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.totalGazettesProcessed).toBe(2)
+    expect(body.periodCovered).toEqual({ from: '2026-01-15', to: '2026-03-20' })
+    expect(gazetteScans()).toBe(1)
+  })
+
+  it('counter corrompido (total não numérico) cai no Scan em vez de servir lixo', async () => {
+    mockDdbSend
+      .mockResolvedValueOnce({ Item: { total: 'muitas', firstDate: '2020-01-01' } })
+      .mockResolvedValueOnce({ Items: [{ pk: 'GAZETTE#4305108#2026-05-05#1', date: '2026-05-05' }] })
+      .mockResolvedValueOnce({ Items: [] })
+
+    const res = asResult(await handler(makeEvent('/cities/4305108/stats')))
+    const body = JSON.parse(res.body)
+    expect(body.totalGazettesProcessed).toBe(1)
+    expect(gazetteScans()).toBe(1)
+  })
+
+  it('retorna stats agregadas para cidade conhecida — gazettes + findings + período', async () => {
+    // 1ª chamada: GetItem no counter (miss) → fallback
+    // 2ª chamada: scan gazettes filtrado por GAZETTE#4305108#
+    // 3ª chamada: fetchFindings (scan alerts filtrado pela cidade)
+    mockDdbSend
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({
         Items: [
           { pk: 'GAZETTE#4305108#2026-01-15#1', date: '2026-01-15' },
@@ -406,6 +476,7 @@ describe('GET /cities/{cityId}/stats', () => {
 
   it('extrai date do pk como fallback quando atributo date está ausente', async () => {
     mockDdbSend
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({
         Items: [
           { pk: 'GAZETTE#4305108#2025-06-10#1' },
@@ -425,6 +496,7 @@ describe('GET /cities/{cityId}/stats', () => {
 
   it('periodCovered é null quando não há gazettes processadas para a cidade', async () => {
     mockDdbSend
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ Items: [] })
       .mockResolvedValueOnce({ Items: [] })
 
