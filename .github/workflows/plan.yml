@@ -80,6 +80,13 @@ jobs:
       - name: Hook de citação jurídica (prova que bloqueia)
         run: node --test .claude/hooks/check-legal-citation.test.mjs
 
+      # O reconciliador é o que popula os counters lidos por
+      # /cities/{cityId}/stats. Se a agregação dele passar a contar um universo
+      # diferente do Scan que ela substituiu, o endpoint responde rápido e
+      # errado — falha silenciosa. `npm test` não alcança scripts/*.mjs.
+      - name: Modelo puro do reconciliador de counters
+        run: node --test scripts/reconcile-gazette-counters.test.mjs
+
       # ─── Pipeline de infra (precisa de secrets) ──────────────────────────
       # Steps abaixo NAO rodam em PR de fork nem de Dependabot: secrets nao
       # sao expostos a forks por design de seguranca do GitHub Actions, e

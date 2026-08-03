@@ -428,11 +428,9 @@ async function buildCitiesFromQueries(): Promise<CityResponse[]> {
 // período coberto. Habilita o 5º KPI "Diários processados" na página de
 // cidade no `fiscal-digital-web`.
 //
-// Conta gazettes via Scan filtrado por prefixo `GAZETTE#${cityId}#` em
-// `gazettes-prod`. Para escala atual (~50k gazettes total, ~2k por cidade
-// no máximo) o custo de Scan filtrado é aceitável; cache HTTP de 5min
-// absorve a maior parte das requisições. Migrar para GSI/cursor se ficar
-// pesado depois de 100k+ gazettes.
+// Contagem de gazettes por cidade vem do counter agregado
+// `AGG#GAZETTE_COUNT#{cityId}` (ver `readCityGazetteAgg`). O Scan filtrado
+// permanece só como fallback — ver `scanCityGazettes`.
 interface CityStatsResponse {
   cityId: string
   totalGazettesProcessed: number
@@ -444,8 +442,57 @@ interface CityStatsResponse {
   dataStatus: 'atualizada' | 'estagnada' | 'sem-dados'
 }
 
-async function buildCityStats(cityId: string): Promise<CityStatsResponse> {
-  let gazettesCount = 0
+interface CityGazetteAgg {
+  total: number
+  firstDate: string | null
+  lastDate: string | null
+}
+
+/** pk do item agregado por cidade em `gazettes-prod`. */
+function cityGazetteCounterPk(cityId: string): string {
+  return `AGG#GAZETTE_COUNT#${cityId}`
+}
+
+// Caminho rápido: 1 GetItem no counter agregado, mantido pelo collector a cada
+// `markQueued` e reconciliado por `scripts/reconcile-gazette-counters.mjs`.
+//
+// Substitui um Scan da tabela inteira (47.720 itens / 94 MB medidos em
+// 2026-08-03). Como `pk` é a chave HASH, `begins_with(pk, ...)` NÃO vira Query:
+// o DynamoDB lia tudo e descartava o que não casava, paginando de 1 MB em 1 MB
+// — ~90 idas e voltas sequenciais por request. O endpoint levava 2,8–3,3 s para
+// devolver 288 bytes.
+//
+// A motivação é latência, não custo: as leituras de DynamoDB do projeto inteiro
+// custam centavos por mês. Por isso a correção é um counter, e não um GSI —
+// um GSI exigiria adicionar `cityId` aos 47.720 itens existentes para resolver
+// um problema que 1 GetItem resolve.
+//
+// Retorna `null` quando o agregado não existe; o chamador cai no Scan.
+async function readCityGazetteAgg(cityId: string): Promise<CityGazetteAgg | null> {
+  try {
+    const out = await ddb.send(new GetCommand({
+      TableName: GAZETTES_TABLE,
+      Key: { pk: cityGazetteCounterPk(cityId) },
+      ProjectionExpression: '#t, firstDate, lastDate',
+      ExpressionAttributeNames: { '#t': 'total' },
+    }))
+    const item = out.Item as { total?: number; firstDate?: string; lastDate?: string } | undefined
+    if (!item || typeof item.total !== 'number') return null
+    return {
+      total: item.total,
+      firstDate: item.firstDate ?? null,
+      lastDate: item.lastDate ?? null,
+    }
+  } catch (err) {
+    logger.error('city gazette counter read failed (fallback para scan)', { cityId, err })
+    return null
+  }
+}
+
+// Fallback correto-porém-lento, usado quando o agregado ainda não foi
+// reconciliado para a cidade. Preferir SEMPRE `readCityGazetteAgg`.
+async function scanCityGazettes(cityId: string): Promise<CityGazetteAgg> {
+  let total = 0
   let firstDate: string | null = null
   let lastDate: string | null = null
   let exclusiveStartKey: Record<string, unknown> | undefined
@@ -461,7 +508,7 @@ async function buildCityStats(cityId: string): Promise<CityStatsResponse> {
       ExpressionAttributeNames: { '#d': 'date' },
     }))
     for (const item of (out.Items ?? []) as { pk?: string; date?: string }[]) {
-      gazettesCount += 1
+      total += 1
       // Schema: GAZETTE#{territory_id}#{date}#{edition} — fallback para
       // extrair date do pk caso o atributo `date` esteja ausente.
       const date = item.date ?? (item.pk?.match(/^GAZETTE#\d+#(\d{4}-\d{2}-\d{2})/)?.[1])
@@ -473,11 +520,18 @@ async function buildCityStats(cityId: string): Promise<CityStatsResponse> {
     exclusiveStartKey = out.LastEvaluatedKey
   } while (exclusiveStartKey)
 
+  return { total, firstDate, lastDate }
+}
+
+async function buildCityStats(cityId: string): Promise<CityStatsResponse> {
+  const agg = (await readCityGazetteAgg(cityId)) ?? (await scanCityGazettes(cityId))
+  const { total: gazettesCount, firstDate, lastDate } = agg
+
   // Findings já passam pelo gate de publicação dentro de fetchFindings.
   const findings = await fetchFindings({ cityId })
   const lastFindingAt = findings[0]?.createdAt ?? null
 
-  // Watermark do collector é a fonte canônica de freshness; o scan acima só
+  // Watermark do collector é a fonte canônica de freshness; o agregado acima só
   // conhece o que já foi processado (fallback quando o watermark não existe).
   const watermark = (await fetchLastGazetteDates([cityId])).get(cityId) ?? lastDate
 
