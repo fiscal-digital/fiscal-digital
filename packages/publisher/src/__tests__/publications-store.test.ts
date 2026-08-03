@@ -120,3 +120,60 @@ describe('PublicationsStore.recordPublication', () => {
     ).rejects.toThrow(/não existe no DynamoDB/)
   })
 })
+
+// ─── #146 — pk da publicação é o próprio FINDING# ───────────────────────────
+//
+// `alertPk` retornava `ALERT#${findingId}`, namespace que NUNCA existiu na
+// tabela: scan completo em 2026-08-02 achou 0 de 2.982 itens com esse prefixo.
+// Como `ensurePublicationsMap` exige `attribute_exists(pk)`, todo
+// `recordPublication` lançaria — e o publish iria para a DLQ no dia em que o
+// DRY_RUN saísse. Consequência colateral: `published` nunca chegava ao item
+// FINDING#, deixando o `GSI4-risk-published` com ItemCount 0.
+//
+// O pk real vem de `persistFinding` (analyzer): FINDING#{fiscalId}#{cityId}#{type}#{gazetteKey}
+const FINDING_PK = 'FINDING#fiscal-licitacoes#4305108#dispensa_irregular#4305108#2026-03-15#abc123'
+
+describe('#146 — pk da publicação', () => {
+  it('REGRESSÃO: recordPublication grava no pk do FINDING#, nunca em ALERT#', async () => {
+    const { send, client } = makeMockClient()
+    send.mockResolvedValue({})
+
+    const store = new PublicationsStore(client)
+    await store.recordPublication(FINDING_PK, PUBLISH_RESULT)
+
+    // Toda chamada ao DDB tem de usar o pk do FINDING# — nenhuma pode inventar
+    // namespace novo, senão o item não existe e a condição de guarda falha.
+    expect(send.mock.calls.length).toBeGreaterThan(0)
+    for (const [cmd] of send.mock.calls) {
+      const pk = cmd.input?.Key?.pk?.S
+      expect(pk).toBe(FINDING_PK)
+      expect(pk).not.toMatch(/^ALERT#/)
+    }
+  })
+
+  it('REGRESSÃO: alreadyPublished consulta o mesmo pk que recordPublication grava', async () => {
+    const { send, client } = makeMockClient()
+    send.mockResolvedValue({ Item: {} })
+
+    const store = new PublicationsStore(client)
+    await store.alreadyPublished(FINDING_PK, 'x')
+
+    expect(send.mock.calls[0][0].input?.Key?.pk?.S).toBe(FINDING_PK)
+  })
+
+  it('grava published como String — GSI4 tem published como hash_key e chave não aceita BOOL', async () => {
+    const { send, client } = makeMockClient()
+    send.mockResolvedValue({})
+
+    const store = new PublicationsStore(client)
+    await store.recordPublication(FINDING_PK, PUBLISH_RESULT)
+
+    // O UpdateItem que grava o resultado do canal também seta `published`.
+    const comPublished = send.mock.calls
+      .map(([c]) => c)
+      .find((c) => String(c.input?.UpdateExpression ?? '').includes('#published'))
+    expect(comPublished).toBeDefined()
+    // terraform/modules/dynamodb/main.tf:36-39 declara published com type = "S"
+    expect(comPublished.input.ExpressionAttributeValues[':true']).toEqual({ S: 'true' })
+  })
+})
