@@ -77,6 +77,21 @@ async function queryFindingsByCity(cityId: string, type?: string): Promise<Findi
   return all
 }
 
+/**
+ * Coage `published` de String para boolean (#146).
+ *
+ * O atributo é hash_key do `GSI4-risk-published` e chave de índice do DynamoDB
+ * não aceita BOOL — por isso o publisher grava `"true"` (String). O contrato
+ * público declara `published: z.boolean()`, então a conversão acontece na
+ * borda de serialização. Aceita boolean também, para itens legados ou futuros
+ * que não passem pelo publisher.
+ */
+function coerceBool(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === 'boolean') return value
+  return String(value).toLowerCase() === 'true'
+}
+
 function normalizeSearchText(text: string): string {
   return text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim()
 }
@@ -1320,7 +1335,13 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
             // como src do iframe — primeira visita popula, próximas vão direto.
             pdfProxyUrl: source ? `${API_URL}/pdf?source=${encodeURIComponent(source)}` : null,
             evidence: f.evidence ?? [],
-            published: f.published,
+            // #146: `published` é gravado como STRING no DDB porque é hash_key
+            // do GSI4-risk-published, e chave de índice não aceita BOOL
+            // (terraform/modules/dynamodb/main.tf:36-39, type = "S"). O contrato
+            // público declara boolean (contracts/src/index.ts:110), então a
+            // coerção é obrigatória aqui — sem ela o zod do consumidor quebra ao
+            // receber a string "true".
+            published: coerceBool(f.published),
             publishedAt: f.publishedAt,
             createdAt: f.createdAt,
           }
