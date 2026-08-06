@@ -234,9 +234,12 @@ describe('GET /stats', () => {
     expect(body.findingsByCity[0]).toEqual({ cityId: '4305108', name: 'Caxias do Sul', count: 2 })
     expect(body.findingsByCity[1]).toEqual({ cityId: '3550308', name: 'São Paulo', count: 1 })
 
-    // Custo BRL: 8400 * 0.0002538 + 3 * 0.004158 = 2.13192 + 0.012474 = 2.144394 → 2.14
-    // Constantes em packages/api/src/index.ts (já em BRL, USD * 5.4 BCB).
-    expect(body.estimatedCostBrl).toBeCloseTo(2.14, 2)
+    // Custo BRL: 8400 * 0.00022177 + 3 * 0.01523422 = 1.8629 + 0.0457 = 1.9086 → 1.91
+    // Derivado de preço de tabela × tokens medidos × PTAX — ver comentário em
+    // packages/api/src/index.ts. Repare que o total CAIU apesar do Haiku ter
+    // subido 3,66×: este cenário tem 8400 gazettes para só 3 findings, então
+    // domina o Nova Lite, cujo custo baixou com a PTAX corrigida (5.4 → 5.1053).
+    expect(body.estimatedCostBrl).toBeCloseTo(1.91, 2)
 
     // lastFindingAt populado
     expect(body.lastFindingAt).toBe('2026-04-15T00:00:00.000Z')
@@ -275,9 +278,44 @@ describe('GET /stats', () => {
     const body = JSON.parse(res.body)
     expect(body.totalFindings).toBe(1)
     expect(body.totalGazettesProcessed).toBeNull()
-    // Custo BRL: gazettesCount tratado como 0 + 1 * 0.004158 = 0.004158 → 0.00.
+    // Custo BRL: gazettesCount tratado como 0 + 1 * 0.01523422 = 0.0152 → 0.02.
     // Arredondado a 2 casas em buildStats (toFixed(2)).
-    expect(body.estimatedCostBrl).toBeCloseTo(0.00, 2)
+    expect(body.estimatedCostBrl).toBeCloseTo(0.02, 2)
+  })
+
+  // REGRESSÃO do custo publicado. O valor anterior (R$ 0,004158/chamada do
+  // Haiku) subestimava o real em 3,66× e ficou meses no donut público sem
+  // ninguém notar, porque era uma constante fechada — não dava para conferir
+  // sem refazer a medição. Estes testes fixam a DERIVAÇÃO, não o número:
+  // se alguém mexer em preço, tokens ou câmbio, o teste mostra o efeito.
+  it('custo por chamada bate com preço de tabela × tokens medidos × PTAX', async () => {
+    // Cenário isolado: 1 finding, 1 gazette → custo = 1 Nova + 1 Haiku.
+    mockDdbSend
+      .mockResolvedValueOnce({ Items: [makeFinding()] })
+      .mockResolvedValueOnce({ Item: { total: 1 } })
+
+    const res = asResult(await handler(makeEvent('/stats')))
+    const body = JSON.parse(res.body)
+
+    // Nova Lite: (456 × $0.06 + 67 × $0.24) / 1M × 5.1053 = R$ 0.00022177
+    // Haiku 4.5: (2169 × $1.00 + 163 × $5.00) / 1M × 5.1053 = R$ 0.01523422
+    // Soma = R$ 0.01545599 → toFixed(2) = 0.02
+    expect(body.estimatedCostBrl).toBeCloseTo(0.02, 2)
+  })
+
+  it('o Haiku domina o custo — 1 narrativa custa mais que 60 extrações', async () => {
+    // Trava a relação entre os dois modelos. Se ela inverter, a premissa de
+    // "extração é barata, narrativa é o gasto" deixou de valer e o gate de
+    // publicação (que decide quantas narrativas geramos) precisa ser revisto.
+    mockDdbSend
+      .mockResolvedValueOnce({ Items: [] })
+      .mockResolvedValueOnce({ Item: { total: 60 } })
+
+    const res = asResult(await handler(makeEvent('/stats')))
+    const custo60Gazettes = JSON.parse(res.body).estimatedCostBrl
+
+    // 60 gazettes × R$ 0.00022177 = R$ 0.0133 — abaixo de UMA narrativa (0.0152)
+    expect(custo60Gazettes).toBeLessThan(0.0152342)
   })
 })
 
