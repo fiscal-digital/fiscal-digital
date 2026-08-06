@@ -33,13 +33,46 @@ const BUILD_TIME = process.env.BUILD_TIME ?? new Date().toISOString()
 
 // ── Bedrock cost constants ──────────────────────────────────────────────────
 //
-// Custos médios por chamada validados no LRN-20260502-009 (eval Bedrock).
-// Bedrock fatura em USD; convertemos UMA vez aqui (USD * 5.4 BRL/USD, BCB
-// PTAX próximo de 2026-05-02). API expõe APENAS BRL — moeda única do site.
-//   Nova Lite: $0.000047/call × 5.4 = R$ 0.0002538
-//   Haiku 4.5: $0.000770/call × 5.4 = R$ 0.004158
-const COST_NOVA_LITE_PER_CALL_BRL = 0.0002538
-const COST_HAIKU_PER_CALL_BRL = 0.004158
+// O custo estimado sai no `/stats`, que alimenta o donut de custos PÚBLICO do
+// site. Ele é derivado de três coisas explícitas — preço de tabela, tokens
+// medidos e câmbio — e não de um número fechado.
+//
+// A versão anterior usava R$/chamada hardcoded e subestimava o Haiku em ~3,9×
+// (R$ 0,004158 contra R$ 0,0152 real). O erro sobreviveu porque a constante não
+// mostrava de onde vinha: para conferir, era preciso refazer a medição inteira.
+// Numa plataforma que se propõe a publicar o próprio custo, o cálculo tem que
+// ser auditável por quem lê — por isso as três parcelas ficam separadas abaixo.
+//
+// Preço de tabela do Amazon Bedrock em us-east-1, USD por 1M tokens.
+const BEDROCK_USD_PER_MTOK = {
+  novaLite: { input: 0.06, output: 0.24 },
+  haiku45: { input: 1.0, output: 5.0 },
+} as const
+
+// Tokens médios por chamada, medidos no CloudWatch (namespace AWS/Bedrock,
+// janela de 75 dias encerrada em 2026-08-03): 34.558 chamadas de Nova Lite
+// (15,77M in / 2,30M out) e 2.622 do Haiku (5,69M in / 0,43M out).
+//
+// ⚠️ REVISAR se o `excerpt_size` subir de 300 (#166): o input do Haiku escala
+// junto com o tamanho do excerpt, e é ele que domina o custo.
+const TOKENS_PER_CALL = {
+  novaLite: { input: 456, output: 67 },
+  haiku45: { input: 2169, output: 163 },
+} as const
+
+// PTAX de venda do BCB em 2026-08-04. Bedrock fatura em USD; a API expõe APENAS
+// BRL — moeda única do site.
+const USD_TO_BRL = 5.1053
+
+function costPerCallBrl(model: keyof typeof BEDROCK_USD_PER_MTOK): number {
+  const price = BEDROCK_USD_PER_MTOK[model]
+  const tokens = TOKENS_PER_CALL[model]
+  const usd = (tokens.input * price.input + tokens.output * price.output) / 1_000_000
+  return usd * USD_TO_BRL
+}
+
+const COST_NOVA_LITE_PER_CALL_BRL = costPerCallBrl('novaLite')
+const COST_HAIKU_PER_CALL_BRL = costPerCallBrl('haiku45')
 
 // ── Fetch findings from DynamoDB ────────────────────────────────────────────
 

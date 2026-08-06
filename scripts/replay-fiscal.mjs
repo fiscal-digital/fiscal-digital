@@ -339,7 +339,12 @@ async function main() {
 
   if (apply) {
     console.warn(`\n⚠️  APPLY ativo — vai gravar em alerts-prod.`)
-    console.warn(`   Bedrock Haiku para narrative de findings publicaveis (~$0.77/1k).`)
+    // Medido no CloudWatch em 2026-08-03: 2.169 tokens de entrada e 163 de
+    // saída por narrativa, a $1/$5 por 1M = $2,98/1k. O aviso antigo dizia
+    // $0,77/1k — 3,9× abaixo do real, ou seja, toda decisão de rodar replay
+    // com --apply foi tomada com estimativa otimista.
+    console.warn(`   Bedrock Haiku para narrative de findings publicaveis (~$2.98/1k).`)
+    console.warn(`   Extracao (Nova Lite) e desprezivel: ~$0.04/1k gazettes.`)
     console.warn(`   Ctrl+C nos proximos 3s para abortar.\n`)
     await new Promise(r => setTimeout(r, 3000))
   }
