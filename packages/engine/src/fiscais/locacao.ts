@@ -5,6 +5,7 @@ import { scoreRisk } from '../skills/score_risk'
 import { getPublishThresholds } from '../thresholds'
 import type { Finding, RiskFactor } from '../types'
 import { gazetteKey } from '../utils/pdf_cache'
+import { contemNaOrdem } from '../utils/text'
 import type { Fiscal, AnalisarInput, FiscalContext } from './types'
 
 const FISCAL_ID = 'fiscal-locacao'
@@ -34,7 +35,14 @@ const LOCACAO_VALOR_MENSAL_RELEVANTE = 20_000
 const LOCACAO_RE = /\b(loca[çc][ãa]o|aluguel)\b/i
 const IMOVEL_RE = /\bim[óo]vel\b/i
 const ART_74_RE = /art(?:igo)?\.?\s*74/i
-const INEX_LOCACAO_RE = /inexigibilidade.*loca[çc][ãa]o/i
+// `inexigibilidade.*locacao` era O(n^2) (js/polynomial-redos): cada
+// ocorrencia de 'inexigibilidade' reiniciava o scan do `.*`. A ordem
+// (inexigibilidade ANTES de locacao) e preservada por contemNaOrdem — dois
+// searches lineares.
+const INEX_PALAVRA_RE = /inexigibilidade/i
+const LOCACAO_PALAVRA_RE = /loca[çc][ãa]o/i
+const temInexLocacao = (e: string): boolean =>
+  contemNaOrdem(e, INEX_PALAVRA_RE, LOCACAO_PALAVRA_RE)
 
 // ── Filtros de exclusão (ADR-001 + Ciclo 2 padrões) ──────────────────────────
 // Estas regex rejeitam excerpts que mencionam "locação" em contextos que NÃO
@@ -256,7 +264,7 @@ export const fiscalLocacao: Fiscal = {
     const relevantExcerpts = gazette.excerpts.filter(e => {
       const hasLocacao = LOCACAO_RE.test(e)
       const hasContextoImovel =
-        IMOVEL_RE.test(e) || ART_74_RE.test(e) || INEX_LOCACAO_RE.test(e)
+        IMOVEL_RE.test(e) || ART_74_RE.test(e) || temInexLocacao(e)
       if (!hasLocacao || !hasContextoImovel) return false
 
       // Filtros de exclusão (ADR-001 fiscal-digital-evaluations + padrões Ciclo 2)

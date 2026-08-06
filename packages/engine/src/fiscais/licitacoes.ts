@@ -131,10 +131,15 @@ const ART24_8666_SEM_INCISO_RE =
 
 const HIPOTESE_FORNECEDOR_EXCLUSIVO_RE =
   /\b(fornecedor\s+exclusivo|[úu]nica\s+(?:fornecedora|fabricante)|not[óo]ria\s+especializa[çc][ãa]o|exclusividade\s+comprovada)\b/i
+// `\s+` seguido de alternação/opcional backtracka O(n²) em runs de espaço
+// (js/polynomial-redos) — relevante agora que os Fiscais verão texto integral
+// de até 427 KB. `\s{1,20}` limita o backtracking a constante; texto real
+// nunca separa palavras com mais de 20 brancos.
 const HIPOTESE_EMERGENCIA_RE =
-  /\b(emerg[êe]ncia|calamidade(\s+p[úu]blica)?|urg[êe]ncia\s+(?:declarada|sanit[áa]ria)|estado\s+de\s+(?:emerg[êe]ncia|calamidade)\s+p[úu]blica|contrata[çc][ãa]o\s+emergencial)\b/i
+  /\b(emerg[êe]ncia|calamidade(\s{1,20}p[úu]blica)?|urg[êe]ncia\s{1,20}(?:declarada|sanit[áa]ria)|estado\s{1,20}de\s{1,20}(?:emerg[êe]ncia|calamidade)\s{1,20}p[úu]blica|contrata[çc][ãa]o\s{1,20}emergencial)\b/i
+// Mesmo motivo do EMERGENCIA_RE acima: \s{1,20} em vez de \s+.
 const HIPOTESE_INSUMOS_SAUDE_RE =
-  /\b(medicamento|insumo\s+(?:m[ée]dico|hospitalar|farmac[êe]utico|de\s+sa[úu]de)|[óo]rtese|pr[óo]tese|vacina|imunobiol[óo]gico|equipamento\s+hospitalar|(?:insumos?|produtos?)\s+estrat[ée]gicos?\s+para\s+a\s+sa[úu]de)\b/i
+  /\b(medicamento|insumo\s{1,20}(?:m[ée]dico|hospitalar|farmac[êe]utico|de\s{1,20}sa[úu]de)|[óo]rtese|pr[óo]tese|vacina|imunobiol[óo]gico|equipamento\s{1,20}hospitalar|(?:insumos?|produtos?)\s{1,20}estrat[ée]gicos?\s{1,20}para\s{1,20}a\s{1,20}sa[úu]de)\b/i
 const HIPOTESE_ENTES_PUBLICOS_RE =
   /\b(?:art(?:igo)?\.?\s*75\s*(?:,|\s)?\s*(?:inciso\s+)?IX|Art\.\s*75\s+IX)\b|\bcontrata[çc][ãa]o\s+entre\s+entes\s+da\s+administra[çc][ãa]o\b/i
 const HIPOTESE_CIENCIA_TECNOLOGIA_RE =
