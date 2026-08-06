@@ -141,7 +141,22 @@ export interface CollectorMessage {
   territory_id: string
   date: string
   url: string
-  excerpts: string[]
+  /**
+   * Fase 0 da camada raw: o texto NÃO precisa mais trafegar na mensagem.
+   * `excerpts` inline continua aceito (mensagens antigas e rollback), mas o
+   * caminho preferido é `excerptsS3Key` — o analyzer resolve do S3.
+   *
+   * Motivo: SQS limita a mensagem a 256 KB. Com excerpts de 300 chars isso
+   * nunca apertou, mas o corpus de texto integral (media 39.819 chars, max
+   * 427 KB medidos no RS_2025) estoura o limite em ~2% dos diários. O
+   * ponteiro tem tamanho constante e desacopla transporte de conteúdo.
+   *
+   * Invariante: pelo menos um dos dois presente. Mensagem com nenhum é
+   * inválida — o analyzer lança e o SQS faz retry/DLQ.
+   */
+  excerpts?: string[]
+  /** Chave no bucket gazettes-cache de um JSON `{ excerpts: string[] }` (schema do cacheExcerptsJson). */
+  excerptsS3Key?: string
   entities: ExtractedEntities
   /**
    * UH-22 Phase 2 — State tracking.
