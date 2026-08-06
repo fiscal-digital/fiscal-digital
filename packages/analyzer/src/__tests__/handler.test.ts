@@ -21,6 +21,12 @@ jest.mock('@aws-sdk/client-sqs', () => ({
   SendMessageCommand: jest.fn().mockImplementation((input: unknown) => input),
 }))
 
+const mockS3Send = jest.fn()
+jest.mock('@aws-sdk/client-s3', () => ({
+  S3Client: jest.fn().mockImplementation(() => ({ send: mockS3Send })),
+  GetObjectCommand: jest.fn().mockImplementation((input: unknown) => input),
+}))
+
 const mockDdbSend = jest.fn().mockResolvedValue({ Items: [] })
 jest.mock('@aws-sdk/client-dynamodb', () => ({
   DynamoDBClient: jest.fn().mockImplementation(() => ({})),
@@ -119,7 +125,7 @@ jest.mock('@fiscal-digital/engine', () => ({
 // Import handler AFTER mocks are set up
 // ---------------------------------------------------------------------------
 
-import { handler } from '../index'
+import { handler, resolveExcerpts } from '../index'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -424,4 +430,61 @@ test('meta-finding padrao_recorrente do fiscalGeral com riskScore >= 90 é enfil
     return body.type
   })
   expect(sentTypes).toEqual(expect.arrayContaining(['dispensa_irregular', 'padrao_recorrente']))
+})
+
+// ---------------------------------------------------------------------------
+// Fase 0 (camada raw): resolução de excerpts por ponteiro S3
+// ---------------------------------------------------------------------------
+
+describe('resolveExcerpts', () => {
+  test('excerpts inline têm precedência — ponteiro nem é consultado', async () => {
+    const msg = makeCollectorMessage({ excerptsS3Key: 'excerpts/4305108/2026-03-15/abc.json' })
+    const out = await resolveExcerpts(msg)
+    expect(out).toEqual(['dispensa de licitação no valor de R$ 80.000,00'])
+    expect(mockS3Send).not.toHaveBeenCalled()
+  })
+
+  test('sem inline, resolve do S3 no schema do cacheExcerptsJson', async () => {
+    mockS3Send.mockResolvedValueOnce({
+      Body: {
+        transformToString: async () => JSON.stringify({
+          originalUrl: 'https://x', date: '2026-03-15', schemaVersion: 1,
+          excerpts: ['pregão eletrônico nº 42', 'aditivo de prorrogação'],
+        }),
+      },
+    })
+    const msg = makeCollectorMessage({ excerpts: undefined, excerptsS3Key: 'excerpts/4305108/2026-03-15/abc.json' })
+    const out = await resolveExcerpts(msg)
+    expect(out).toEqual(['pregão eletrônico nº 42', 'aditivo de prorrogação'])
+    const [cmd] = mockS3Send.mock.calls[0]
+    expect((cmd as { Key: string }).Key).toBe('excerpts/4305108/2026-03-15/abc.json')
+  })
+
+  test('JSON sem excerpts[] lança — gazette sem texto nunca vira "sem findings"', async () => {
+    mockS3Send.mockResolvedValueOnce({
+      Body: { transformToString: async () => JSON.stringify({ date: '2026-03-15' }) },
+    })
+    const msg = makeCollectorMessage({ excerpts: undefined, excerptsS3Key: 'excerpts/x.json' })
+    await expect(resolveExcerpts(msg)).rejects.toThrow('JSON sem excerpts')
+  })
+
+  test('mensagem sem inline e sem ponteiro é inválida', async () => {
+    const msg = makeCollectorMessage({ excerpts: undefined })
+    await expect(resolveExcerpts(msg)).rejects.toThrow('sem excerpts nem excerptsS3Key')
+  })
+
+  test('handler processa mensagem só-ponteiro de ponta a ponta', async () => {
+    mockS3Send.mockResolvedValueOnce({
+      Body: {
+        transformToString: async () => JSON.stringify({ excerpts: ['contratação direta emergencial'] }),
+      },
+    })
+    mockAnalisarLicitacoes.mockResolvedValue([])
+    const msg = makeCollectorMessage({ excerpts: undefined, excerptsS3Key: 'excerpts/4305108/x.json' })
+    await handler(makeSQSEvent([makeSQSRecord(msg)]))
+
+    // O Fiscal recebeu a gazette com os excerpts RESOLVIDOS do S3
+    const arg = mockAnalisarLicitacoes.mock.calls[0][0] as { gazette: { excerpts: string[] } }
+    expect(arg.gazette.excerpts).toEqual(['contratação direta emergencial'])
+  })
 })
