@@ -1,4 +1,5 @@
 import { scoreRisk } from '../skills/score_risk'
+import { trimTrailingPunct } from '../utils/text'
 import type { Finding, RiskFactor } from '../types'
 import type { Fiscal, AnalisarInput } from './types'
 
@@ -93,7 +94,7 @@ export function extrairSobrenomeFinal(nomeCompleto: string): string | null {
   const tokens = nomeCompleto
     .trim()
     .split(/\s+/)
-    .map(t => t.replace(/[.,;:]+$/, ''))
+    .map(t => trimTrailingPunct(t)) // /[.,;:]+$/ era O(n²) (js/polynomial-redos)
     .filter(t => t.length > 0)
 
   // Precisa ao menos nome + sobrenome

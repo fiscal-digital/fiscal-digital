@@ -1,6 +1,7 @@
 import { scoreRisk } from '../skills/score_risk'
 import { cityBucket, populationOf, type CityBucket } from '../cities/populations'
 import { invokeModel, NARRATIVE_MODEL } from '../utils/bedrock'
+import { trimTrailingPunct } from '../utils/text'
 import { getCityOrFallback } from '../cities'
 import { createLogger } from '../logger'
 import { getPublishThresholds } from '../thresholds'
@@ -183,7 +184,8 @@ function contarPessoasUnicas(excerpts: string[]): number {
     let raw = m[1].trim()
     const stop = raw.search(STOP_PATTERN_PESSOA)
     if (stop > 0) raw = raw.slice(0, stop).trim()
-    const nome = raw.replace(/[.,;:]+$/, '').replace(/\s+/g, ' ').trim().toLowerCase()
+    // trimTrailingPunct: /[.,;:]+$/ é O(n²) (js/polynomial-redos)
+    const nome = trimTrailingPunct(raw).replace(/\s+/g, ' ').trim().toLowerCase()
     // Filtro mínimo: nome com 2+ palavras + 6+ chars (evita falsos curtos)
     if (nome.split(/\s+/).length >= 2 && nome.length >= 6) {
       pessoas.add(nome)
