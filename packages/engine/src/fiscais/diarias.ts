@@ -33,7 +33,8 @@ const DIARIA_RE = /\bdi[áa]rias?\b/i
 
 // Adjetivo/advérbio com quebra de linha: "diaria-\nmente" — o engine quebra
 // o token e o `\b` original casa em "diaria" + boundary. Excluir explicitamente.
-const DIARIAMENTE_LINEBREAK_RE = /\bdi[áa]ria-?\s*\n?\s*mente\b/i
+// \s{0,20}: o \s*\n?\s* anterior era ambíguo e polinomial (js/polynomial-redos)
+const DIARIAMENTE_LINEBREAK_RE = /\bdi[áa]ria-?\s{0,20}mente\b/i
 
 // Verbo de autorização/pagamento — exigido para confirmar que é pagamento, não
 // menção descritiva ou unidade de medida.

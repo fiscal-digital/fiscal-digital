@@ -97,6 +97,10 @@ resource "aws_lambda_event_source_mapping" "analyzer" {
   function_name    = aws_lambda_function.analyzer.arn
   batch_size       = 5
   enabled          = true
+
+  # #175 — sem esta flag o {batchItemFailures} do handler é ignorado e erro
+  # de record vira perda silenciosa de gazette. Muda junto com o handler.
+  function_response_types = ["ReportBatchItemFailures"]
 }
 
 # Publisher triggered by alerts queue

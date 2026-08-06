@@ -337,8 +337,9 @@ test('falha em fiscalLicitacoes não impede fiscalContratos de rodar', async () 
   const msg = makeCollectorMessage()
   const event = makeSQSEvent([makeSQSRecord(msg)])
 
-  // Não deve lançar
-  await expect(handler(event)).resolves.toBeUndefined()
+  // Falha de UM Fiscal não falha o record (Promise.allSettled interno):
+  // o record é considerado processado e NÃO volta para a fila.
+  await expect(handler(event)).resolves.toEqual({ batchItemFailures: [] })
 
   // Finding do fiscal de contratos ainda deve ter sido enfileirado
   expect(mockSqsSend).toHaveBeenCalledTimes(1)
@@ -348,10 +349,12 @@ test('falha em fiscalLicitacoes não impede fiscalContratos de rodar', async () 
 })
 
 // ---------------------------------------------------------------------------
-// Test 5: body inválido (JSON parse error) → loga erro mas continua próximo record
+// Test 5: partial batch response (#175) — record que falha volta para a fila
+// SEM interromper os subsequentes; antes o erro era ENGOLIDO e a gazette
+// perdida em silêncio (consumida "com sucesso", sem retry, sem DLQ).
 // ---------------------------------------------------------------------------
 
-test('body inválido não interrompe processamento dos records subsequentes', async () => {
+test('record que falha entra em batchItemFailures e não interrompe os demais', async () => {
   const validFinding = makeFinding({ riskScore: 65, confidence: 0.75 })
   mockAnalisarLicitacoes.mockResolvedValue([validFinding])
 
@@ -360,8 +363,11 @@ test('body inválido não interrompe processamento dos records subsequentes', as
 
   const event = makeSQSEvent([invalidRecord, validRecord])
 
-  // Não deve lançar
-  await expect(handler(event)).resolves.toBeUndefined()
+  // REGRESSÃO #175: o record inválido é DEVOLVIDO à fila (retry → DLQ →
+  // alarme #145), nunca mais engolido. O válido não reprocessa.
+  await expect(handler(event)).resolves.toEqual({
+    batchItemFailures: [{ itemIdentifier: 'msg-invalid' }],
+  })
 
   // O record válido deve ter sido processado — os 4 Fiscais foram chamados para ele
   expect(mockAnalisarLicitacoes).toHaveBeenCalledTimes(1)

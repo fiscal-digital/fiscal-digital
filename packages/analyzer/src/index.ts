@@ -2,7 +2,7 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import type { SQSEvent } from 'aws-lambda'
+import type { SQSEvent, SQSBatchResponse } from 'aws-lambda'
 import {
   fiscalLicitacoes,
   fiscalContratos,
@@ -266,23 +266,10 @@ async function enqueueForPublish(finding: Finding, gazetteId: string): Promise<v
 // ---------------------------------------------------------------------------
 
 /**
- * Fase 0 da camada raw: resolve o texto da mensagem.
- *
- * Precedência: excerpts inline (mensagens antigas / rollback) > ponteiro S3.
- * O conteúdo é IDÊNTICO nos dois caminhos — esta fase muda só o transporte,
- * nunca o que os Fiscais veem; os thresholds calibrados para ~300 chars
- * continuam válidos (a mudança de conteúdo é a Fase 1, com filtro versionado).
- *
- * Falha na resolução LANÇA de propósito — degradar para lista vazia
- * esconderia gazette não analisada como "analisada sem findings".
- *
- * ⚠️ Semântica atual do handler: o erro é LOGADO e o record PULADO (mesmo
- * tratamento do body inválido) — não há retry nem DLQ, porque o handler
- * engole erros de record para não envenenar o batch. Isso é aceitável
- * enquanto as mensagens carregam excerpts inline (o ponteiro é caminho
- * alternativo); ANTES de ligar mensagens só-ponteiro no collector, o handler
- * precisa migrar para partial batch response (ReportBatchItemFailures), senão
- * um soluço de S3 perde gazette em silêncio. Ver issue de Fase 0.
+ * Fase 0 da camada raw: excerpts inline (precedência; mensagens antigas e
+ * rollback) ou ponteiro S3 — conteúdo idêntico, só o transporte muda.
+ * Falha LANÇA: gazette sem texto nunca vira "analisada sem findings"; com o
+ * #175 o record volta à fila e, persistindo, DLQ + alarme (#145).
  */
 export async function resolveExcerpts(msg: CollectorMessage): Promise<string[]> {
   if (msg.excerpts && msg.excerpts.length > 0) return msg.excerpts
@@ -527,7 +514,14 @@ async function processRecord(body: string): Promise<void> {
 // Lambda handler
 // ---------------------------------------------------------------------------
 
-export const handler = async (event: SQSEvent): Promise<void> => {
+/**
+ * Partial batch response (#175): record que falha volta à fila via
+ * batchItemFailures (antes o erro era engolido e a gazette perdida em
+ * silêncio); após maxReceiveCount=3 cai na DLQ com alarme (#145). Requer
+ * function_response_types=[ReportBatchItemFailures] no event source mapping —
+ * sem a flag o retorno é ignorado, por isso código e terraform mudam juntos.
+ */
+export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
   const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
   logger.info('iniciando', {
     records: event.Records.length,
@@ -535,18 +529,23 @@ export const handler = async (event: SQSEvent): Promise<void> => {
     publishConfidenceThreshold: confidenceThreshold,
   })
 
+  const batchItemFailures: SQSBatchResponse['batchItemFailures'] = []
+
   for (const record of event.Records) {
     const gazetteId = record.messageAttributes?.['gazetteId']?.stringValue ?? 'unknown'
     logger.appendKeys({ gazetteId })
     try {
       await processRecord(record.body)
     } catch (err) {
-      logger.error('falha ao processar record — continuando próximo', {
+      logger.error('falha ao processar record — devolvendo para a fila', {
         messageId: record.messageId,
         err,
       })
+      batchItemFailures.push({ itemIdentifier: record.messageId })
     } finally {
       logger.removeKeys(['gazetteId'])
     }
   }
+
+  return { batchItemFailures }
 }
