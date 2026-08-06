@@ -98,11 +98,8 @@ resource "aws_lambda_event_source_mapping" "analyzer" {
   batch_size       = 5
   enabled          = true
 
-  # #175 — partial batch response. Sem isto o retorno {batchItemFailures} do
-  # handler é IGNORADO e qualquer erro de record vira perda silenciosa de
-  # gazette (consumida "com sucesso", sem retry, sem DLQ). Com a flag, só os
-  # records que falharam voltam à fila; após maxReceiveCount=3 caem na DLQ e
-  # o alarme do #145 dispara. Handler e esta flag mudam JUNTOS.
+  # #175 — sem esta flag o {batchItemFailures} do handler é ignorado e erro
+  # de record vira perda silenciosa de gazette. Muda junto com o handler.
   function_response_types = ["ReportBatchItemFailures"]
 }
 

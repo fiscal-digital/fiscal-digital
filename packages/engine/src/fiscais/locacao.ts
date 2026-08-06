@@ -35,10 +35,7 @@ const LOCACAO_VALOR_MENSAL_RELEVANTE = 20_000
 const LOCACAO_RE = /\b(loca[çc][ãa]o|aluguel)\b/i
 const IMOVEL_RE = /\bim[óo]vel\b/i
 const ART_74_RE = /art(?:igo)?\.?\s*74/i
-// `inexigibilidade.*locacao` era O(n^2) (js/polynomial-redos): cada
-// ocorrencia de 'inexigibilidade' reiniciava o scan do `.*`. A ordem
-// (inexigibilidade ANTES de locacao) e preservada por contemNaOrdem — dois
-// searches lineares.
+// contemNaOrdem preserva "inexigibilidade antes de locação" sem o O(n²) do .* (js/polynomial-redos)
 const INEX_PALAVRA_RE = /inexigibilidade/i
 const LOCACAO_PALAVRA_RE = /loca[çc][ãa]o/i
 const temInexLocacao = (e: string): boolean =>
