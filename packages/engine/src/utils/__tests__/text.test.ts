@@ -1,11 +1,6 @@
 /**
- * Testes dos helpers lineares + prova adversarial de que as correções de
- * ReDoS (#176) aguentam entrada hostil na escala da camada raw.
- *
- * Os inputs adversariais têm 400 KB — o MAIOR diário medido no RS_2025
- * (436.974 chars). Antes das correções, `/[.,;:]+$/` sobre 400 KB de
- * vírgulas leva minutos; o orçamento aqui é 200 ms por operação, com folga
- * de 2 ordens de grandeza sobre o esperado (<5 ms).
+ * Prova adversarial das correções de ReDoS (#176): payloads de 400 KB (maior
+ * diário medido no RS_2025), orçamento de 200 ms por operação.
  */
 import { trimTrailingPunct, contemNaOrdem } from '../text'
 
@@ -72,6 +67,16 @@ describe('regexes corrigidas dos Fiscais aguentam 400 KB hostis', () => {
       /\b(medicamento|insumo\s{1,20}(?:m[ée]dico|hospitalar|farmac[êe]utico|de\s{1,20}sa[úu]de)|[óo]rtese|pr[óo]tese|vacina|imunobiol[óo]gico|equipamento\s{1,20}hospitalar|(?:insumos?|produtos?)\s{1,20}estrat[ée]gicos?\s{1,20}para\s{1,20}a\s{1,20}sa[úu]de)\b/i,
       'insumo' + ' '.repeat(N),
     ],
+    [
+      'licitacoes entes publicos (art. 75 IX)',
+      /\b(?:art(?:igo)?\.?\s{0,20}75[\s,]{0,20}(?:inciso\s{1,20})?IX|Art\.\s{0,20}75\s{1,20}IX)\b|\bcontrata[çc][ãa]o\s{1,20}entre\s{1,20}entes\s{1,20}da\s{1,20}administra[çc][ãa]o\b/i,
+      'art. 75' + ' '.repeat(N),
+    ],
+    [
+      'licitacoes ciencia tecnologia (art. 75 XV)',
+      /\b(?:art(?:igo)?\.?\s{0,20}75[\s,]{0,20}(?:inciso\s{1,20})?XV|Art\.\s{0,20}75\s{1,20}XV)\b|\b(?:universidade|funda[çc][ãa]o\s{1,20}de\s{1,20}(?:apoio|pesquisa|ensino))\b[\s\S]{0,80}\b(p[úu]blica|estadual|federal|municipal)\b/i,
+      'artigo. 75' + ' '.repeat(N),
+    ],
   ]
 
   it.each(casos)('%s', (_nome, re, hostil) => {
@@ -86,5 +91,16 @@ describe('regexes corrigidas dos Fiscais aguentam 400 KB hostis', () => {
       /\b(emerg[êe]ncia|calamidade(\s{1,20}p[úu]blica)?|urg[êe]ncia\s{1,20}(?:declarada|sanit[áa]ria)|estado\s{1,20}de\s{1,20}(?:emerg[êe]ncia|calamidade)\s{1,20}p[úu]blica|contrata[çc][ãa]o\s{1,20}emergencial)\b/i
         .test('decreta estado de calamidade pública no município'),
     ).toBe(true)
+
+    // Formatos reais de citação do Art. 75 seguem casando após o [\s,]{0,20}
+    const entes = /\b(?:art(?:igo)?\.?\s{0,20}75[\s,]{0,20}(?:inciso\s{1,20})?IX|Art\.\s{0,20}75\s{1,20}IX)\b|\bcontrata[çc][ãa]o\s{1,20}entre\s{1,20}entes\s{1,20}da\s{1,20}administra[çc][ãa]o\b/i
+    expect(entes.test('com base no art. 75, inciso IX, da Lei')).toBe(true)
+    expect(entes.test('Art. 75 IX')).toBe(true)
+    expect(entes.test('contratação entre entes da administração')).toBe(true)
+    expect(entes.test('art. 75, inciso XV')).toBe(false) // inciso errado não casa
+
+    const ciencia = /\b(?:art(?:igo)?\.?\s{0,20}75[\s,]{0,20}(?:inciso\s{1,20})?XV|Art\.\s{0,20}75\s{1,20}XV)\b|\b(?:universidade|funda[çc][ãa]o\s{1,20}de\s{1,20}(?:apoio|pesquisa|ensino))\b[\s\S]{0,80}\b(p[úu]blica|estadual|federal|municipal)\b/i
+    expect(ciencia.test('artigo 75, XV, contratação de universidade federal')).toBe(true)
+    expect(ciencia.test('convênio com fundação de apoio à pesquisa estadual')).toBe(true)
   })
 })

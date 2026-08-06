@@ -184,8 +184,7 @@ function contarPessoasUnicas(excerpts: string[]): number {
     let raw = m[1].trim()
     const stop = raw.search(STOP_PATTERN_PESSOA)
     if (stop > 0) raw = raw.slice(0, stop).trim()
-    // trimTrailingPunct: /[.,;:]+$/ e O(n^2) sob backtracking (CodeQL
-    // js/polynomial-redos) — com texto integral de 400 KB isso trava a Lambda.
+    // trimTrailingPunct: /[.,;:]+$/ é O(n²) (js/polynomial-redos)
     const nome = trimTrailingPunct(raw).replace(/\s+/g, ' ').trim().toLowerCase()
     // Filtro mínimo: nome com 2+ palavras + 6+ chars (evita falsos curtos)
     if (nome.split(/\s+/).length >= 2 && nome.length >= 6) {

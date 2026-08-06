@@ -94,8 +94,7 @@ export function extrairSobrenomeFinal(nomeCompleto: string): string | null {
   const tokens = nomeCompleto
     .trim()
     .split(/\s+/)
-    // trimTrailingPunct em vez de /[.,;:]+$/ — O(n) vs O(n^2) (js/polynomial-redos)
-    .map(t => trimTrailingPunct(t))
+    .map(t => trimTrailingPunct(t)) // /[.,;:]+$/ era O(n²) (js/polynomial-redos)
     .filter(t => t.length > 0)
 
   // Precisa ao menos nome + sobrenome
