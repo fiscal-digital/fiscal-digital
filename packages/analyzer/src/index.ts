@@ -2,7 +2,7 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import type { SQSEvent } from 'aws-lambda'
+import type { SQSEvent, SQSBatchResponse } from 'aws-lambda'
 import {
   fiscalLicitacoes,
   fiscalContratos,
@@ -276,13 +276,10 @@ async function enqueueForPublish(finding: Finding, gazetteId: string): Promise<v
  * Falha na resolução LANÇA de propósito — degradar para lista vazia
  * esconderia gazette não analisada como "analisada sem findings".
  *
- * ⚠️ Semântica atual do handler: o erro é LOGADO e o record PULADO (mesmo
- * tratamento do body inválido) — não há retry nem DLQ, porque o handler
- * engole erros de record para não envenenar o batch. Isso é aceitável
- * enquanto as mensagens carregam excerpts inline (o ponteiro é caminho
- * alternativo); ANTES de ligar mensagens só-ponteiro no collector, o handler
- * precisa migrar para partial batch response (ReportBatchItemFailures), senão
- * um soluço de S3 perde gazette em silêncio. Ver issue de Fase 0.
+ * Com o partial batch response (#175), o erro devolve APENAS este record à
+ * fila (batchItemFailures); após maxReceiveCount=3 ele cai na DLQ com alarme
+ * (#145). Pré-requisito cumprido para o collector enviar mensagens
+ * só-ponteiro.
  */
 export async function resolveExcerpts(msg: CollectorMessage): Promise<string[]> {
   if (msg.excerpts && msg.excerpts.length > 0) return msg.excerpts
@@ -527,7 +524,27 @@ async function processRecord(body: string): Promise<void> {
 // Lambda handler
 // ---------------------------------------------------------------------------
 
-export const handler = async (event: SQSEvent): Promise<void> => {
+/**
+ * Partial batch response (#175). Antes, o catch por record engolia o erro e o
+ * SQS considerava a mensagem consumida com sucesso: qualquer falha transitória
+ * (Bedrock, DDB, S3 do ponteiro #174) perdia a gazette EM SILÊNCIO — ficava
+ * `queued` para sempre, e os alarmes de DLQ (#145) nunca disparavam porque,
+ * para o SQS, a entrega tinha funcionado.
+ *
+ * Agora cada record que falha volta para a fila via `batchItemFailures`
+ * (records bons do mesmo batch NÃO são reprocessados). Após maxReceiveCount=3,
+ * a mensagem cai na DLQ e o alarme do #145 passa a cobrir de verdade.
+ *
+ * Requer `function_response_types = ["ReportBatchItemFailures"]` no event
+ * source mapping (mesmo PR, terraform). Sem a flag o retorno é ignorado e o
+ * comportamento volta ao antigo — por isso os dois mudam JUNTOS.
+ *
+ * Records permanentemente inválidos (JSON quebrado) agora também fazem 3
+ * tentativas antes da DLQ. É desperdício mínimo (2 re-entregas) em troca de
+ * visibilidade: antes, um bug no collector que gerasse mensagens malformadas
+ * seria invisível para sempre.
+ */
+export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
   const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
   logger.info('iniciando', {
     records: event.Records.length,
@@ -535,18 +552,23 @@ export const handler = async (event: SQSEvent): Promise<void> => {
     publishConfidenceThreshold: confidenceThreshold,
   })
 
+  const batchItemFailures: SQSBatchResponse['batchItemFailures'] = []
+
   for (const record of event.Records) {
     const gazetteId = record.messageAttributes?.['gazetteId']?.stringValue ?? 'unknown'
     logger.appendKeys({ gazetteId })
     try {
       await processRecord(record.body)
     } catch (err) {
-      logger.error('falha ao processar record — continuando próximo', {
+      logger.error('falha ao processar record — devolvendo para a fila', {
         messageId: record.messageId,
         err,
       })
+      batchItemFailures.push({ itemIdentifier: record.messageId })
     } finally {
       logger.removeKeys(['gazetteId'])
     }
   }
+
+  return { batchItemFailures }
 }
