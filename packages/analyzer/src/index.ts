@@ -1,4 +1,5 @@
 ﻿import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs'
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import type { SQSEvent } from 'aws-lambda'
@@ -39,6 +40,8 @@ import type {
 // ---------------------------------------------------------------------------
 
 const sqsClient = new SQSClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
+const s3Client = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' })
+const GAZETTES_CACHE_BUCKET = process.env.GAZETTES_CACHE_BUCKET ?? 'fiscal-digital-gazettes-cache-prod'
 
 const _rawDdb = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
 export const docClient = DynamoDBDocumentClient.from(_rawDdb)
@@ -262,13 +265,50 @@ async function enqueueForPublish(finding: Finding, gazetteId: string): Promise<v
 // Convert CollectorMessage → Gazette (the shape Fiscais expect)
 // ---------------------------------------------------------------------------
 
-function toGazette(msg: CollectorMessage): Gazette {
+/**
+ * Fase 0 da camada raw: resolve o texto da mensagem.
+ *
+ * Precedência: excerpts inline (mensagens antigas / rollback) > ponteiro S3.
+ * O conteúdo é IDÊNTICO nos dois caminhos — esta fase muda só o transporte,
+ * nunca o que os Fiscais veem; os thresholds calibrados para ~300 chars
+ * continuam válidos (a mudança de conteúdo é a Fase 1, com filtro versionado).
+ *
+ * Falha na resolução LANÇA de propósito — degradar para lista vazia
+ * esconderia gazette não analisada como "analisada sem findings".
+ *
+ * ⚠️ Semântica atual do handler: o erro é LOGADO e o record PULADO (mesmo
+ * tratamento do body inválido) — não há retry nem DLQ, porque o handler
+ * engole erros de record para não envenenar o batch. Isso é aceitável
+ * enquanto as mensagens carregam excerpts inline (o ponteiro é caminho
+ * alternativo); ANTES de ligar mensagens só-ponteiro no collector, o handler
+ * precisa migrar para partial batch response (ReportBatchItemFailures), senão
+ * um soluço de S3 perde gazette em silêncio. Ver issue de Fase 0.
+ */
+export async function resolveExcerpts(msg: CollectorMessage): Promise<string[]> {
+  if (msg.excerpts && msg.excerpts.length > 0) return msg.excerpts
+  if (msg.excerptsS3Key) {
+    const out = await s3Client.send(new GetObjectCommand({
+      Bucket: GAZETTES_CACHE_BUCKET,
+      Key: msg.excerptsS3Key,
+    }))
+    const raw = await out.Body?.transformToString('utf-8')
+    if (!raw) throw new Error(`excerptsS3Key ${msg.excerptsS3Key}: objeto vazio`)
+    const parsed = JSON.parse(raw) as { excerpts?: string[] }
+    if (!Array.isArray(parsed.excerpts) || parsed.excerpts.length === 0) {
+      throw new Error(`excerptsS3Key ${msg.excerptsS3Key}: JSON sem excerpts[]`)
+    }
+    return parsed.excerpts
+  }
+  throw new Error(`mensagem sem excerpts nem excerptsS3Key (gazetteId=${msg.gazetteId})`)
+}
+
+function toGazette(msg: CollectorMessage, excerpts: string[]): Gazette {
   return {
     id: msg.gazetteId,
     territory_id: msg.territory_id,
     date: msg.date,
     url: msg.url,
-    excerpts: msg.excerpts,
+    excerpts,
   }
 }
 
@@ -307,7 +347,7 @@ function buildContext(gazetteId: string): FiscalContextV2 {
 
 async function processRecord(body: string): Promise<void> {
   const msg = JSON.parse(body) as CollectorMessage
-  const gazette = toGazette(msg)
+  const gazette = toGazette(msg, await resolveExcerpts(msg))
   const cityId = msg.territory_id
   const ctx = buildContext(gazette.id)
 
