@@ -60,3 +60,4 @@ export {
 } from './thresholds'
 export type { PublishThresholds } from './thresholds'
 export { isFeatureEnabled, _resetFeatureFlagsCacheForTests } from './feature-flags'
+export { keywordWindows, FILTER_VERSION, FILTER_KEYWORDS } from './filter/keyword_windows'
