@@ -1,6 +1,6 @@
 {
   "name": "@fiscal-digital/engine",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Fiscais, Skills e contratos TypeScript do Fiscal Digital",
   "license": "MIT",
   "main": "dist/index.js",
