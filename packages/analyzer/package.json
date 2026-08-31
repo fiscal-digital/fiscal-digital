@@ -21,9 +21,9 @@
   "devDependencies": {
     "@types/aws-lambda": "^8.0.0",
     "@types/jest": "^30.0.0",
-    "@types/node": "^26.1.1",
-    "esbuild": "^0.28.1",
-    "jest": "^30.0.0",
+    "@types/node": "^26.4.0",
+    "esbuild": "^0.28.2",
+    "jest": "^30.5.0",
     "ts-jest": "^29.4.12",
     "typescript": "^6.0.0"
   },
