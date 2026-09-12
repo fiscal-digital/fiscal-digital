@@ -1,7 +1,18 @@
 import { RateLimiter } from '../utils/rate_limiter'
 import type { Gazette, Skill, SkillResult } from '../types'
 
-const QD_API = 'https://api.queridodiario.ok.org.br'
+// Host da API do Querido Diário. Em 2026-08 a OKFN migrou a API de
+// `api.queridodiario.ok.org.br` para `api.queridodiario.org.br`: o host antigo
+// passou a responder 404 para todas as cidades (24, 26 e 31/08) e desde 01/09
+// nem conecta ("fetch failed"). O collector engolia a falha por cidade e a
+// Lambda terminava "ok", então a coleta ficou 3 semanas parada em silêncio.
+// `QD_API_URL` permite trocar o host por deploy (canary ou nova migração) sem
+// republicar o engine. O host dos PDFs (`data.queridodiario.ok.org.br`) NÃO
+// mudou — ver `utils/pdf_cache.ts`.
+export const DEFAULT_QD_API_URL = 'https://api.queridodiario.org.br'
+export function qdApiUrl(): string {
+  return (process.env.QD_API_URL ?? DEFAULT_QD_API_URL).replace(/\/+$/, '')
+}
 const USER_AGENT = 'FiscalDigital/0.1.1 (+https://fiscaldigital.org)'
 const limiter = new RateLimiter(60)
 
@@ -84,7 +95,7 @@ export const queryDiario: Skill<QueryDiarioInput, { gazettes: Gazette[]; total: 
 
     await limiter.acquire()
 
-    const url = `${QD_API}/gazettes?${params}`
+    const url = `${qdApiUrl()}/gazettes?${params}`
     const res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } })
 
     if (!res.ok) {
