@@ -624,6 +624,19 @@ resource "aws_iam_role_policy" "analyzer" {
         Resource = "arn:aws:ssm:us-east-1:*:parameter/fiscal-digital/prod/*"
       },
       {
+        # Fase 0 da camada raw (#174 aceita o ponteiro, collectors#53 passou a
+        # enviar): a mensagem carrega `excerptsS3Key` e o analyzer resolve o
+        # texto com GetObject. A permissao nunca foi concedida — todo record com
+        # ponteiro falha com AccessDenied e volta para a fila. Nao aparece em
+        # Errors da Lambda porque o partial batch response (#176) devolve o
+        # record e o handler termina OK; so a DLQ denuncia.
+        # Somente leitura e so no prefixo `excerpts/` — quem escreve e o collector.
+        Sid      = "GazettesCacheExcerptsRead"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "arn:aws:s3:::fiscal-digital-gazettes-cache-prod/excerpts/*"
+      },
+      {
         # FiscalFornecedores v2 — concentracao por secretaria (12 meses).
         # Query pattern: secretariaId = X AND mesCNPJ BETWEEN begin AND end.
         # Feature-flagged OFF ate engine Sonnet-A ser mergeado — IAM provisionado
