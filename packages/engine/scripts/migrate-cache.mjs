@@ -32,7 +32,7 @@ import { createHash } from 'crypto'
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-const QD_API = 'https://api.queridodiario.ok.org.br'
+const QD_API = process.env.QD_API_URL ?? 'https://api.queridodiario.org.br' // host migrado em 2026-08
 const ENTITIES_TABLE = 'fiscal-digital-entities-prod'
 const EXTRACTION_MODEL = 'amazon.nova-lite-v1:0'
 const SCHEMA_VERSION = 1

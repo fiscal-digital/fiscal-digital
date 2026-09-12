@@ -64,7 +64,7 @@ const GAZETTES_QUEUE_URL =
       new GetQueueUrlCommand({ QueueName: 'fiscal-digital-gazettes-queue-prod' }),
     )
   ).QueueUrl
-const QD_API = 'https://api.queridodiario.ok.org.br'
+const QD_API = process.env.QD_API_URL ?? 'https://api.queridodiario.org.br' // host migrado em 2026-08
 const QD_RATE_DELAY_MS = 1100
 const SQS_BATCH_SIZE = 10
 
