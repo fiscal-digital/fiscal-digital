@@ -190,3 +190,32 @@ describe('#166 — excerpt_size configurável', () => {
     expect(urlDaChamada().searchParams.get('number_of_excerpts')).toBe('10')
   })
 })
+
+// Regressão da migração de host do QD (2026-08): o host antigo
+// `api.queridodiario.ok.org.br` morreu e a coleta parou em silêncio por 3
+// semanas. Garante o host novo como default e o override por ambiente.
+describe('queryDiario — host da API', () => {
+  const ORIGINAL = process.env.QD_API_URL
+  afterEach(() => {
+    if (ORIGINAL === undefined) delete process.env.QD_API_URL
+    else process.env.QD_API_URL = ORIGINAL
+  })
+
+  it('usa api.queridodiario.org.br por default (nunca o host antigo .ok.org.br)', async () => {
+    delete process.env.QD_API_URL
+    mockFetch.mockReturnValue(makeQDResponse([]))
+    const result = await queryDiario.execute({ territory_id: '4305108' })
+    const url = mockFetch.mock.calls[0][0] as string
+    expect(url.startsWith('https://api.queridodiario.org.br/gazettes?')).toBe(true)
+    expect(url).not.toContain('ok.org.br')
+    expect(result.source).toBe(url)
+  })
+
+  it('QD_API_URL sobrescreve o host (barra final tolerada)', async () => {
+    process.env.QD_API_URL = 'https://qd.exemplo.test/'
+    mockFetch.mockReturnValue(makeQDResponse([]))
+    await queryDiario.execute({ territory_id: '4305108' })
+    const url = mockFetch.mock.calls[0][0] as string
+    expect(url.startsWith('https://qd.exemplo.test/gazettes?')).toBe(true)
+  })
+})

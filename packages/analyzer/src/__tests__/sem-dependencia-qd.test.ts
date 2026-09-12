@@ -13,7 +13,8 @@ import { join } from 'node:path'
 const SRC = join(__dirname, '..')
 const PROIBIDOS = [
   'query_diario',                    // skill de busca no QD (só o collector usa)
-  'api.queridodiario.ok.org.br',     // chamada direta à API
+  'api.queridodiario.org.br',        // chamada direta à API (host atual)
+  'api.queridodiario.ok.org.br',     // chamada direta à API (host antigo, morto em 2026-08)
 ]
 
 function arquivosTs(dir: string): string[] {
