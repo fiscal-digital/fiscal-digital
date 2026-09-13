@@ -163,6 +163,27 @@ async function persistFinding(finding: Finding): Promise<boolean> {
     item: {
       ...(finding as unknown as Record<string, unknown>),
       pk,
+      // #146 — `published` e hash key do GSI4-risk-published, o indice que
+      // substitui o Scan completo em /alerts. Tres decisoes embutidas aqui:
+      //
+      // 1. String, nao boolean: chave de indice do DynamoDB nao aceita BOOL.
+      //    A API converte na borda (`coerceBool`), o contrato publico segue
+      //    declarando boolean.
+      // 2. Escrito no analyzer, nao no publisher. O publisher so roda para
+      //    finding acima do threshold e hoje os canais estao em DRY_RUN, sem
+      //    persistir — se ele fosse o autor, o indice ficaria vazio e o feed
+      //    publico junto. Aqui o atributo existe para TODO finding.
+      // 3. Escrito em todo FINDING#, e em nenhum item de memoria
+      //    (DISPENSA#, ADITIVO#, ...). E isso que torna o indice esparso: 352
+      //    findings contra 3.358 itens na tabela hoje, e a distancia cresce
+      //    porque memoria cresce mais rapido que achado.
+      //
+      // Significado: "visivel no feed publico". Nasce `'true'` e o publisher
+      // vira para `'false'` via markUnpublishable quando o brand gate reprova
+      // a narrativa. O corte por riskScore continua dinamico (vai na
+      // KeyCondition da Query, nao no valor gravado), entao mexer no SSM
+      // continua surtindo efeito sem reprocessar nada.
+      published: 'true',
     },
   })
 
