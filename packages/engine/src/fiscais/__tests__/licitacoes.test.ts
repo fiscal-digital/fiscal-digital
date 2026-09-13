@@ -1,4 +1,4 @@
-import { fiscalLicitacoes } from '../licitacoes'
+import { fiscalLicitacoes, evidenciaDeDispensa } from '../licitacoes'
 import { LEI_14133_ART_75_I_LIMITE, LEI_14133_ART_75_II_LIMITE } from '../legal-constants'
 import type { FiscalContext } from '../types'
 import type { Finding, SkillResult, ExtractedEntities } from '../../types'
@@ -1268,4 +1268,134 @@ describe('#142 — confiança reflete a tese, não campos de contrato', () => {
     expect(f[0].confidence).toBe(0.65)
     expect(f[0].confidence).toBeLessThan(0.70)
   })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #46 — o achado tem que citar TODAS as gazettes que ele afirma
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('evidenciaDeDispensa', () => {
+  it('item DISPENSA# (gazetteUrl/gazetteDate/excerpt) vira Evidence', () => {
+    expect(
+      evidenciaDeDispensa({
+        gazetteUrl: 'https://data.queridodiario.ok.org.br/4305108/2022-02-09/abc.pdf',
+        gazetteDate: '2022-02-09',
+        excerpt: 'Dispensa de licitação nº 12/2022',
+      }),
+    ).toEqual([
+      {
+        source: 'https://data.queridodiario.ok.org.br/4305108/2022-02-09/abc.pdf',
+        excerpt: 'Dispensa de licitação nº 12/2022',
+        date: '2022-02-09',
+      },
+    ])
+  })
+
+  it('registro antigo sem excerpt: cita fonte e data com trecho vazio, sem inventar texto', () => {
+    const [ev] = evidenciaDeDispensa({
+      gazetteUrl: 'https://data.queridodiario.ok.org.br/4305108/2021-07-02/def.pdf',
+      gazetteDate: '2021-07-02',
+    })
+    expect(ev.source).toContain('def.pdf')
+    expect(ev.excerpt).toBe('')
+  })
+
+  it('Finding publicado usa o proprio evidence[]', () => {
+    const evidence = [{ source: 'https://x/1.pdf', excerpt: 'trecho', date: '2024-01-01' }]
+    expect(evidenciaDeDispensa({ evidence })).toEqual(evidence)
+  })
+
+  it('sem fonte conhecida nao inventa evidencia', () => {
+    expect(evidenciaDeDispensa({})).toEqual([])
+    expect(evidenciaDeDispensa({ gazetteUrl: 'https://x/1.pdf' })).toEqual([])
+    expect(evidenciaDeDispensa({ gazetteDate: '2024-01-01' })).toEqual([])
+  })
+})
+
+it('46. fracionamento cita uma gazette por dispensa afirmada, nao apenas a atual', async () => {
+  const cnpj = '06.099.646/0001-54'
+
+  // Formato real de prod: item DISPENSA# tem gazetteUrl/gazetteDate, nunca
+  // `evidence` (conferido em alerts-prod, 717 itens). Antes deste fix o achado
+  // dizia "2 dispensas" e trazia 1 evidence.
+  const dispensasAnteriores = [
+    {
+      fiscalId: FISCAL_ID,
+      cityId: '4305108',
+      type: 'dispensa_irregular',
+      riskScore: 0,
+      confidence: 0.85,
+      evidence: [],
+      narrative: '',
+      legalBasis: 'Lei 14.133/2021, Art. 75, II',
+      cnpj,
+      ...(({
+        actType: 'dispensa',
+        valor: 170320,
+        gazetteUrl: 'https://data.queridodiario.ok.org.br/4305108/2021-11-10/aaa.pdf',
+        gazetteDate: '2021-11-10',
+        excerpt: 'Dispensa de licitação — aquisição de materiais',
+      }) as unknown as Record<string, unknown>),
+    },
+  ] as unknown as Finding[]
+
+  const context = makeContext({
+    extractEntities: makeExtractEntitiesMock({
+      cnpjs: [cnpj],
+      values: [8800],
+      legalBasis: 'Lei 14.133/2021, Art. 75, II',
+    }),
+    queryAlertsByCnpj: makeQueryAlertsByCnpjMock(dispensasAnteriores),
+  })
+
+  const findings = await fiscalLicitacoes.analisar({
+    gazette: gazetteDispensaFracionamento,
+    cityId: '4305108',
+    context,
+  })
+
+  const [frac] = findings.filter(f => f.type === 'fracionamento')
+  expect(frac).toBeDefined()
+
+  // A narrativa afirma 2 dispensas — tem que haver 2 fontes verificáveis.
+  expect(frac.narrative).toContain('2 dispensas')
+  expect(frac.evidence).toHaveLength(2)
+  expect(frac.evidence.map(e => e.source)).toContain(
+    'https://data.queridodiario.ok.org.br/4305108/2021-11-10/aaa.pdf',
+  )
+
+  // evidence[0] continua sendo a gazette atual: é dela que sai o pk do finding.
+  expect(frac.evidence[0].source).toBe(gazetteDispensaFracionamento.url)
+})
+
+it('46b. o item DISPENSA# gravado carrega o trecho, para o proximo fracionamento poder citar', async () => {
+  const saved: Array<{ pk: string; item: Record<string, unknown> }> = []
+  const context = makeContext({
+    extractEntities: makeExtractEntitiesMock({
+      cnpjs: ['11.222.333/0001-44'],
+      values: [80000],
+      legalBasis: 'Lei 14.133/2021, Art. 75, II',
+    }),
+    saveMemory: {
+      name: 'save_memory',
+      description: 'mock',
+      execute: async (input: unknown) => {
+        const i = input as { pk: string; item: Record<string, unknown> }
+        saved.push({ pk: i.pk, item: i.item })
+        return { data: undefined, source: 'mock', confidence: 1 }
+      },
+    } as never,
+  })
+
+  await fiscalLicitacoes.analisar({
+    gazette: gazetteDispensaFracionamento,
+    cityId: '4305108',
+    context,
+  })
+
+  const dispensa = saved.find(s => s.pk.startsWith('DISPENSA#'))
+  expect(dispensa).toBeDefined()
+  expect(typeof dispensa!.item.excerpt).toBe('string')
+  expect((dispensa!.item.excerpt as string).length).toBeGreaterThan(0)
+  expect(dispensa!.item.gazetteUrl).toBe(gazetteDispensaFracionamento.url)
 })
