@@ -167,6 +167,16 @@ O fracionamento é atualmente verificado apenas em relação ao teto inciso II (
 
 Em produção, a detecção de fracionamento depende do GSI2-cnpj-date da tabela `fiscal-digital-alerts-prod`. Se o contexto não injetar `queryAlertsByCnpj`, o fracionamento não é detectado (não gera erro, apenas não detecta).
 
+### 5.5. Citação das dispensas anteriores no fracionamento (#46)
+
+O achado de fracionamento afirma um número de dispensas e uma soma. Cada uma dessas dispensas precisa ser verificável pelo leitor — é o princípio de verificabilidade pública aplicado a um achado que agrega vários atos.
+
+Até o fix de #46, o achado citava apenas a gazette corrente: o código lia `evidence[]` dos registros históricos, campo que o item de memória `DISPENSA#` nunca teve (ele guarda a citação em `gazetteUrl` / `gazetteDate`). O resultado publicado dizia "6 dispensas totalizando R$ 2.066.833,60" com uma única fonte conferível.
+
+Depois do fix, cada dispensa somada entra no `evidence[]` do achado.
+
+**Limitação residual — registros anteriores ao fix.** O trecho (`excerpt`) passou a ser gravado no item `DISPENSA#` a partir desta mudança. Para dispensas registradas antes disso, a evidência carrega fonte e data, com trecho vazio; o site omite o bloco de citação quando não há trecho. A alternativa seria sintetizar um texto descritivo no lugar do trecho, o que foi descartado: um trecho inventado apresentado como citação do diário é pior que a ausência dele. Os registros antigos ganham trecho quando forem reprocessados.
+
 ---
 
 ## 6. Como Reportar Falso Positivo

@@ -9,6 +9,37 @@ import { LEI_14133_ART_75_I_LIMITE, LEI_14133_ART_75_II_LIMITE } from './legal-c
 import type { Fiscal, AnalisarInput, FiscalContext } from './types'
 
 const FISCAL_ID = 'fiscal-licitacoes'
+
+/**
+ * Evidencia de um registro historico de dispensa (#46, sintoma do `evidence[]`).
+ *
+ * `queryAlertsByCnpj` devolve DOIS formatos na mesma lista: itens de memoria
+ * `DISPENSA#`, que guardam a citacao em `gazetteUrl`/`gazetteDate`/`excerpt`, e
+ * `Finding` publicados, que guardam em `evidence[]`. O bloco de fracionamento
+ * lia so `f.evidence`, que em item DISPENSA# nunca existe — o proprio fixture
+ * do teste 8 documentava isso com `evidence: []`. Resultado: o achado afirmava
+ * "N dispensas" e citava UMA gazette, quebrando o principio de verificabilidade
+ * publica (qualquer cidadao tem que poder conferir cada ato afirmado).
+ *
+ * E o mesmo desalinhamento de campo da camada B do BUG-FSC-002 (`valor` lido
+ * como `value`), num campo diferente.
+ *
+ * `excerpt` so passou a ser gravado no item DISPENSA# a partir deste fix: para
+ * registros antigos citamos fonte e data com trecho vazio. Nao sintetizamos
+ * texto — o site ja omite o bloco de citacao quando o trecho esta vazio, e
+ * inventar trecho seria pior que nao ter.
+ */
+export function evidenciaDeDispensa(item: unknown): Evidence[] {
+  const f = item as {
+    evidence?: Evidence[]
+    gazetteUrl?: string
+    gazetteDate?: string
+    excerpt?: string
+  }
+  if (Array.isArray(f.evidence) && f.evidence.length > 0) return f.evidence
+  if (!f.gazetteUrl || !f.gazetteDate) return []
+  return [{ source: f.gazetteUrl, excerpt: f.excerpt ?? '', date: f.gazetteDate }]
+}
 const ALERTS_TABLE_DEFAULT = 'fiscal-digital-alerts-prod'
 
 // Regex de filtro etapa 1
@@ -326,6 +357,10 @@ export const fiscalLicitacoes: Fiscal = {
         temTeto: !semTeto,
         gazetteUrl: gazette.url,
         gazetteDate: gazette.date,
+        // #46: sem o trecho aqui, o fracionamento que somar esta dispensa no
+        // futuro consegue citar a fonte mas nao o que ela diz. Nao e chave de
+        // GSI — seguro adicionar.
+        excerpt,
         createdAt: now.toISOString(),
       }
 
@@ -571,9 +606,15 @@ export const fiscalLicitacoes: Fiscal = {
           )
 
           const currentEvidence: Evidence = { source: gazette.url, excerpt, date: gazette.date }
-          const historicoEvidence = dispensasHistorico.flatMap(f => f.evidence ?? [])
-          const rawEvidenceFrac: Evidence[] = existingFracionamento
-            ? [...existingFracionamento.evidence, ...historicoEvidence, currentEvidence]
+          const historicoEvidence = dispensasHistorico.flatMap(f => evidenciaDeDispensa(f))
+          // `evidence[0]` decide o pk do finding (`persistFinding` deriva
+          // `stableKey` de `evidence[0].source`), entao a ordem aqui e contrato,
+          // nao estilo. Com `historicoEvidence` deixando de ser sempre vazio, um
+          // padrao-ancora sem evidencia passaria a ancorar numa gazette historica
+          // e trocaria o pk — por isso o ramo da ancora exige evidencia nao vazia.
+          const evidenciaAncora = existingFracionamento?.evidence ?? []
+          const rawEvidenceFrac: Evidence[] = evidenciaAncora.length > 0
+            ? [...evidenciaAncora, ...historicoEvidence, currentEvidence]
             : [currentEvidence, ...historicoEvidence]
 
           // Dedup por `source` (URL da gazette) — evita evidence duplicada quando a
