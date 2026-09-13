@@ -547,5 +547,39 @@ export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
     }
   }
 
+  assertBatchNotFullyFailed(batchItemFailures.length, event.Records.length)
+
   return { batchItemFailures }
+}
+
+/**
+ * Batch 100% vermelho e sinal, nao ruido (#175, parte 2).
+ *
+ * O partial batch response resolveu a perda silenciosa — o record volta a fila
+ * e acaba na DLQ. O que ele nao resolveu foi a CEGUEIRA: devolver os records e
+ * terminar OK mantem `Errors` da Lambda em 0 mesmo com todos falhando, entao
+ * nenhum alarme dispara ate a DLQ encher, 3 recebimentos depois.
+ *
+ * Em 12/09/2026 isso custou ~90 minutos: os 55 diarios da primeira coleta pos
+ * incidente falharam com AccessDenied em `resolveExcerpts` (faltava
+ * `s3:GetObject` no prefixo `excerpts/`) e a metrica de erro ficou zerada o
+ * tempo todo. O collector tinha o mesmo defeito por outro caminho e escondeu
+ * um host morto por tres semanas — corrigido em collectors#58 com esta mesma
+ * regra.
+ *
+ * Falha isolada continua isolada: um record ruim entre outros bons segue so em
+ * `batchItemFailures`. Como o event source mapping usa batch de 5 com janela 0,
+ * um batch pode chegar com 1 record — nesse caso a falha unica lanca. E aceito:
+ * o alarme soma 5 erros em 5 minutos antes de disparar, entao ruido isolado nao
+ * acorda ninguem, e falha sistemica aparece no minuto em que acontece.
+ *
+ * Lancar aqui nao muda o destino das mensagens: o batch inteiro volta para a
+ * fila exatamente como voltaria via `batchItemFailures`.
+ */
+export function assertBatchNotFullyFailed(failures: number, total: number): void {
+  if (total > 0 && failures === total) {
+    throw new Error(
+      `analyzer: todos os ${total} records do batch falharam — dependencia externa fora ou permissao/config errada`,
+    )
+  }
 }
