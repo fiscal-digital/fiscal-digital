@@ -125,7 +125,7 @@ jest.mock('@fiscal-digital/engine', () => ({
 // Import handler AFTER mocks are set up
 // ---------------------------------------------------------------------------
 
-import { handler, resolveExcerpts } from '../index'
+import { handler, resolveExcerpts, assertBatchNotFullyFailed } from '../index'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -493,4 +493,35 @@ describe('resolveExcerpts', () => {
     const arg = mockAnalisarLicitacoes.mock.calls[0][0] as { gazette: { excerpts: string[] } }
     expect(arg.gazette.excerpts).toEqual(['contratação direta emergencial'])
   })
+})
+
+// ---------------------------------------------------------------------------
+// #175 parte 2 — batch 100% vermelho precisa aparecer em Errors
+// ---------------------------------------------------------------------------
+
+describe('assertBatchNotFullyFailed', () => {
+  it('todos os records falharam: lança (o run conta como Errors no CloudWatch)', () => {
+    expect(() => assertBatchNotFullyFailed(5, 5)).toThrow(/todos os 5 records/)
+    expect(() => assertBatchNotFullyFailed(1, 1)).toThrow(/todos os 1 records/)
+  })
+
+  it('falha parcial não lança — um record ruim não envenena o batch', () => {
+    expect(() => assertBatchNotFullyFailed(1, 5)).not.toThrow()
+    expect(() => assertBatchNotFullyFailed(4, 5)).not.toThrow()
+  })
+
+  it('batch sem falha ou sem record: não lança', () => {
+    expect(() => assertBatchNotFullyFailed(0, 5)).not.toThrow()
+    expect(() => assertBatchNotFullyFailed(0, 0)).not.toThrow()
+  })
+})
+
+test('batch inteiro falhando lança em vez de retornar batchItemFailures (#175)', async () => {
+  // Cenário do incidente de 12/09: todo record falha por causa externa
+  // (naquele dia, AccessDenied no ponteiro S3). Antes o handler terminava OK
+  // e Errors ficava em 0; agora o run é contabilizado como erro.
+  const r1 = makeSQSRecord('not json', 'msg-a')
+  const r2 = makeSQSRecord('also not json', 'msg-b')
+
+  await expect(handler(makeSQSEvent([r1, r2]))).rejects.toThrow(/todos os 2 records/)
 })
