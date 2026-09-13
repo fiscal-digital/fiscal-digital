@@ -125,8 +125,14 @@ export class PublicationsStore {
       new UpdateItemCommand({
         TableName: ALERTS_TABLE,
         Key: { pk: { S: findingPk } },
+        // #146: `published` vira 'false' junto com a marca de unpublishable.
+        // E o mesmo fato dito para dois leitores — a flag para quem ja tem o
+        // item em maos, e a chave do GSI4 para quem lista o feed. Sem esta
+        // linha o finding sairia do feed pelo filtro em memoria da API mas
+        // continuaria ocupando o indice, que existe justamente para nao
+        // carregar o que nao vai ser exibido.
         UpdateExpression:
-          'SET #unpub = :true, #reason = :reason, #hits = :hits, #unpubAt = :now',
+          'SET #unpub = :true, #reason = :reason, #hits = :hits, #unpubAt = :now, #published = :false',
         ConditionExpression: 'attribute_exists(#pk)',
         ExpressionAttributeNames: {
           '#pk': 'pk',
@@ -134,12 +140,14 @@ export class PublicationsStore {
           '#reason': 'unpublishableReason',
           '#hits': 'unpublishableHits',
           '#unpubAt': 'unpublishableAt',
+          '#published': 'published',
         },
         ExpressionAttributeValues: {
           ':true': { BOOL: true },
           ':reason': { S: reason },
           ':hits': hitList,
           ':now': { S: new Date().toISOString() },
+          ':false': { S: 'false' },
         },
       }),
     )
