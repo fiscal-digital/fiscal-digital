@@ -66,6 +66,11 @@ ehthumbs.db
 # ─── Backups & temp ─────────────────────────────────────────────
 *.bak
 *.tmp
+# `*.tmp` NÃO casa com o prefixo `.tmp-` (#152): os 13 arquivos `.tmp-*` que
+# estiveram soltos em packages/engine incluíam 218KB de dump de findings de
+# prod. Combinado com a regra "sempre commitar TODOS os arquivos", um
+# `git add -A` levaria isso para um commit público.
+.tmp-*
 *.orig
 /tmp/
 
