@@ -26,6 +26,8 @@ const SUPPLIERS_TABLE = process.env.SUPPLIERS_TABLE ?? 'fiscal-digital-suppliers
 // GSI da alerts-prod indexado por cnpj (hash) + createdAt (range, DESC).
 // Schema declarado em terraform/modules/dynamodb/main.tf.
 const ALERTS_CNPJ_INDEX = 'GSI2-cnpj-date'
+// #146: indice esparso do feed publico — so FINDING# tem `published`.
+const ALERTS_PUBLISHED_INDEX = 'GSI4-risk-published'
 const SITE_URL = 'https://fiscaldigital.org'
 const API_URL = process.env.API_URL ?? 'https://api.fiscaldigital.org'
 // Build timestamp injetado no bundle pelo deploy. Fallback = boot da Lambda.
@@ -114,10 +116,15 @@ async function queryFindingsByCity(cityId: string, type?: string): Promise<Findi
  * Coage `published` de String para boolean (#146).
  *
  * O atributo é hash_key do `GSI4-risk-published` e chave de índice do DynamoDB
- * não aceita BOOL — por isso o publisher grava `"true"` (String). O contrato
+ * não aceita BOOL — por isso é gravado como `"true"` (String). O contrato
  * público declara `published: z.boolean()`, então a conversão acontece na
- * borda de serialização. Aceita boolean também, para itens legados ou futuros
- * que não passem pelo publisher.
+ * borda de serialização. Aceita boolean também, para itens legados.
+ *
+ * Quem grava é o ANALYZER, em `persistFinding` — não o publisher, como este
+ * comentário dizia antes. O publisher só roda para finding acima do threshold
+ * e seus canais estão em DRY_RUN sem persistir; se ele fosse o autor, o índice
+ * ficaria vazio e o feed público junto. O publisher participa virando o valor
+ * para `'false'` em `markUnpublishable`.
  */
 function coerceBool(value: unknown): boolean | undefined {
   if (value === undefined || value === null) return undefined
@@ -179,23 +186,45 @@ async function fetchFindings(filters: {
     return []
   }
 
+  // Lido antes da busca porque `riskThreshold` entra na KeyCondition da Query
+  // do GSI4 (#146) — o corte por risco passa a ser feito pelo DynamoDB, não
+  // depois em memória. Mexer no SSM continua surtindo efeito imediato: o valor
+  // vai na consulta, não no dado gravado.
+  const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
+
   let all: Finding[] = []
   if (cityIds && cityIds.length > 0) {
     // WIN-API-001 path: 1+ Queries em GSI1-city-date.
     const groups = await Promise.all(cityIds.map(id => queryFindingsByCity(id, filters.type)))
     all = groups.flat()
   } else {
-    // Fallback: sem filtro de cidade → scan (cobre /alerts global e /alerts?type=X).
+    // #146 — sem filtro de cidade (/alerts global e /alerts?type=X): Query no
+    // GSI4-risk-published, não mais Scan da tabela inteira.
+    //
+    // O Scan lia os 3.358 itens de alerts-prod para devolver 69: 3.006 deles
+    // são memória de Fiscal (DISPENSA#, ADITIVO#, LOCACAO#, CONVENIO#,
+    // DIARIA#), que nunca aparecem no feed. O índice é esparso porque só
+    // FINDING# carrega `published` — 352 itens hoje, e a distância cresce, já
+    // que memória cresce mais rápido que achado (717 DISPENSA# contra 83
+    // findings de dispensa).
+    //
+    // `unpublishable` sai da Query de graça: markUnpublishable grava
+    // `published = 'false'`. O filtro em memória abaixo continua valendo para
+    // o caminho por cidade, que passa pelo GSI1 e não conhece essa marca.
     let exclusiveStartKey: Record<string, unknown> | undefined
     do {
-      const out: { Items?: unknown[]; LastEvaluatedKey?: Record<string, unknown> } = await ddb.send(new ScanCommand({
+      const out: { Items?: unknown[]; LastEvaluatedKey?: Record<string, unknown> } = await ddb.send(new QueryCommand({
         TableName: ALERTS_TABLE,
-        FilterExpression: filters.type
-          ? 'begins_with(pk, :prefix) AND #type = :type'
-          : 'begins_with(pk, :prefix)',
-        ExpressionAttributeNames: filters.type ? { '#type': 'type' } : undefined,
+        IndexName: ALERTS_PUBLISHED_INDEX,
+        KeyConditionExpression: '#published = :true AND riskScore >= :risk',
+        FilterExpression: filters.type ? '#type = :type' : undefined,
+        ExpressionAttributeNames: {
+          '#published': 'published',
+          ...(filters.type ? { '#type': 'type' } : {}),
+        },
         ExpressionAttributeValues: {
-          ':prefix': 'FINDING#',
+          ':true': 'true',
+          ':risk': riskThreshold,
           ...(filters.type ? { ':type': filters.type } : {}),
         },
         ExclusiveStartKey: exclusiveStartKey,
@@ -213,7 +242,6 @@ async function fetchFindings(filters: {
   // que travaram no glossary.json#avoid mesmo após 3× regeneração) ficam no
   // DDB como audit trail mas não aparecem em feed público. Ver publisher
   // markUnpublishable.
-  const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
   const filtered = all
     .filter(f => f.type && f.riskScore >= riskThreshold && (f.confidence ?? 0) >= confidenceThreshold)
     .filter(f => !(f as Finding & { unpublishable?: boolean }).unpublishable)

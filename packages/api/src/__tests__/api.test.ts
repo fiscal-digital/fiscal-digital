@@ -717,3 +717,83 @@ describe('GET /openapi.json', () => {
     expect(second.statusCode).toBe(304)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #146 — /alerts global consulta o GSI4 em vez de varrer a tabela
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /alerts — índice em vez de Scan (#146)', () => {
+  type DdbCmd = {
+    __type?: string
+    input?: {
+      IndexName?: string
+      KeyConditionExpression?: string
+      FilterExpression?: string
+      ExpressionAttributeNames?: Record<string, string>
+      ExpressionAttributeValues?: Record<string, unknown>
+    }
+  }
+
+  it('usa Query no GSI4-risk-published, nunca Scan', async () => {
+    const visto: DdbCmd[] = []
+    mockDdbSend.mockImplementation((cmd: DdbCmd) => {
+      visto.push(cmd)
+      if (cmd?.__type === 'Scan') {
+        throw new Error('/alerts global não pode mais varrer a tabela inteira (#146)')
+      }
+      return Promise.resolve({ Items: [makeFinding()] })
+    })
+
+    const res = asResult(await handler(makeEvent('/alerts')))
+    expect(res.statusCode).toBe(200)
+
+    const q = visto.find(c => c.__type === 'Query')
+    expect(q).toBeDefined()
+    expect(q!.input?.IndexName).toBe('GSI4-risk-published')
+  })
+
+  it('o corte por risco vai na KeyCondition — mexer no SSM continua surtindo efeito', async () => {
+    const visto: DdbCmd[] = []
+    mockDdbSend.mockImplementation((cmd: DdbCmd) => {
+      visto.push(cmd)
+      return Promise.resolve({ Items: [] })
+    })
+
+    await handler(makeEvent('/alerts'))
+
+    const q = visto.find(c => c.__type === 'Query')!
+    // `published` é hash key e vem como String: chave de índice não aceita BOOL.
+    expect(q.input?.KeyConditionExpression).toContain('riskScore >= :risk')
+    expect(q.input?.ExpressionAttributeValues?.[':true']).toBe('true')
+    expect(typeof q.input?.ExpressionAttributeValues?.[':risk']).toBe('number')
+  })
+
+  it('filtro por type vai em FilterExpression, não na KeyCondition', async () => {
+    const visto: DdbCmd[] = []
+    mockDdbSend.mockImplementation((cmd: DdbCmd) => {
+      visto.push(cmd)
+      return Promise.resolve({ Items: [] })
+    })
+
+    await handler(makeEvent('/alerts', { type: 'dispensa_irregular' }))
+
+    const q = visto.find(c => c.__type === 'Query')!
+    expect(q.input?.FilterExpression).toBe('#type = :type')
+    expect(q.input?.ExpressionAttributeValues?.[':type']).toBe('dispensa_irregular')
+    expect(q.input?.KeyConditionExpression).not.toContain('type')
+  })
+
+  it('caminho por cidade continua no GSI1 — ele não conhece `published`', async () => {
+    const visto: DdbCmd[] = []
+    mockDdbSend.mockImplementation((cmd: DdbCmd) => {
+      visto.push(cmd)
+      return Promise.resolve({ Items: [] })
+    })
+
+    await handler(makeEvent('/alerts', { city: '4305108' }))
+
+    const indices = visto.filter(c => c.__type === 'Query').map(c => c.input?.IndexName)
+    expect(indices).toContain('GSI1-city-date')
+    expect(indices).not.toContain('GSI4-risk-published')
+  })
+})
