@@ -177,6 +177,18 @@ resource "aws_budgets_budget" "fiscal_digital" {
 # `for_each` em vez de 6 blocos repetidos: adicionar Lambda nova é uma linha.
 # Threshold por criticidade — collector e api são caminho de dado/usuário;
 # costs e web-isr são auxiliares e toleram ruído maior antes de acordar alguém.
+#
+# ATENÇÃO ao significado de `threshold`: o operador é `GreaterThanThreshold`,
+# então o valor é o número de erros TOLERADOS, não o número que dispara.
+# `threshold = 1` dispara a partir de 2 erros. Para alarmar no primeiro erro,
+# o valor é 0.
+#
+# Isso mordeu: os dois collectors tinham `threshold = 1` com a descrição
+# "1 erro já é sinal", e não era — em 15/09/2026 o run das 07:00 UTC falhou
+# inteiro (todas as 50 cidades, API do Querido Diário fora), registrou
+# exatamente 1 erro, e o alarme foi para OK com a mensagem "1.0 was not
+# greater than the threshold (1.0)". O guard que faz o run falhar quando
+# todas as cidades falham (collectors#58) funcionou; o alarme engoliu o sinal.
 
 locals {
   lambda_error_alarms = {
@@ -187,12 +199,12 @@ locals {
     }
     collector = {
       function  = "fiscal-digital-collector-prod"
-      threshold = 1
+      threshold = 0 # zero tolerado: roda 1x por dia útil, qualquer erro é sinal
       descricao = "Collector do Querido Diário falhou — roda por cron, sem retry visível; 1 erro já é sinal"
     }
     supplier_collector = {
       function  = "fiscal-digital-supplier-collector-prod"
-      threshold = 1
+      threshold = 0 # idem collector — execução diária, erro único já importa
       descricao = "Collector de fornecedores (RFB/CGU) falhou — roda por cron"
     }
     costs = {
