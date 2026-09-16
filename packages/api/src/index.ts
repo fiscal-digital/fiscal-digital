@@ -3,7 +3,7 @@ import { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand, QueryComma
 import { S3Client, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda'
 import crypto from 'node:crypto'
-import { CITIES, getCityOrFallback, pdfCacheUrl, pdfCacheS3Key, createLogger, getPublishThresholds } from '@fiscal-digital/engine'
+import { CITIES, getCityOrFallback, pdfCacheUrl, pdfCacheS3Key, createLogger, getPublishThresholds, USER_AGENT } from '@fiscal-digital/engine'
 import type { Finding } from '@fiscal-digital/engine'
 import { citationHeaders, corsPreflightHeaders, computeEtag, notModified } from './headers'
 import { OPENAPI_SPEC } from './openapi'
@@ -850,7 +850,7 @@ async function handlePdfProxy(event: APIGatewayProxyEventV2): Promise<APIGateway
     const ctrl = new AbortController()
     const timeoutId = setTimeout(() => ctrl.abort(), 25_000)
     const res = await fetch(source, {
-      headers: { 'User-Agent': 'FiscalDigital/1.0 (+https://fiscaldigital.org)' },
+      headers: { 'User-Agent': USER_AGENT },
       signal: ctrl.signal,
     }).finally(() => clearTimeout(timeoutId))
 
