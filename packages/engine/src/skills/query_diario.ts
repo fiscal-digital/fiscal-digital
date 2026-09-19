@@ -1,4 +1,5 @@
 import { RateLimiter } from '../utils/rate_limiter'
+import { USER_AGENT } from '../utils/user_agent'
 import type { Gazette, Skill, SkillResult } from '../types'
 
 // Host da API do Querido Diário. Em 2026-08 a OKFN migrou a API de
@@ -13,8 +14,44 @@ export const DEFAULT_QD_API_URL = 'https://api.queridodiario.org.br'
 export function qdApiUrl(): string {
   return (process.env.QD_API_URL ?? DEFAULT_QD_API_URL).replace(/\/+$/, '')
 }
-const USER_AGENT = 'FiscalDigital/0.1.1 (+https://fiscaldigital.org)'
+// 60/min e a referencia que o Querido Diario documenta ("bom senso ... para
+// manter taxa de requisicao baixa"). Instancia unica do modulo: todas as
+// cidades do collector, rodando em paralelo, disputam este mesmo orcamento.
+// Ver rate_limiter.ts para por que a versao anterior nao limitava nada.
 const limiter = new RateLimiter(60)
+
+/**
+ * Uma nova tentativa quando a fonte esta momentaneamente fora (#Querido Diario
+ * instavel em 14-15/09/2026: 503 "no available server" e 520 intermitentes).
+ *
+ * UMA, nao varias: cada retentativa e carga em cima de quem ja esta caido.
+ * Sem retry, um 503 transitorio perde a cidade pelo dia inteiro; com uma,
+ * recupera a maioria dos casos medidos (9 de 12 requisicoes espacadas
+ * passavam durante a instabilidade). A retentativa passa pelo limiter de
+ * novo — respeita a taxa como qualquer outra chamada.
+ *
+ * `Retry-After` e honrado quando vier (segundos ou HTTP-date), com teto para
+ * nao segurar a Lambda ate o timeout. Sem o header, espera `backoffMs`.
+ */
+const RETRYABLE_STATUS = new Set([429, 502, 503, 504, 520, 522, 524])
+const DEFAULT_MAX_RETRIES = 1
+const DEFAULT_RETRY_BACKOFF_MS = 3_000
+const MAX_RETRY_WAIT_MS = 30_000
+
+export function retryAfterMs(header: string | null | undefined, fallbackMs: number, now = Date.now()): number {
+  if (!header) return fallbackMs
+  const seconds = Number(header)
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, MAX_RETRY_WAIT_MS)
+  const at = Date.parse(header)
+  if (!Number.isNaN(at)) return Math.min(Math.max(0, at - now), MAX_RETRY_WAIT_MS)
+  return fallbackMs
+}
+
+export function isRetryableStatus(status: number): boolean {
+  return RETRYABLE_STATUS.has(status)
+}
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 /**
  * Janela de texto pedida ao Querido Diário por excerpt (#166).
@@ -93,16 +130,40 @@ export const queryDiario: Skill<QueryDiarioInput, { gazettes: Gazette[]; total: 
     if (input.since) params.set('published_since', input.since)
     if (input.until) params.set('published_until', input.until)
 
-    await limiter.acquire()
-
     const url = `${qdApiUrl()}/gazettes?${params}`
-    const res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } })
+    const maxRetries = Number(process.env.QD_MAX_RETRIES ?? DEFAULT_MAX_RETRIES)
+    const backoffMs = Number(process.env.QD_RETRY_BACKOFF_MS ?? DEFAULT_RETRY_BACKOFF_MS)
 
-    if (!res.ok) {
+    let body: QDResponse | undefined
+    for (let attempt = 0; ; attempt++) {
+      await limiter.acquire()
+
+      let res: Response
+      try {
+        res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT } })
+      } catch (err) {
+        // Falha de rede (DNS, conexao recusada, "fetch failed"): mesma classe
+        // transitoria que um 503. Uma retentativa, depois propaga.
+        if (attempt < maxRetries) {
+          await sleep(backoffMs)
+          continue
+        }
+        throw err
+      }
+
+      if (res.ok) {
+        body = await res.json() as QDResponse
+        break
+      }
+
+      if (isRetryableStatus(res.status) && attempt < maxRetries) {
+        const header = (res as { headers?: { get(name: string): string | null } }).headers?.get('retry-after')
+        await sleep(retryAfterMs(header, backoffMs))
+        continue
+      }
+
       throw new Error(`Querido Diário API ${res.status}: ${res.statusText}`)
     }
-
-    const body = await res.json() as QDResponse
 
     const gazettes: Gazette[] = body.gazettes.map(g => ({
       id: `${g.territory_id}#${g.date}#${g.edition ?? '1'}`,
