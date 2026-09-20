@@ -51,7 +51,7 @@ process.on('uncaughtException', (err) => {
 })
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, ScanCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
+import { DynamoDBDocumentClient, ScanCommand, QueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb'
 import {
   fiscalLicitacoes,
   fiscalContratos,
@@ -118,12 +118,34 @@ async function persistFinding(finding) {
     return null
   }
   const pk = `FINDING#${finding.fiscalId}#${finding.cityId}#${finding.type}#${stableKey}`
+
+  // saveMemory é PutItem (replace). Sem o merge abaixo, o replay (a) apagava
+  // `published`, chave do GSI4-risk-published — o finding sumia do feed;
+  // (b) trocava `createdAt` pela hora do replay — range key de GSI1/GSI2, o
+  // finding voltava ao topo do feed como "novo" e a janela de 12 meses do
+  // fracionamento deslocava; (c) apagava o que o publisher gravou
+  // (`publications`, `unpublishable*`). Preferir `existing.createdAt` é sempre
+  // correto: fracionamento já reemite o createdAt da âncora lida deste mesmo
+  // pk; os demais fiscais setam `now`, que é justamente o que não pode vencer.
+  // Isto torna o script mais conservador que o persistFinding da Lambda — no
+  // ciclo diário cada gazette é nova, aqui é reprocessamento.
+  const existing = (await ddb.send(new GetCommand({
+    TableName: ALERTS_TABLE,
+    Key: { pk },
+    ConsistentRead: true,
+  }))).Item
+  const carried = {}
+  for (const k of ['publications', 'publishedAt', 'unpublishable', 'unpublishableReason', 'unpublishableHits', 'unpublishableAt']) {
+    if (existing?.[k] !== undefined) carried[k] = existing[k]
+  }
   finding.id = pk
-  finding.createdAt = createdAt
+  finding.createdAt = existing?.createdAt ?? createdAt
   await saveMemory.execute({
     pk,
     table: ALERTS_TABLE,
-    item: { ...finding, pk },
+    // ordem: `carried` depois de `finding` (a verdade do publisher vence);
+    // `published` por último (preserva 'false' do markUnpublishable).
+    item: { ...finding, ...carried, pk, published: existing?.published ?? 'true' },
   })
   return pk
 }

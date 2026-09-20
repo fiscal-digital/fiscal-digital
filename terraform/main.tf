@@ -118,6 +118,25 @@ resource "aws_ssm_parameter" "publish_confidence_threshold" {
   }
 }
 
+# Interruptor de publicação por fiscal. Lista de fiscalIds separada por vírgula;
+# `none` = nenhum desligado (SSM rejeita valor vazio, por isso a sentinela).
+# Fiscal desligado não é enfileirado para o publisher e some de todo caminho
+# público da API; o item no DynamoDB não muda — o flip é reversível sem tocar
+# dado. Fail-safe é continuar publicando (parâmetro ausente/erro = lista vazia).
+#   desligar: aws ssm put-parameter --overwrite --name .../publish-disabled-fiscais --value fiscal-publicidade --type String
+#   religar:  aws ssm put-parameter --overwrite --name .../publish-disabled-fiscais --value none --type String
+# Efeito em até 5 min (TTL do cache em getPublishThresholds). Sem IAM novo:
+# analyzer e api já leem /fiscal-digital/prod/*.
+resource "aws_ssm_parameter" "publish_disabled_fiscais" {
+  name  = "/fiscal-digital/prod/publish-disabled-fiscais"
+  type  = "String"
+  value = "none"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
 # MIT-02 / EVO-002: feature flag para analyzer escrever em suppliers-prod.
 # Default false: deploy entra "dark", flip para true quando smoke validar.
 # Rollback: aws ssm put-parameter --overwrite --name .../enable-supplier-write --value false
