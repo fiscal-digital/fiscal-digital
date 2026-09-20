@@ -1,3 +1,4 @@
+import { Logger } from '@aws-lambda-powertools/logger'
 import { fiscalFornecedores } from '../fornecedores'
 import type { FiscalContext } from '../types'
 import type { ExtractedEntities, SkillResult, SupplierProfile } from '../../types'
@@ -60,6 +61,19 @@ function makeContext(overrides: Partial<FiscalContext> = {}): FiscalContext {
     validateCNPJ: makeValidateCNPJMock(),
     ...overrides,
   }
+}
+
+// Logs estruturados do fiscal: silenciados aqui, inspecionados nos casos 4 e 9.
+const infoSpy = jest.spyOn(Logger.prototype, 'info').mockImplementation(() => undefined)
+const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+
+beforeEach(() => {
+  infoSpy.mockClear()
+  warnSpy.mockClear()
+})
+
+function logCalls(spy: jest.SpyInstance): Array<[string, Record<string, unknown> | undefined]> {
+  return spy.mock.calls.map(c => [String(c[0]), c[1] as Record<string, unknown> | undefined])
 }
 
 // ─── Testes ───────────────────────────────────────────────────────────────────
@@ -171,8 +185,8 @@ describe('fiscalFornecedores', () => {
     expect(findings).toHaveLength(0)
   })
 
-  // Caso 4 — validateCNPJ retorna nao_encontrado → skip silencioso []
-  it('4. nao_encontrado: validateCNPJ retorna situacaoCadastral=nao_encontrado → skip silencioso []', async () => {
+  // Caso 4 — validateCNPJ retorna nao_encontrado → skip COM rastro (info) e []
+  it('4. nao_encontrado: validateCNPJ retorna situacaoCadastral=nao_encontrado → skip logado, []', async () => {
     const context = makeContext({
       extractEntities: makeExtractEntitiesMock({
         cnpjs: ['99.888.777/0001-11'],
@@ -192,6 +206,10 @@ describe('fiscalFornecedores', () => {
     })
 
     expect(findings).toHaveLength(0)
+    const naoEncontrado = logCalls(infoSpy).find(([msg]) => msg.includes('não encontrado na RFB'))
+    expect(naoEncontrado?.[1]).toMatchObject({ cnpj: '99.888.777/0001-11', situacaoCadastral: 'nao_encontrado' })
+    const resumo = logCalls(infoSpy).find(([msg]) => msg === 'fiscal-fornecedores resumo')
+    expect(resumo?.[1]).toMatchObject({ puladosNaoEncontrado: 1, findings: 0 })
   })
 
   // Caso 5 — Concentração: 4 contratos mesmo CNPJ mesma secretaria → dispara concentracao_fornecedor
@@ -266,5 +284,29 @@ describe('fiscalFornecedores', () => {
     // extractEntities não deve ter sido chamado (filtro etapa 1 bloqueou)
     const execMock = context.extractEntities?.execute as jest.Mock | undefined
     expect(execMock?.mock.calls ?? []).toHaveLength(0)
+  })
+
+  // Caso 9 — validateCNPJ lança (429/5xx/rede) → warn logado, análise continua sem lançar.
+  // Antes deste caso a falha caía em `catch { continue }` sem uma linha de log:
+  // o fiscal produziu zero achados em toda a produção e ninguém sabia por quê.
+  it('9. validateCNPJ lança → warn com cnpj+erro, análise continua e retorna [] (não propaga)', async () => {
+    const validateCNPJ = jest.fn().mockRejectedValue(new Error('BrasilAPI CNPJ 429: Too Many Requests'))
+    const context = makeContext({
+      extractEntities: makeExtractEntitiesMock({ cnpjs: ['55.111.222/0001-33'], values: [48000] }),
+      validateCNPJ,
+    })
+
+    const findings = await fiscalFornecedores.analisar({
+      gazette: gazetteContratoFornecedorJovem,
+      cityId: '4305108',
+      context,
+    })
+
+    expect(findings).toHaveLength(0)
+    expect(validateCNPJ).toHaveBeenCalled()
+    const falha = logCalls(warnSpy).find(([msg]) => msg.includes('validateCNPJ falhou'))
+    expect(falha?.[1]).toMatchObject({ cnpj: '55.111.222/0001-33', err: 'BrasilAPI CNPJ 429: Too Many Requests' })
+    const resumo = logCalls(infoSpy).find(([msg]) => msg === 'fiscal-fornecedores resumo')
+    expect(resumo?.[1]).toMatchObject({ puladosRede: 1, consultados: 0, findings: 0 })
   })
 })

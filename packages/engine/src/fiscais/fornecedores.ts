@@ -4,8 +4,16 @@ import { validateCNPJ as defaultValidateCNPJ } from '../skills/validate_cnpj'
 import { checkSanctions as defaultCheckSanctions } from '../skills/check_sanctions'
 import type { Finding, RiskFactor } from '../types'
 import type { Fiscal, AnalisarInput, FiscalContext } from './types'
+import { createLogger } from '../logger'
 
 const FISCAL_ID = 'fiscal-fornecedores'
+
+// Este fiscal produziu ZERO achados em toda a história de produção e não
+// tinha uma linha de log: quatro pontos de skip silencioso (extração sem CNPJ,
+// falha de rede na RFB, CNPJ não encontrado, CGU fora) engoliam tudo. O
+// resumo por gazette e os avisos abaixo existem para "por que é zero" ser
+// respondível pelo CloudWatch, não por arqueologia.
+const logger = createLogger(FISCAL_ID)
 
 // ── Limiares ─────────────────────────────────────────────────────────────────
 
@@ -149,6 +157,7 @@ export const fiscalFornecedores: Fiscal = {
     const now = context.now ? context.now() : new Date()
 
     const findings: Finding[] = []
+    const stats = { semCnpj: 0, cnpjs: 0, consultados: 0, puladosRede: 0, puladosNaoEncontrado: 0, sancoesFalhas: 0 }
 
     // Etapa 1 — Filtro regex (sem LLM): retém excerpts com indício de contratação
     const relevantExcerpts = gazette.excerpts.filter(
@@ -173,7 +182,11 @@ export const fiscalFornecedores: Fiscal = {
       const entities = extractResult.data
       const { cnpjs, values, secretaria } = entities
 
-      if (cnpjs.length === 0) continue
+      if (cnpjs.length === 0) {
+        stats.semCnpj++
+        continue
+      }
+      stats.cnpjs += cnpjs.length
 
       const valor = values[0]
 
@@ -187,17 +200,23 @@ export const fiscalFornecedores: Fiscal = {
 
         try {
           const cnpjResult = await validateFn({ cnpj })
+          stats.consultados++
           dataAbertura = cnpjResult.data.dataAbertura
           situacaoCadastral = cnpjResult.data.situacaoCadastral
           razaoSocial = cnpjResult.data.razaoSocial
-        } catch {
-          // Falha de rede: skip silencioso — não bloqueia análise
+        } catch (err) {
+          // Falha de rede/fonte: pula o CNPJ, não bloqueia a análise — mas
+          // agora deixa rastro. Era aqui que um 429 da BrasilAPI sumia.
+          stats.puladosRede++
+          logger.warn('validateCNPJ falhou — cnpj pulado', { cnpj, err: (err as Error)?.message ?? String(err) })
           continue
         }
 
-        // CNPJ não encontrado na Receita: skip silencioso (empresa pode estar em processo
+        // CNPJ não encontrado na Receita: pula (empresa pode estar em processo
         // de regularização ou houve erro de OCR no CNPJ)
         if (!dataAbertura || situacaoCadastral === 'nao_encontrado') {
+          stats.puladosNaoEncontrado++
+          logger.info('cnpj não encontrado na RFB — pulado', { cnpj, situacaoCadastral })
           continue
         }
 
@@ -243,8 +262,10 @@ export const fiscalFornecedores: Fiscal = {
             }
             findings.push(findingSanc)
           }
-        } catch {
-          // CGU offline: skip silencioso, não bloqueia análise
+        } catch (err) {
+          // CGU fora: não bloqueia a análise, mas fica registrado.
+          stats.sancoesFalhas++
+          logger.warn('checkSanctions falhou — sanção não verificada', { cnpj, err: (err as Error)?.message ?? String(err) })
         }
 
         // Etapa 4 — Calcular idade do CNPJ na data do ato (gazette.date)
@@ -371,6 +392,13 @@ export const fiscalFornecedores: Fiscal = {
         }
       }
     }
+
+    logger.info('fiscal-fornecedores resumo', {
+      gazetteId: gazette.id,
+      excerptsRelevantes: relevantExcerpts.length,
+      ...stats,
+      findings: findings.length,
+    })
 
     return findings
   },
