@@ -3,7 +3,7 @@ import { scoreRisk } from '../skills/score_risk'
 import { validateCNPJ as defaultValidateCNPJ } from '../skills/validate_cnpj'
 import { checkSanctions as defaultCheckSanctions } from '../skills/check_sanctions'
 import type { Finding, RiskFactor } from '../types'
-import type { Fiscal, AnalisarInput, FiscalContext } from './types'
+import type { Fiscal, AnalisarInput } from './types'
 import { createLogger } from '../logger'
 
 const FISCAL_ID = 'fiscal-fornecedores'

@@ -6,7 +6,6 @@ global.fetch = mockFetch
 
 const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
 
-const TODAY = new Date().toISOString().split('T')[0]
 const FUTURE_DATE = '2099-12-31'
 const PAST_DATE = '2020-01-01'
 
