@@ -75,6 +75,13 @@ export interface Gazette {
   excerpts: string[]
   edition?: string
   is_extra?: boolean
+  /**
+   * URL do texto integral extraído pelo Querido Diário (opcional — nem toda
+   * resposta traz). O collector usa para arquivar o texto em `raw/txt/` sem
+   * baixar e extrair o PDF de novo (#166, Fase 1). Consumidores antigos
+   * ignoram o campo.
+   */
+  txt_url?: string
 }
 
 export interface ExtractedEntities {

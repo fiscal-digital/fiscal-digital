@@ -88,6 +88,8 @@ interface QDGazette {
   excerpts: string[]
   edition?: string
   is_extra?: boolean
+  /** Texto integral extraído pelo QD (mesmo path do PDF, extensão .txt). */
+  txt_url?: string
 }
 
 interface QDResponse {
@@ -161,6 +163,9 @@ export const queryDiario: Skill<QueryDiarioInput, { gazettes: Gazette[]; total: 
       excerpts: g.excerpts,
       edition: g.edition,
       is_extra: g.is_extra,
+      // Omitido quando ausente (nunca null — LRN-20260502-019): a gazette
+      // vira item de DynamoDB no collector.
+      ...(g.txt_url && { txt_url: g.txt_url }),
     }))
 
     return {
