@@ -30,7 +30,6 @@ describe('RedditClient', () => {
   })
 
   afterEach(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (globalThis as any).fetch
   })
 

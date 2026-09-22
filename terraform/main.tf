@@ -1,23 +1,19 @@
 module "kms" {
-  source      = "./modules/kms"
-  environment = var.environment
+  source = "./modules/kms"
 }
 
 module "dynamodb" {
   source      = "./modules/dynamodb"
-  environment = var.environment
   kms_key_arn = module.kms.key_arn
 }
 
 module "sqs" {
   source      = "./modules/sqs"
-  environment = var.environment
   kms_key_arn = module.kms.key_arn
 }
 
 module "iam" {
   source               = "./modules/iam"
-  environment          = var.environment
   aws_region           = var.aws_region
   github_org           = var.github_org
   github_repo          = var.github_repo
@@ -34,7 +30,6 @@ module "iam" {
 
 module "lambdas" {
   source                = "./modules/lambdas"
-  environment           = var.environment
   analyzer_role_arn     = module.iam.analyzer_role_arn
   publisher_role_arn    = module.iam.publisher_role_arn
   api_role_arn          = module.iam.api_role_arn
@@ -52,7 +47,6 @@ module "lambdas" {
 
 module "eventbridge" {
   source           = "./modules/eventbridge"
-  environment      = var.environment
   costs_lambda_arn = module.lambdas.costs_arn
 }
 
@@ -73,8 +67,6 @@ module "web" {
 
 module "gazettes_cache" {
   source         = "./modules/gazettes-cache"
-  environment    = var.environment
-  aws_region     = var.aws_region
   hosted_zone_id = "Z0950975SSMZZW5DEN8A"
 }
 
