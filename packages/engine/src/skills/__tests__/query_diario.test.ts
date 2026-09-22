@@ -110,6 +110,34 @@ describe('queryDiario', () => {
     expect(result.data.gazettes[0].id).toBe('4305108#2026-03-15#1')
   })
 
+  it('txt_url: propagado quando o QD envia; OMITIDO (não null) quando ausente', async () => {
+    mockFetch.mockReturnValue(
+      makeQDResponse([
+        {
+          territory_id: '4305108',
+          date: '2026-03-15',
+          url: 'https://data.queridodiario.ok.org.br/4305108/2026-03-15/abc.pdf',
+          txt_url: 'https://data.queridodiario.ok.org.br/4305108/2026-03-15/abc.txt',
+          excerpts: ['Dispensa de licitação'],
+        },
+        {
+          territory_id: '4305108',
+          date: '2026-03-14',
+          url: 'https://data.queridodiario.ok.org.br/4305108/2026-03-14/def.pdf',
+          excerpts: ['Nomeação'],
+        },
+      ]),
+    )
+
+    const result = await queryDiario.execute({ territory_id: '4305108' })
+    const [com, sem] = result.data.gazettes
+
+    expect(com.txt_url).toBe('https://data.queridodiario.ok.org.br/4305108/2026-03-15/abc.txt')
+    expect(sem.txt_url).toBeUndefined()
+    // Omitido de verdade — a gazette vira item de DynamoDB (LRN-20260502-019: nunca null)
+    expect(Object.prototype.hasOwnProperty.call(sem, 'txt_url')).toBe(false)
+  })
+
   it('status 429 (rate limit): lança erro com status na mensagem', async () => {
     // Comportamento atual: qualquer status não-OK lança erro
     // Não há retry implementado na skill — o limiter é pré-chamada, não post-error

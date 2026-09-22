@@ -1,7 +1,20 @@
 import type { Skill, SkillResult } from '../types'
+import { createLogger } from '../logger'
+import { USER_AGENT } from '../utils/user_agent'
 
 const CGU_API = 'https://api.portaldatransparencia.gov.br/api-de-dados'
-const USER_AGENT = 'FiscalDigital/0.1.1 (+https://fiscaldigital.org)'
+const logger = createLogger('check_sanctions')
+
+// Em produção NINGUÉM passa `apiKey` (o contexto do fiscal nem tem o campo),
+// então esta skill devolve "não sancionado" para todo CNPJ sem chamar nada, e
+// `fornecedor_sancionado` é inalcançável. Era silêncio total. O aviso é uma
+// vez por container para não virar ruído por excerpt — mas existe.
+let avisouSemApiKey = false
+
+/** Reset do aviso — uso em tests apenas. */
+export function _resetCheckSanctionsWarnForTests(): void {
+  avisouSemApiKey = false
+}
 
 export interface CheckSanctionsInput {
   cnpj: string
@@ -27,6 +40,10 @@ export const checkSanctions: Skill<CheckSanctionsInput, SanctionResult> = {
 
   async execute(input: CheckSanctionsInput): Promise<SkillResult<SanctionResult>> {
     if (!input.apiKey) {
+      if (!avisouSemApiKey) {
+        avisouSemApiKey = true
+        logger.warn('checkSanctions sem apiKey — sanções CEIS/CNEP NÃO verificadas; fornecedor_sancionado inalcançável até haver chave do Portal da Transparência')
+      }
       return { data: { sanctioned: false, records: [] }, source: CGU_API, confidence: 0.0 }
     }
 

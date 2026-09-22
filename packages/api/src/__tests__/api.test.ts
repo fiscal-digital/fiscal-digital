@@ -31,11 +31,30 @@ jest.mock('@aws-sdk/lib-dynamodb', () => ({
   BatchGetCommand: jest.fn().mockImplementation((input: unknown) => ({ __type: 'BatchGet', input })),
 }))
 
+// SSM — o gate de publicação (engine/thresholds.ts) lê o SSM no primeiro uso.
+// Antes deste mock a suíte dependia de a chamada REAL falhar e cair nos
+// defaults (e num dev box com credenciais, batia no SSM de prod). Default:
+// nenhum parâmetro → defaults 60/0.70, nenhum fiscal desligado.
+const mockSsmSend = jest.fn()
+jest.mock('@aws-sdk/client-ssm', () => ({
+  SSMClient: jest.fn().mockImplementation(() => ({ send: (...args: unknown[]) => mockSsmSend(...args) })),
+  GetParametersCommand: jest.fn().mockImplementation((input: unknown) => ({ __type: 'GetParameters', input })),
+  GetParameterCommand: jest.fn().mockImplementation((input: unknown) => ({ __type: 'GetParameter', input })),
+}))
+
 // ---------------------------------------------------------------------------
 // Import handler AFTER mocks are set up
 // ---------------------------------------------------------------------------
 
 import { handler } from '../index'
+import { _resetThresholdsCacheForTests } from '@fiscal-digital/engine'
+
+/** Liga o interruptor para os fiscais dados (`'none'` = nenhum). */
+function disableFiscais(...ids: string[]): void {
+  mockSsmSend.mockResolvedValue({
+    Parameters: [{ Name: '/fiscal-digital/prod/publish-disabled-fiscais', Value: ids.length ? ids.join(',') : 'none' }],
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,6 +132,9 @@ function asResult(r: APIGatewayProxyResultV2): { statusCode: number; body: strin
 
 beforeEach(() => {
   jest.clearAllMocks()
+  // Cache com TTL do gate: reset para cada teste ver o próprio stub de SSM.
+  _resetThresholdsCacheForTests()
+  mockSsmSend.mockResolvedValue({ Parameters: [] })
 })
 
 describe('GET /health', () => {
@@ -795,5 +817,85 @@ describe('GET /alerts — índice em vez de Scan (#146)', () => {
     const indices = visto.filter(c => c.__type === 'Query').map(c => c.input?.IndexName)
     expect(indices).toContain('GSI1-city-date')
     expect(indices).not.toContain('GSI4-risk-published')
+  })
+})
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interruptor por fiscal (publish-disabled-fiscais) — some de todo caminho público
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('interruptor por fiscal (publish-disabled-fiscais)', () => {
+  type DdbCmd = { __type?: string; input?: { IndexName?: string; ProjectionExpression?: string; ExpressionAttributeValues?: Record<string, unknown> } }
+
+  const licitacoes = makeFinding()
+  const pessoal = makeFinding({
+    id: 'FINDING#fiscal-pessoal#4305108#pico_nomeacoes#4305108#2026-04-10#abc',
+    fiscalId: 'fiscal-pessoal',
+    type: 'pico_nomeacoes',
+    riskScore: 80,
+    confidence: 0.80,
+  })
+
+  it('/alerts esconde o fiscal desligado e continua consultando o GSI4', async () => {
+    disableFiscais('fiscal-pessoal')
+    const visto: DdbCmd[] = []
+    mockDdbSend.mockImplementation((cmd: DdbCmd) => {
+      visto.push(cmd)
+      return Promise.resolve({ Items: [licitacoes, pessoal] })
+    })
+
+    const res = asResult(await handler(makeEvent('/alerts')))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+
+    expect(body.total).toBe(1)
+    expect(body.items[0].fiscalId).toBe('fiscal-licitacoes')
+    expect(visto.find(c => c.__type === 'Query')?.input?.IndexName).toBe('GSI4-risk-published')
+  })
+
+  it('/alerts com `none` publica todos — o flip é reversível', async () => {
+    disableFiscais()
+    mockDdbSend.mockResolvedValue({ Items: [licitacoes, pessoal] })
+
+    const body = JSON.parse(asResult(await handler(makeEvent('/alerts'))).body)
+    expect(body.total).toBe(2)
+  })
+
+  it('/alerts/{slug} devolve 404 para fiscal desligado e 200 quando religado', async () => {
+    const slug = Buffer.from(pessoal.id as string).toString('base64url')
+    mockDdbSend.mockImplementation((cmd: DdbCmd) =>
+      Promise.resolve(cmd?.__type === 'Get' ? { Item: pessoal } : { Items: [] }),
+    )
+
+    disableFiscais('fiscal-pessoal')
+    const off = asResult(await handler(makeEvent(`/alerts/${slug}`)))
+    expect(off.statusCode).toBe(404)
+    expect(JSON.parse(off.body).error).toBe('finding_not_found')
+
+    _resetThresholdsCacheForTests()
+    disableFiscais()
+    const on = asResult(await handler(makeEvent(`/alerts/${slug}`)))
+    expect(on.statusCode).toBe(200)
+  })
+
+  it('/cities não conta o fiscal desligado e projeta os campos do gate', async () => {
+    disableFiscais('fiscal-pessoal')
+    const visto: DdbCmd[] = []
+    mockDdbSend.mockImplementation((cmd: DdbCmd & { input?: { RequestItems?: Record<string, unknown> } }) => {
+      visto.push(cmd)
+      if (cmd?.__type === 'BatchGet') {
+        return Promise.resolve({ Responses: { 'fiscal-digital-gazettes-prod': [] } })
+      }
+      const cityId = cmd.input?.ExpressionAttributeValues?.[':cid']
+      return Promise.resolve({ Items: cityId === '4305108' ? [licitacoes, pessoal] : [] })
+    })
+
+    const body = JSON.parse(asResult(await handler(makeEvent('/cities'))).body)
+    const caxias = body.find((c: { cityId: string }) => c.cityId === '4305108')
+    expect(caxias.findingsCount).toBe(1)
+
+    const q = visto.find(c => c.__type === 'Query' && c.input?.IndexName === 'GSI1-city-date')
+    expect(q?.input?.ProjectionExpression).toContain('fiscalId')
   })
 })
