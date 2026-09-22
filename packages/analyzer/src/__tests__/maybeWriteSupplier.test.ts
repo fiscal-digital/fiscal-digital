@@ -110,7 +110,9 @@ jest.mock('@fiscal-digital/engine', () => ({
   getPublishThresholds: jest.fn().mockResolvedValue({
     riskThreshold: 60,
     confidenceThreshold: 0.70,
+    disabledFiscais: [],
   }),
+  isPublishable: jest.requireActual('../../../engine/src/thresholds').isPublishable,
   isFeatureEnabled: mockIsFeatureEnabled,
   queryConcentracaoGSI2: jest.fn().mockResolvedValue([]),
 }))

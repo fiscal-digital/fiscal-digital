@@ -105,7 +105,12 @@ jest.mock('@fiscal-digital/engine', () => ({
   getPublishThresholds: jest.fn().mockResolvedValue({
     riskThreshold: 60,
     confidenceThreshold: 0.70,
+    disabledFiscais: [],
   }),
+  // isPublishable — o gate real, não um stub: se o handler mudar de gate, o
+  // teste acompanha. Faltar esta entrada num factory é TypeError engolido pelo
+  // Promise.allSettled do handler e o enqueue some em silêncio.
+  isPublishable: jest.requireActual('../../../engine/src/thresholds').isPublishable,
   // isFeatureEnabled — feature flags via SSM. Retorna false (default) em testes
   // para garantir que fiscalFornecedores (v1) seja sempre usado nos testes existentes.
   // Sem este mock, a chamada SSM falha por ausência de credenciais AWS no CI.
@@ -126,6 +131,7 @@ jest.mock('@fiscal-digital/engine', () => ({
 // ---------------------------------------------------------------------------
 
 import { handler, resolveExcerpts, assertBatchNotFullyFailed } from '../index'
+import { getPublishThresholds } from '@fiscal-digital/engine'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -278,6 +284,34 @@ test('finding com riskScore >= 60 e confidence >= 0.70 é enfileirado para publi
   const sent = JSON.parse((sendCommand as { MessageBody: string }).MessageBody) as Finding
   expect(sent.riskScore).toBe(75)
   expect(sent.type).toBe('dispensa_irregular')
+})
+
+// ---------------------------------------------------------------------------
+// Interruptor por fiscal (publish-disabled-fiscais): persiste, não enfileira
+// ---------------------------------------------------------------------------
+
+test('fiscal desligado no interruptor: finding é persistido mas NÃO enfileirado; os outros seguem', async () => {
+  const gpt = getPublishThresholds as jest.Mock
+  gpt.mockResolvedValue({ riskThreshold: 60, confidenceThreshold: 0.70, disabledFiscais: ['fiscal-licitacoes'] })
+  try {
+    mockAnalisarLicitacoes.mockResolvedValue([makeFinding({ riskScore: 90, confidence: 0.95 })])
+    mockAnalisarContratos.mockResolvedValue([
+      makeFinding({ fiscalId: 'fiscal-contratos', type: 'aditivo_abusivo', riskScore: 80, confidence: 0.85 }),
+    ])
+
+    await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
+
+    // Os dois foram gravados — o interruptor não apaga dado, só não publica.
+    expect(mockSaveMemoryExecute).toHaveBeenCalledTimes(2)
+    // Só o de contratos foi para a fila do publisher.
+    expect(mockSqsSend).toHaveBeenCalledTimes(1)
+    const [cmd] = mockSqsSend.mock.calls[0]
+    const sent = JSON.parse((cmd as { MessageBody: string }).MessageBody) as Finding
+    expect(sent.fiscalId).toBe('fiscal-contratos')
+    expect(sent.type).toBe('aditivo_abusivo')
+  } finally {
+    gpt.mockResolvedValue({ riskThreshold: 60, confidenceThreshold: 0.70, disabledFiscais: [] })
+  }
 })
 
 // ---------------------------------------------------------------------------
