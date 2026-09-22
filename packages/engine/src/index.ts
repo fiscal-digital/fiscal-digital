@@ -57,10 +57,14 @@ export { requireEnv } from './env'
 export { createLogger } from './logger'
 export {
   getPublishThresholds,
+  isPublishable,
+  parseDisabledFiscais,
   DEFAULT_PUBLISH_RISK_THRESHOLD,
   DEFAULT_PUBLISH_CONFIDENCE_THRESHOLD,
+  DISABLED_FISCAIS_NONE,
+  THRESHOLDS_CACHE_TTL_MS,
   _resetThresholdsCacheForTests,
 } from './thresholds'
-export type { PublishThresholds } from './thresholds'
+export type { PublishThresholds, PublishGateInput } from './thresholds'
 export { isFeatureEnabled, _resetFeatureFlagsCacheForTests } from './feature-flags'
 export { keywordWindows, FILTER_VERSION, FILTER_KEYWORDS } from './filter/keyword_windows'
