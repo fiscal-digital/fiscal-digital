@@ -24,6 +24,7 @@ import {
   requireEnv,
   createLogger,
   getPublishThresholds,
+  isPublishable,
   isFeatureEnabled,
   maybeWriteSupplier,
 } from '@fiscal-digital/engine'
@@ -479,13 +480,12 @@ async function processRecord(body: string): Promise<void> {
         logger.error('falha ao persistir finding', { type: finding.type, err })
       }
 
-      const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
+      const thresholds = await getPublishThresholds()
       // TEC-ANL-001: finding sem fonte estável não persiste nem publica —
       // "sempre citar a fonte" vale para o feed também.
-      const shouldPublish =
-        persisted &&
-        finding.riskScore >= riskThreshold &&
-        finding.confidence >= confidenceThreshold
+      // O gate (limiar de risco/confiança + interruptor por fiscal) vive em
+      // `isPublishable`, o mesmo que a API usa na leitura — um só lugar.
+      const shouldPublish = persisted && isPublishable(finding, thresholds)
 
       if (shouldPublish) {
         try {
@@ -500,7 +500,8 @@ async function processRecord(body: string): Promise<void> {
           logger.error('falha ao enfileirar finding', { type: finding.type, err })
         }
       } else {
-        logger.info('finding descartado (abaixo do limiar)', {
+        logger.info('finding descartado (abaixo do limiar ou fiscal desativado)', {
+          fiscalId: finding.fiscalId,
           type: finding.type,
           riskScore: finding.riskScore,
           confidence: finding.confidence,
@@ -543,11 +544,12 @@ async function processRecord(body: string): Promise<void> {
  * sem a flag o retorno é ignorado, por isso código e terraform mudam juntos.
  */
 export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
-  const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
+  const { riskThreshold, confidenceThreshold, disabledFiscais } = await getPublishThresholds()
   logger.info('iniciando', {
     records: event.Records.length,
     publishRiskThreshold: riskThreshold,
     publishConfidenceThreshold: confidenceThreshold,
+    publishDisabledFiscais: disabledFiscais,
   })
 
   const batchItemFailures: SQSBatchResponse['batchItemFailures'] = []

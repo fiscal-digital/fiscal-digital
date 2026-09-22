@@ -3,7 +3,7 @@ import { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand, QueryComma
 import { S3Client, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda'
 import crypto from 'node:crypto'
-import { CITIES, getCityOrFallback, pdfCacheUrl, pdfCacheS3Key, createLogger, getPublishThresholds, USER_AGENT } from '@fiscal-digital/engine'
+import { CITIES, getCityOrFallback, pdfCacheUrl, pdfCacheS3Key, createLogger, getPublishThresholds, isPublishable, USER_AGENT } from '@fiscal-digital/engine'
 import type { Finding } from '@fiscal-digital/engine'
 import { citationHeaders, corsPreflightHeaders, computeEtag, notModified } from './headers'
 import { OPENAPI_SPEC } from './openapi'
@@ -190,7 +190,8 @@ async function fetchFindings(filters: {
   // do GSI4 (#146) — o corte por risco passa a ser feito pelo DynamoDB, não
   // depois em memória. Mexer no SSM continua surtindo efeito imediato: o valor
   // vai na consulta, não no dado gravado.
-  const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
+  const thresholds = await getPublishThresholds()
+  const { riskThreshold } = thresholds
 
   let all: Finding[] = []
   if (cityIds && cityIds.length > 0) {
@@ -234,17 +235,14 @@ async function fetchFindings(filters: {
     } while (exclusiveStartKey)
   }
 
-  // Gate de publicação: thresholds dinâmicos via SSM (TEC-ENG-002), default 60/0.70.
-  // Findings que ficam abaixo desses thresholds não vão para feed/home/RSS —
-  // ficam apenas na tabela alerts-prod para auditoria interna.
-  //
-  // Brand gate exhausted: findings com `unpublishable: true` (ex: narrativas
-  // que travaram no glossary.json#avoid mesmo após 3× regeneração) ficam no
-  // DDB como audit trail mas não aparecem em feed público. Ver publisher
-  // markUnpublishable.
+  // Gate de publicação em um lugar só (`isPublishable`): limiar de risco e de
+  // confiança via SSM (TEC-ENG-002, default 60/0.70), `unpublishable` do brand
+  // gate do publisher, e o interruptor por fiscal (`publish-disabled-fiscais`).
+  // Finding de fiscal desligado continua no GSI4 com `published='true'` — a
+  // ocultação é só aqui, na leitura, e é o que torna o flip reversível sem
+  // tocar dado.
   const filtered = all
-    .filter(f => f.type && f.riskScore >= riskThreshold && (f.confidence ?? 0) >= confidenceThreshold)
-    .filter(f => !(f as Finding & { unpublishable?: boolean }).unpublishable)
+    .filter(f => isPublishable(f as Finding & { unpublishable?: boolean }, thresholds))
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
 
   // Search livre — feito em memória no servidor por simplicidade. Filtra
@@ -428,16 +426,21 @@ async function countFindingsByCity(cityId: string): Promise<{ count: number; las
   let count = 0
   let last: string | null = null
   let exclusiveStartKey: Record<string, unknown> | undefined
-  // Thresholds via SSM (TEC-ENG-002) — uma chamada cacheada por cold start.
-  const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
+  // Thresholds via SSM (TEC-ENG-002) — uma chamada cacheada (TTL 5 min).
+  const thresholds = await getPublishThresholds()
+  const { riskThreshold, confidenceThreshold } = thresholds
   do {
     const out: { Items?: unknown[]; LastEvaluatedKey?: Record<string, unknown> } = await ddb.send(new QueryCommand({
       TableName: ALERTS_TABLE,
       IndexName: 'GSI1-city-date',
       KeyConditionExpression: 'cityId = :cid',
-      // Aplicar gate na própria Query (FilterExpression) — items abaixo do gate
-      // não retornam, mas WCU é cobrado como se tivessem retornado. Aceito —
-      // ainda 70× menos dados que scan.
+      // Limiar de risco/confiança na própria Query (FilterExpression) — items
+      // abaixo do gate não retornam, mas RCU é cobrado como se tivessem
+      // retornado. Aceito — ainda 70× menos dados que scan. O resto do gate
+      // (`unpublishable`, interruptor por fiscal) é aplicado em memória com
+      // `isPublishable`, sobre os campos projetados: `NOT fiscalId IN (...)`
+      // dinâmico duplicaria o gate num segundo dialeto pelo mesmo custo, e o
+      // DynamoDB rejeita `IN ()` vazio.
       FilterExpression: '#type <> :empty AND riskScore >= :r AND confidence >= :c',
       ExpressionAttributeNames: { '#type': 'type' },
       ExpressionAttributeValues: {
@@ -446,13 +449,16 @@ async function countFindingsByCity(cityId: string): Promise<{ count: number; las
         ':r': riskThreshold,
         ':c': confidenceThreshold,
       },
-      ProjectionExpression: 'createdAt',
+      ProjectionExpression: 'createdAt, fiscalId, #type, riskScore, confidence, unpublishable',
       ScanIndexForward: false,
       ExclusiveStartKey: exclusiveStartKey,
     }))
-    const items = (out.Items ?? []) as Array<{ createdAt?: string }>
-    count += items.length
+    const items = (out.Items ?? []) as Array<{
+      createdAt?: string; fiscalId: string; type?: string; riskScore?: number; confidence?: number; unpublishable?: boolean
+    }>
     for (const it of items) {
+      if (!isPublishable(it, thresholds)) continue
+      count++
       const ts = it.createdAt
       if (ts && (!last || ts.localeCompare(last) > 0)) last = ts
     }
@@ -1195,10 +1201,9 @@ async function handleSupplier(
   // Publish gate — paridade com /alerts. Só findings com riskScore >= rt
   // e confidence >= ct entram na resposta pública. SSM TEC-ENG-002 dá
   // thresholds dinâmicos (default 60 / 0.70).
-  const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
+  const thresholds = await getPublishThresholds()
   const findings = allFindings
-    .filter(f => f.type && f.riskScore >= riskThreshold && (f.confidence ?? 0) >= confidenceThreshold)
-    .filter(f => !(f as Finding & { unpublishable?: boolean }).unpublishable)
+    .filter(f => isPublishable(f as Finding & { unpublishable?: boolean }, thresholds))
 
   // Sanitiza profile para o shape público — não vaza sk nem pk.
   const profile = profileItem
@@ -1371,8 +1376,10 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       }))
       const f = out.Item as Finding | undefined
       // Gate de publicação via SSM (TEC-ENG-002) — não expor findings abaixo do threshold via URL pública.
-      const { riskThreshold: rt, confidenceThreshold: ct } = await getPublishThresholds()
-      if (!f || !f.type || (f.riskScore ?? 0) < rt || (f.confidence ?? 0) < ct) {
+      // Passa a respeitar `unpublishable` e o interruptor por fiscal, como o
+      // feed — antes este caminho checava só os limiares.
+      const thresholds = await getPublishThresholds()
+      if (!f || !isPublishable(f as Finding & { unpublishable?: boolean }, thresholds)) {
         return { statusCode: 404, body: JSON.stringify({ error: 'finding_not_found' }), headers: { 'Content-Type': 'application/json' } }
       }
       const source = f.evidence?.[0]?.source
@@ -1474,7 +1481,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       // KPIs do site (Hero, StatsCounter) devem mostrar findings publicáveis,
       // não TODOS findings na tabela (que inclui rascunhos < gate).
       const findings = allFindings.filter(
-        f => f.type && f.riskScore >= thresholds.riskThreshold && (f.confidence ?? 0) >= thresholds.confidenceThreshold,
+        f => isPublishable(f as Finding & { unpublishable?: boolean }, thresholds),
       )
       const stats = buildStats(findings, gazettesCount)
       return ok(JSON.stringify(stats, null, 2), 'application/json; charset=UTF-8', 60, event)

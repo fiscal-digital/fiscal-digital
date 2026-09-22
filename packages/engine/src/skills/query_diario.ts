@@ -1,5 +1,6 @@
 import { RateLimiter } from '../utils/rate_limiter'
 import { USER_AGENT } from '../utils/user_agent'
+import { retryAfterMs, isRetryableStatus, sleep } from '../utils/retry'
 import type { Gazette, Skill, SkillResult } from '../types'
 
 // Host da API do Querido Diário. Em 2026-08 a OKFN migrou a API de
@@ -33,25 +34,12 @@ const limiter = new RateLimiter(60)
  * `Retry-After` e honrado quando vier (segundos ou HTTP-date), com teto para
  * nao segurar a Lambda ate o timeout. Sem o header, espera `backoffMs`.
  */
-const RETRYABLE_STATUS = new Set([429, 502, 503, 504, 520, 522, 524])
 const DEFAULT_MAX_RETRIES = 1
 const DEFAULT_RETRY_BACKOFF_MS = 3_000
-const MAX_RETRY_WAIT_MS = 30_000
 
-export function retryAfterMs(header: string | null | undefined, fallbackMs: number, now = Date.now()): number {
-  if (!header) return fallbackMs
-  const seconds = Number(header)
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, MAX_RETRY_WAIT_MS)
-  const at = Date.parse(header)
-  if (!Number.isNaN(at)) return Math.min(Math.max(0, at - now), MAX_RETRY_WAIT_MS)
-  return fallbackMs
-}
-
-export function isRetryableStatus(status: number): boolean {
-  return RETRYABLE_STATUS.has(status)
-}
-
-const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+// Logica de retentativa compartilhada com validate_cnpj (utils/retry.ts);
+// re-exportada aqui para os consumidores e testes que ja importavam deste modulo.
+export { retryAfterMs, isRetryableStatus } from '../utils/retry'
 
 /**
  * Janela de texto pedida ao Querido Diário por excerpt (#166).

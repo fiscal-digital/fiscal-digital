@@ -30,14 +30,14 @@
   - Reforma vs obra normal: classificação via `subtype` extraído pela Nova Lite
 
 ### 3. FiscalFornecedores — `fiscal-fornecedores`
-- **Status:** ✅ em prod, calibrado 2026-05-02 (threshold 12 meses + situação irregular + sancionado CGU)
-- **Detecta:**
-  - `cnpj_jovem`: empresa < 12 meses no momento do contrato
-  - `concentracao_fornecedor`: > 40% dos contratos de uma secretaria com mesmo CNPJ
-  - `cnpj_situacao_irregular`: situação cadastral suspensa/inapta/baixada/nula (RFB)
-  - `fornecedor_sancionado`: empresa em CEIS/CNEP da CGU
+- **Status:** ⚠️ em prod, **0 achados em toda a história** (avaliação do Ciclo 4, 2026-07-19: "manter V2 OFF"). Corrigido em 2026-09-20 (observabilidade + BrasilAPI resiliente); veredito só depois de medir.
+- **Detecta (estado real por tipo):**
+  - `cnpj_jovem`: empresa < 12 meses no momento do contrato — alcançável; provável zero por 429 da BrasilAPI caindo em skip silencioso (sem limitador/retry/log até 2026-09-20)
+  - `cnpj_situacao_irregular`: situação cadastral suspensa/inapta/baixada/nula (RFB) — idem
+  - `fornecedor_sancionado`: empresa em CEIS/CNEP da CGU — **inalcançável**: `checkSanctions` nunca recebe `apiKey` em produção (o contexto do fiscal nem tem o campo) e devolve "não sancionado" sem chamar nada. Precisa de chave do Portal da Transparência (`chave-api-dados`) via Secrets Manager + injeção no analyzer
+  - `concentracao_fornecedor`: > 40% por secretaria — v1 é heurística intra-excerpt; v2 (GSI2 em suppliers-prod) está atrás de `enable-fiscal-fornecedores-v2=false` e sem dado (#149 bloqueia o write-path)
 - **Base legal:** Lei 14.133/2021 Art. 14 + decretos CGU
-- **Skills:** validateCNPJ (BrasilAPI) + checkSanctions (CGU CEIS/CNEP)
+- **Skills:** validateCNPJ (BrasilAPI, 60/min + 1 retentativa + memo) + checkSanctions (CGU CEIS/CNEP, sem chave em prod)
 
 ### 4. FiscalPessoal — `fiscal-pessoal`
 - **Status:** ✅ em prod, calibrado 2026-05-02 (threshold per-gazette: 3+ atos em janela eleitoral, 7+ fora)
