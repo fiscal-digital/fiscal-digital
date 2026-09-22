@@ -133,13 +133,11 @@ async function fetchDailyCosts(startIso: string, endIso: string): Promise<DailyC
   for (const period of out.ResultsByTime ?? []) {
     const date = period.TimePeriod?.Start ?? ''
     const byService: DailyServiceCost[] = []
-    let totalUsd = 0
     for (const g of period.Groups ?? []) {
       const service = g.Keys?.[0] ?? 'Unknown'
       const usd = Number.parseFloat(g.Metrics?.UnblendedCost?.Amount ?? '0')
       if (Number.isFinite(usd) && usd > 0) {
         byService.push({ service, usd })
-        totalUsd += usd
       }
     }
     const correctedByService = applyRoute53Override(byService)

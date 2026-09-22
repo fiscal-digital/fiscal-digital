@@ -1,5 +1,5 @@
 import { scoreRisk } from '../skills/score_risk'
-import { cityBucket, populationOf, type CityBucket } from '../cities/populations'
+import { cityBucket, type CityBucket } from '../cities/populations'
 import { invokeModel, NARRATIVE_MODEL } from '../utils/bedrock'
 import { trimTrailingPunct } from '../utils/text'
 import { getCityOrFallback } from '../cities'
