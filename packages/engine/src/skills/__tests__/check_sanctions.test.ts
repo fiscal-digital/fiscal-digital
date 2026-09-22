@@ -1,14 +1,17 @@
-import { checkSanctions } from '../check_sanctions'
+import { Logger } from '@aws-lambda-powertools/logger'
+import { checkSanctions, _resetCheckSanctionsWarnForTests } from '../check_sanctions'
 
 const mockFetch = jest.fn()
 global.fetch = mockFetch
 
-const TODAY = new Date().toISOString().split('T')[0]
+const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+
 const FUTURE_DATE = '2099-12-31'
 const PAST_DATE = '2020-01-01'
 
 beforeEach(() => {
   jest.clearAllMocks()
+  _resetCheckSanctionsWarnForTests()
 })
 
 function makeJsonResponse(data: object, ok = true, status = 200) {
@@ -27,6 +30,16 @@ describe('checkSanctions', () => {
     expect(result.data.sanctioned).toBe(false)
     expect(result.confidence).toBe(0.0)
     expect(result.data.records).toHaveLength(0)
+  })
+
+  it('apiKey ausente: avisa UMA vez por container (não por CNPJ) que sanções não são verificadas', async () => {
+    await checkSanctions.execute({ cnpj: '12.345.678/0001-90' })
+    await checkSanctions.execute({ cnpj: '98.765.432/0001-00' })
+    await checkSanctions.execute({ cnpj: '11.222.333/0001-44' })
+
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(String(warnSpy.mock.calls[0][0])).toContain('sem apiKey')
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 
   it('registros CEIS ativos (sem endDate) resultam em sanctioned true', async () => {
