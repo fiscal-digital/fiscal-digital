@@ -1,7 +1,3 @@
-variable "environment" {
-  type = string
-}
-
 variable "analyzer_role_arn" {
   type = string
 }

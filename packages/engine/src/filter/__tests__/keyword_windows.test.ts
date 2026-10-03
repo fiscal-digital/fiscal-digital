@@ -5,7 +5,7 @@ describe('keywordWindows', () => {
     const pre = 'x'.repeat(500)
     const post = 'y'.repeat(500)
     const text = `${pre}dispensa de licitação${post}`
-    const { windows, hits, truncated } = keywordWindows(text, { radius: 100 })
+    const { windows, hits } = keywordWindows(text, { radius: 100 })
 
     expect(hits).toBe(2) // "dispensa de licitação" contém também "licitação"
     expect(windows).toHaveLength(1) // sobrepostas → merge em uma
