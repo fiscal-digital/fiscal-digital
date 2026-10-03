@@ -10,4 +10,4 @@
  * (`user_agent.test.ts`), nao por leitura em runtime: `package.json` fica
  * fora do `rootDir` do tsc e nao entra no bundle.
  */
-export const USER_AGENT = 'FiscalDigital/0.1.4 (+https://fiscaldigital.org)'
+export const USER_AGENT = 'FiscalDigital/0.1.5 (+https://fiscaldigital.org)'

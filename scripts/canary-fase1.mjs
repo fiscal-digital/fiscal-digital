@@ -15,11 +15,20 @@
 // Uso:
 //   node scripts/canary-fase1.mjs --city=4305108 --since=2025-01-01 --until=2025-07-21
 //   node scripts/canary-fase1.mjs --city=4305108 --since=2025-01-01 --until=2025-02-01 --max=20
+//   node scripts/canary-fase1.mjs --city=4305108 --since=2025-01-01 --until=2025-07-21 \
+//        --dump=/tmp/fase1-caxias-2025.json
+//
+// --dump=<path>: grava os achados PUBLICÁVEIS do braço B no schema do golden
+// set (fiscal-digital-evaluations/golden-set/samples.json), com `label: null`,
+// para revisão humana via `label-cli.mjs --file=<path>`. É o portão da Fase 2
+// (#166): ligar as janelas no analyzer só depois de saber a precisão dos 34.
 
 process.on('unhandledRejection', (err) => {
   console.error(`[unhandledRejection] ${err?.message?.slice(0, 300) ?? err}`)
 })
 
+import { writeFileSync, mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, ScanCommand, QueryCommand } from '@aws-sdk/lib-dynamodb'
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
@@ -136,6 +145,7 @@ async function main() {
   const since = args.find((a) => a.startsWith('--since='))?.slice(8) ?? '2025-01-01'
   const until = args.find((a) => a.startsWith('--until='))?.slice(8) ?? '2025-07-21'
   const max = Number(args.find((a) => a.startsWith('--max='))?.slice(6) ?? Infinity)
+  const dumpPath = args.find((a) => a.startsWith('--dump='))?.slice(7)
 
   const { riskThreshold, confidenceThreshold } = await getPublishThresholds()
   console.log(`CANARIO FASE 1 — filterVersion=${FILTER_VERSION} city=${cityId} ${since}..${until}`)
@@ -164,6 +174,7 @@ async function main() {
   }
 
   const B = []
+  const dumpRows = []
   const datasB = new Set()
   let nB = 0
   let semJanela = 0
@@ -183,7 +194,9 @@ async function main() {
       url: e.urlOriginal || `s3://${BUCKET}/${e.s3Key}`,
       excerpts: windows,
     }
-    B.push(...await runFiscais(gazette, cityId))
+    const found = await runFiscais(gazette, cityId)
+    B.push(...found)
+    for (const f of found) dumpRows.push({ f, gazette, s3Key: e.s3Key, windows: windows.length })
     if (nB % 25 === 0) process.stderr.write(`B:${nB} `)
   }
   process.stderr.write('\n')
@@ -206,6 +219,65 @@ async function main() {
   const tB = tally(B)
   for (const k of [...new Set([...Object.keys(tA), ...Object.keys(tB)])].sort()) {
     console.log(`  ${k.padEnd(46)} ${String(tA[k] ?? 0).padStart(4)} → ${String(tB[k] ?? 0).padStart(4)}`)
+  }
+
+  if (dumpPath) {
+    const generatedAt = new Date().toISOString()
+    const publicaveis = dumpRows.filter(({ f }) => gate(f))
+    const samples = publicaveis.map(({ f, gazette, s3Key, windows }, i) => ({
+      id: `F1-${cityId}-${String(i + 1).padStart(3, '0')}`,
+      fiscalId: f.fiscalId,
+      cityId: f.cityId ?? cityId,
+      type: f.type,
+      riskScore: f.riskScore,
+      confidence: f.confidence,
+      // Dry-run estrito: Haiku não é chamado. O revisor rotula pela evidência.
+      narrative: null,
+      legalBasis: f.legalBasis ?? null,
+      ...(f.cnpj && { cnpj: f.cnpj }),
+      ...(f.secretaria && { secretaria: f.secretaria }),
+      ...(f.value != null && { value: f.value }),
+      ...(f.contractNumber && { contractNumber: f.contractNumber }),
+      evidence: (f.evidence ?? []).map((ev) => ({
+        excerpt: ev.excerpt,
+        date: ev.date ?? gazette.date,
+        source: ev.source ?? gazette.url,
+      })),
+      sourceFindingId: null,
+      createdAt: f.createdAt ?? generatedAt,
+      label: null,
+      labeledBy: null,
+      labeledAt: null,
+      rationale: null,
+      rootCause: null,
+      schemaVersion: 1,
+      canary: {
+        arm: 'B',
+        gazetteId: gazette.id,
+        gazetteDate: gazette.date,
+        rawS3Key: s3Key,
+        windowsInGazette: windows,
+        dateSeenByA: datasA.has(gazette.date),
+      },
+    }))
+    const doc = {
+      schemaVersion: 1,
+      generatedAt,
+      description: `Candidatos NÃO rotulados do canário da Fase 1 (#166/#179): braço B = fiscais sobre keywordWindows(texto integral da camada raw), cidade ${cityId}, ${since}..${until}. ${samples.length} achados publicáveis (risk>=${riskThreshold}, conf>=${confidenceThreshold}) de ${B.length} findings em ${nB} diários. Rotular com label-cli.mjs --file=<este arquivo>. Narrativa ausente por desenho (dry-run sem Haiku).`,
+      provenance: {
+        script: 'fiscal-digital/scripts/canary-fase1.mjs',
+        filterVersion: FILTER_VERSION,
+        cityId, since, until,
+        gate: { riskThreshold, confidenceThreshold },
+        armA: { gazettes: nA, findings: A.length, publishable: A.filter(gate).length, dates: datasA.size },
+        armB: { gazettes: nB, findings: B.length, publishable: samples.length, dates: datasB.size, semJanela, truncados },
+        datesOnlyInB: soB.length,
+      },
+      samples,
+    }
+    mkdirSync(dirname(dumpPath), { recursive: true })
+    writeFileSync(dumpPath, JSON.stringify(doc, null, 2) + '\n')
+    console.log(`\ndump: ${samples.length} candidatos publicáveis do braço B → ${dumpPath}`)
   }
 }
 
