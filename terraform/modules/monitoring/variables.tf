@@ -23,3 +23,8 @@ variable "kms_key_arn" {
   description = "CMK for SNS topic encryption (CKV_AWS_26)"
   type        = string
 }
+
+variable "alerts_queue_name" {
+  description = "Name of the publishable alerts queue (silence alarm)"
+  type        = string
+}

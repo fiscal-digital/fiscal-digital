@@ -31,7 +31,6 @@ import {
 import type {
   CollectorMessage,
   Finding,
-  FiscalContext,
   FiscalContextV2,
   Gazette,
 } from '@fiscal-digital/engine'
@@ -104,7 +103,7 @@ async function markFiscalProcessed(gazetteId: string, fiscalIds: string[]): Prom
       ExpressionAttributeNames: exprNames,
       ExpressionAttributeValues: { ':ts': now },
     }))
-  } catch (err) {
+  } catch {
     // Não-bloqueante: se gazette não existe (smoke test) ou processedBy ainda não foi inicializado,
     // tenta com SET processedBy = if_not_exists()
     try {

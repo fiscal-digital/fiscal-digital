@@ -5,7 +5,7 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 import crypto from 'node:crypto'
 import { CITIES, getCityOrFallback, pdfCacheUrl, pdfCacheS3Key, createLogger, getPublishThresholds, isPublishable, USER_AGENT } from '@fiscal-digital/engine'
 import type { Finding } from '@fiscal-digital/engine'
-import { citationHeaders, corsPreflightHeaders, computeEtag, notModified } from './headers'
+import { citationHeaders, corsPreflightHeaders, notModified } from './headers'
 import { OPENAPI_SPEC } from './openapi'
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' })
