@@ -99,6 +99,30 @@ resource "aws_cloudwatch_metric_alarm" "gazettes_collect_stalled" {
   }
 }
 
+# Silêncio do produto: o analyzer só enfileira em fiscal-digital-queue-prod o
+# achado que passa no portão `isPublishable`. Sete dias sem nenhuma mensagem
+# enviada = nenhum alerta publicável novo. Entre 31/07 e 02/10/2026 o pipeline
+# rodou verde, sem erro, e não publicou nada por dois meses sem ninguém saber.
+# Erro tem alarme; silêncio não tinha.
+resource "aws_cloudwatch_metric_alarm" "alerts_publishable_silent" {
+  alarm_name          = "fiscal-digital-alerts-publishable-silent-prod"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = 7
+  metric_name         = "NumberOfMessagesSent"
+  namespace           = "AWS/SQS"
+  period              = 86400
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Nenhum alerta publicável há 7 dias — analyzer roda mas nada passa o portão (confidence/risk) ou nada chega para análise. Ver /stats lastFindingAt."
+  alarm_actions       = [aws_sns_topic.ops_alerts.arn]
+  ok_actions          = [aws_sns_topic.ops_alerts.arn]
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    QueueName = var.alerts_queue_name
+  }
+}
+
 # ── CloudWatch Alarms — Lambda errors ─────────────────────────────────────────
 
 resource "aws_cloudwatch_metric_alarm" "analyzer_errors" {

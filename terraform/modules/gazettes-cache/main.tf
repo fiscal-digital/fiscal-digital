@@ -1,4 +1,3 @@
-data "aws_caller_identity" "current" {}
 
 # ─── S3 bucket (origem privada para CloudFront) ──────────────────────────────
 
