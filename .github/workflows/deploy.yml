@@ -6,6 +6,11 @@ on:
   # pending/0-jobs (wedge do GitHub, 2026-07-21); sem dispatch manual a única
   # saída era empurrar commit novo na main.
   workflow_dispatch:
+    inputs:
+      allow_rollback:
+        description: "Implantar um commit que NÃO é o topo da main (rollback intencional, #214)"
+        type: boolean
+        default: false
   push:
     branches: [main]
     # Commits sem artefato deployavel nao disparam pipeline (incidente
@@ -31,7 +36,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # #214: falha ANTES do pedido de aprovação se o commit não for o topo da
+  # main. Re-run de run antigo cai aqui e não chega a pedir aprovação.
+  guard-main-tip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Commit é o topo da main?
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALLOW_ROLLBACK: ${{ inputs.allow_rollback || false }}
+        run: .github/scripts/guard-main-tip.sh
+
   deploy:
+    needs: guard-main-tip
     runs-on: ubuntu-latest
     # Deploy em prod exige approval manual (environment criado 2026-07-19,
     # item 1 do briefing pos-P0 de junho). Aprovar na aba Actions do run.
@@ -127,6 +146,15 @@ jobs:
             exit 1
           fi
           echo "Plan sem destroys criticos — OK"
+
+      # #214, segunda checagem: a aprovação pode chegar horas depois e um
+      # commit mais novo pode ter entrado na main enquanto este run esperava.
+      - name: Commit ainda é o topo da main? (#214)
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALLOW_ROLLBACK: ${{ inputs.allow_rollback || false }}
+        run: .github/scripts/guard-main-tip.sh
 
       - name: Terraform Apply
         working-directory: terraform
