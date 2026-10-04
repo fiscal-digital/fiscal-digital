@@ -15,13 +15,13 @@ const SITE_URL = 'https://fiscaldigital.org'
 const LICENSE_URL = 'https://creativecommons.org/licenses/by/4.0/'
 
 /**
- * Calcula ETag estável (strong, sha1 truncado em 16 chars) a partir do body
+ * Calcula ETag estável (strong, sha256 truncado em 16 chars) a partir do body
  * já serializado. Não inclui timestamp ou outras fontes voláteis — o objetivo
  * é que duas respostas idênticas em conteúdo retornem o mesmo ETag e
  * habilitem 304 Not Modified.
  */
 export function computeEtag(body: string): string {
-  const hash = crypto.createHash('sha1').update(body).digest('hex').slice(0, 16)
+  const hash = crypto.createHash('sha256').update(body).digest('hex').slice(0, 16)
   return `"${hash}"`
 }
 

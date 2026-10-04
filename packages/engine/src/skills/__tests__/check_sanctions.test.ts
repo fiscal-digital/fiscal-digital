@@ -46,7 +46,7 @@ describe('checkSanctions', () => {
     mockFetch
       .mockReturnValueOnce(
         makeJsonResponse([
-          { tipoSancao: 'Impedimento de Licitar', dataInicioSancao: '2023-01-01', dataFimSancao: undefined, orgaoSancionador: 'TCE-RS' },
+          { sancionado: { codigoFormatado: '12.345.678/0001-90' }, tipoSancao: 'Impedimento de Licitar', dataInicioSancao: '2023-01-01', dataFimSancao: undefined, orgaoSancionador: 'TCE-RS' },
         ]),
       )
       .mockReturnValueOnce(makeJsonResponse([]))
@@ -66,7 +66,7 @@ describe('checkSanctions', () => {
     mockFetch
       .mockReturnValueOnce(
         makeJsonResponse([
-          { tipoSancao: 'Suspensão', dataInicioSancao: '2024-01-01', dataFimSancao: FUTURE_DATE, orgaoSancionador: 'CGU' },
+          { sancionado: { codigoFormatado: '12.345.678/0001-90' }, tipoSancao: 'Suspensão', dataInicioSancao: '2024-01-01', dataFimSancao: FUTURE_DATE, orgaoSancionador: 'CGU' },
         ]),
       )
       .mockReturnValueOnce(makeJsonResponse([]))
@@ -83,7 +83,7 @@ describe('checkSanctions', () => {
     mockFetch
       .mockReturnValueOnce(
         makeJsonResponse([
-          { tipoSancao: 'Multa', dataInicioSancao: '2019-01-01', dataFimSancao: PAST_DATE, orgaoSancionador: 'CGU' },
+          { sancionado: { codigoFormatado: '12.345.678/0001-90' }, tipoSancao: 'Multa', dataInicioSancao: '2019-01-01', dataFimSancao: PAST_DATE, orgaoSancionador: 'CGU' },
         ]),
       )
       .mockReturnValueOnce(makeJsonResponse([]))
@@ -103,7 +103,7 @@ describe('checkSanctions', () => {
       .mockReturnValueOnce(Promise.reject(new Error('CEIS timeout')))
       .mockReturnValueOnce(
         makeJsonResponse([
-          { tipoSancao: 'Inabilitação', dataInicioSancao: '2024-06-01', dataFimSancao: FUTURE_DATE, orgaoSancionador: 'TCU' },
+          { sancionado: { codigoFormatado: '12.345.678/0001-90' }, tipoSancao: 'Inabilitação', dataInicioSancao: '2024-06-01', dataFimSancao: FUTURE_DATE, orgaoSancionador: 'TCU' },
         ]),
       )
 
@@ -153,7 +153,52 @@ describe('checkSanctions', () => {
 
     const ceisUrl: string = mockFetch.mock.calls[0][0]
     const cnepUrl: string = mockFetch.mock.calls[1][0]
-    expect(ceisUrl).toContain('cnpjSancionado=1234ABCD000116')
-    expect(cnepUrl).toContain('cnpjSancionado=1234ABCD000116')
+    expect(ceisUrl).toContain('codigoSancionado=1234ABCD000116')
+    expect(cnepUrl).toContain('codigoSancionado=1234ABCD000116')
+  })
+
+  // Regressão fiscal-digital#243 (03/10/2026): a API do Portal ignorava
+  // `cnpjSancionado` e devolvia a primeira página do cadastro inteiro — todo
+  // CNPJ consultado virava "sancionado".
+  it('#243: usa codigoSancionado, não cnpjSancionado', async () => {
+    mockFetch.mockReturnValueOnce(makeJsonResponse([])).mockReturnValueOnce(makeJsonResponse([]))
+    await checkSanctions.execute({ cnpj: '12.345.678/0001-90', apiKey: 'k' })
+    expect(String(mockFetch.mock.calls[0][0])).toContain('/ceis?codigoSancionado=12345678000190&')
+    expect(String(mockFetch.mock.calls[1][0])).toContain('/cnep?codigoSancionado=12345678000190&')
+    expect(String(mockFetch.mock.calls[0][0])).not.toContain('cnpjSancionado')
+  })
+
+  it('#243: página do cadastro inteiro (sancionados de terceiros) → sanctioned false, zero records', async () => {
+    const pagina = [
+      { sancionado: { nome: 'ELZA', codigoFormatado: '974.243.236-87' }, tipoSancao: { descricaoResumida: 'Improbidade' }, dataFimSancao: FUTURE_DATE },
+      { sancionado: { nome: 'OUTRA LTDA', codigoFormatado: '72.810.211/0001-09' }, tipoSancao: { descricaoResumida: 'Impedimento' }, dataFimSancao: FUTURE_DATE },
+      { tipoSancao: 'Registro sem sancionado', dataFimSancao: FUTURE_DATE },
+    ]
+    mockFetch.mockReturnValueOnce(makeJsonResponse(pagina)).mockReturnValueOnce(makeJsonResponse(pagina))
+    const result = await checkSanctions.execute({ cnpj: '56.220.963/0001-55', apiKey: 'k' })
+    expect(result.data.sanctioned).toBe(false)
+    expect(result.data.records).toHaveLength(0)
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('OUTRO sancionado'), expect.objectContaining({ descartados: 6 }))
+  })
+
+  it('#243: registro do próprio CNPJ com campos em objeto (shape atual da API) é aceito e normalizado', async () => {
+    mockFetch
+      .mockReturnValueOnce(makeJsonResponse([{
+        sancionado: { nome: 'EMPRESA X', codigoFormatado: '72.810.211/0001-09' },
+        tipoSancao: { descricaoResumida: 'Impedimento/proibição de contratar com prazo determinado' },
+        orgaoSancionador: { nome: 'PROCURADORIA GERAL DO ESTADO', siglaUf: 'SP' },
+        dataInicioSancao: '2026-04-10',
+        dataFimSancao: FUTURE_DATE,
+      }]))
+      .mockReturnValueOnce(makeJsonResponse([]))
+    const result = await checkSanctions.execute({ cnpj: '72810211000109', apiKey: 'k' })
+    expect(result.data.sanctioned).toBe(true)
+    expect(result.data.records).toEqual([{
+      type: 'CEIS',
+      sanction: 'Impedimento/proibição de contratar com prazo determinado',
+      organ: 'PROCURADORIA GERAL DO ESTADO',
+      startDate: '2026-04-10',
+      endDate: FUTURE_DATE,
+    }])
   })
 })

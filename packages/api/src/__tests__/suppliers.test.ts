@@ -116,6 +116,7 @@ interface MockCmd {
     IndexName?: string
     Key?: { pk?: string; sk?: string }
     KeyConditionExpression?: string
+    FilterExpression?: string
     ExpressionAttributeValues?: Record<string, unknown>
   }
 }
@@ -435,5 +436,62 @@ describe('GET /suppliers/{cnpj} — OpenAPI spec', () => {
     expect(spec.components.schemas.SupplierProfile).toBeDefined()
     expect(spec.components.schemas.SupplierContract).toBeDefined()
     expect(spec.components.schemas.SupplierFinding).toBeDefined()
+  })
+})
+
+
+// Regressão fiscal-digital#243: a Query de contratos usava `sk` (chave primária)
+// em FilterExpression. O DynamoDB rejeita com ValidationException e TODO
+// GET /suppliers/{cnpj} em prod respondia 500.
+describe('GET /suppliers/{cnpj} — #243 Query sem FilterExpression em chave primária', () => {
+  it('não usa FilterExpression na Query de contratos e descarta o PROFILE em memória', async () => {
+    const cnpj14 = '12345678000199'
+    mockDdbSend.mockImplementation((cmd: MockCmd) => {
+      if (cmd.__type === 'Get') return Promise.resolve({ Item: { pk: `SUPPLIER#${cnpj14}`, sk: 'PROFILE', razaoSocial: 'X' } })
+      if (cmd.__type === 'Query' && cmd.input?.TableName === 'fiscal-digital-suppliers-prod') {
+        expect(cmd.input?.FilterExpression).toBeUndefined()
+        // Sem o filtro, a Query também devolve o PROFILE
+        return Promise.resolve({ Items: [
+          { pk: `SUPPLIER#${cnpj14}`, sk: 'PROFILE', razaoSocial: 'X' },
+          { pk: `SUPPLIER#${cnpj14}`, sk: '2026-04-15#CT-001', cnpj: cnpj14, cityId: '4305108', contractNumber: 'CT-001', valueAmount: 100 },
+        ] })
+      }
+      return Promise.resolve({ Items: [] })
+    })
+    const res = asResult(await handler(makeEvent(`/suppliers/${cnpj14}`)))
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.contracts).toHaveLength(1)
+    expect(body.contracts[0].contractNumber).toBe('CT-001')
+    expect(body.stats.totalContracts).toBe(1)
+  })
+
+  it('#243: sanções coletadas com cnpjSancionado (parâmetro ignorado pela API) NÃO são expostas', async () => {
+    const cnpj14 = '12345678000199'
+    const sancoesDeTerceiros = Array.from({ length: 30 }, (_, i) => ({ type: 'CEIS', sanction: `Impedimento ${i}` }))
+    mockDdbSend.mockImplementation((cmd: MockCmd) => {
+      if (cmd.__type === 'Get') return Promise.resolve({ Item: {
+        pk: `SUPPLIER#${cnpj14}`, sk: 'PROFILE', razaoSocial: 'X', cguEnabled: true,
+        cguSourceUrl: 'https://api.portaldatransparencia.gov.br/api-de-dados/ceis?cnpjSancionado=12345678000199&pagina=1,...',
+        sancoes: sancoesDeTerceiros,
+      } })
+      return Promise.resolve({ Items: [] })
+    })
+    const body = JSON.parse(asResult(await handler(makeEvent(`/suppliers/${cnpj14}`))).body)
+    expect(body.profile.sancoes).toEqual([])
+  })
+
+  it('#243: sanções coletadas com codigoSancionado são expostas', async () => {
+    const cnpj14 = '12345678000199'
+    mockDdbSend.mockImplementation((cmd: MockCmd) => {
+      if (cmd.__type === 'Get') return Promise.resolve({ Item: {
+        pk: `SUPPLIER#${cnpj14}`, sk: 'PROFILE', razaoSocial: 'X', cguEnabled: true,
+        cguSourceUrl: 'https://api.portaldatransparencia.gov.br/api-de-dados/ceis?codigoSancionado=12345678000199&pagina=1,...',
+        sancoes: [{ type: 'CEIS', sanction: 'Impedimento' }],
+      } })
+      return Promise.resolve({ Items: [] })
+    })
+    const body = JSON.parse(asResult(await handler(makeEvent(`/suppliers/${cnpj14}`))).body)
+    expect(body.profile.sancoes).toHaveLength(1)
   })
 })
