@@ -1112,9 +1112,22 @@ interface SupplierProfileItem {
   sancoes?: Array<{ tipo?: string; descricao?: string; orgao?: string; dataInicio?: string; dataFim?: string }>
   rfbCapturedAt?: string
   cguCapturedAt?: string
+  cguSourceUrl?: string
   cguEnabled?: boolean
   lastLookupAt?: string
   rfbStatus?: string
+}
+
+/**
+ * Sanções só são expostas se foram coletadas com `codigoSancionado` (#243).
+ * O collector grava em `cguSourceUrl` as URLs consultadas; o que foi gravado
+ * com `cnpjSancionado` é a primeira página do cadastro inteiro — 30 sanções
+ * de terceiros por fornecedor — e nunca pode chegar ao público, mesmo que a
+ * tabela ainda não tenha sido limpa.
+ */
+export function trustedSancoes(profile: Pick<SupplierProfileItem, 'sancoes' | 'cguSourceUrl'>): NonNullable<SupplierProfileItem['sancoes']> {
+  if (!profile.sancoes?.length) return []
+  return profile.cguSourceUrl?.includes('codigoSancionado=') ? profile.sancoes : []
 }
 
 interface SupplierContractItem {
@@ -1173,16 +1186,15 @@ async function handleSupplier(
       TableName: SUPPLIERS_TABLE,
       Key: { pk, sk: 'PROFILE' },
     })),
+    // Sem FilterExpression em `sk`: é chave primária, e o DynamoDB rejeita com
+    // ValidationException — era o 500 de todo GET /suppliers/{cnpj} em prod
+    // (#243). O PROFILE é descartado em memória logo abaixo.
     ddb.send(new QueryCommand({
       TableName: SUPPLIERS_TABLE,
       KeyConditionExpression: 'pk = :pk',
-      FilterExpression: 'sk <> :profileSk',
-      ExpressionAttributeValues: {
-        ':pk': pk,
-        ':profileSk': 'PROFILE',
-      },
+      ExpressionAttributeValues: { ':pk': pk },
       ScanIndexForward: false,
-      Limit: 100,
+      Limit: 101,
     })),
     ddb.send(new QueryCommand({
       TableName: ALERTS_TABLE,
@@ -1195,7 +1207,7 @@ async function handleSupplier(
   ])
 
   const profileItem = profileOut.Item as SupplierProfileItem | undefined
-  const contractItems = (contractsOut.Items ?? []) as SupplierContractItem[]
+  const contractItems = ((contractsOut.Items ?? []) as SupplierContractItem[]).filter(i => i.sk !== 'PROFILE')
   const allFindings = (findingsOut.Items ?? []) as Finding[]
 
   // Publish gate — paridade com /alerts. Só findings com riskScore >= rt
@@ -1212,7 +1224,7 @@ async function handleSupplier(
       situacaoCadastral: profileItem.situacaoCadastral ?? null,
       dataAbertura: profileItem.dataAbertura ?? null,
       socios: profileItem.socios ?? [],
-      sancoes: profileItem.sancoes ?? [],
+      sancoes: trustedSancoes(profileItem),
       rfbCapturedAt: profileItem.rfbCapturedAt ?? null,
       cguCapturedAt: profileItem.cguCapturedAt ?? null,
       cguEnabled: profileItem.cguEnabled ?? null,
