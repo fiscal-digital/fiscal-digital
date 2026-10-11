@@ -1,6 +1,41 @@
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager'
 import { createLogger, getCity, type Finding } from '@fiscal-digital/engine'
 
 const logger = createLogger('web-revalidate')
+const secretsClient = new SecretsManagerClient({})
+
+// Locales do site — espelha `fiscal-digital-web/i18n/routing.ts`. Desde o
+// web#81, `/pt` e `/en` são só redirects 308: revalidar esses paths não
+// purgava página nenhuma.
+export const WEB_LOCALES = ['pt-br', 'en-us'] as const
+
+// Token lido do Secrets Manager pelo ARN (fiscal-digital#240) — o valor não
+// fica mais na env da Lambda. Cache por container; null = já tentou e falhou.
+let cachedSecret: string | null | undefined
+
+async function loadRevalidateSecret(): Promise<string | null> {
+  if (cachedSecret !== undefined) return cachedSecret
+  const arn = process.env.WEB_REVALIDATE_SECRET_ARN
+  if (!arn) {
+    cachedSecret = null
+    return null
+  }
+  try {
+    const res = await secretsClient.send(new GetSecretValueCommand({ SecretId: arn }))
+    cachedSecret = res.SecretString || null
+  } catch (err) {
+    logger.warn('falha ao ler o token de revalidate', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+    cachedSecret = null
+  }
+  return cachedSecret
+}
+
+/** @internal — testes */
+export function _resetRevalidateSecretForTests(): void {
+  cachedSecret = undefined
+}
 
 const WEB_BASE_URL = process.env.WEB_BASE_URL ?? 'https://fiscaldigital.org'
 const REVALIDATE_TIMEOUT_MS = 5_000
@@ -11,21 +46,20 @@ const REVALIDATE_TIMEOUT_MS = 5_000
  * (revalidate ISR) para ≤5s.
  *
  * Best-effort:
- * - Sem WEB_REVALIDATE_SECRET → loga e retorna (publish segue normal)
+ * - Sem token (WEB_REVALIDATE_SECRET_ARN ausente ou ilegível) → loga e retorna
  * - Falha de rede / 4xx / 5xx → loga e retorna (publish já é sucesso)
  * - Timeout 5s — não bloqueia processamento de SQS
  *
- * Paths revalidados (PT + EN):
- * - /pt             (Home — métricas atualizam)
- * - /pt/alertas     (feed global)
- * - /pt/alertas/<id>  (página do finding)
- * - /pt/cidades/<slug>  (painel da cidade)
- * - /en + counterparts em EN
+ * Paths revalidados, para cada locale de WEB_LOCALES:
+ * - /<locale>                 (Home — métricas atualizam)
+ * - /<locale>/alertas         (feed global)
+ * - /<locale>/alertas/<id>    (página do finding)
+ * - /<locale>/cidades/<slug>  (painel da cidade)
  */
 export async function notifyWebRevalidate(finding: Finding): Promise<void> {
-  const secret = process.env.WEB_REVALIDATE_SECRET
+  const secret = await loadRevalidateSecret()
   if (!secret) {
-    logger.warn('WEB_REVALIDATE_SECRET ausente — pulando revalidate')
+    logger.warn('token de revalidate indisponível — pulando revalidate')
     return
   }
 
@@ -38,10 +72,12 @@ export async function notifyWebRevalidate(finding: Finding): Promise<void> {
   const city = getCity(finding.cityId)
   const citySlug = city?.slug
 
-  const paths = ['/pt', '/pt/alertas', `/pt/alertas/${findingId}`]
-  if (citySlug) paths.push(`/pt/cidades/${citySlug}`)
-  paths.push('/en', '/en/alertas', `/en/alertas/${findingId}`)
-  if (citySlug) paths.push(`/en/cidades/${citySlug}`)
+  const paths = WEB_LOCALES.flatMap(locale => [
+    `/${locale}`,
+    `/${locale}/alertas`,
+    `/${locale}/alertas/${findingId}`,
+    ...(citySlug ? [`/${locale}/cidades/${citySlug}`] : []),
+  ])
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REVALIDATE_TIMEOUT_MS)

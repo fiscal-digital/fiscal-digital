@@ -56,9 +56,8 @@ variable "reddit_dry_run" {
   default = "true"
 }
 
-# ISR-WEB-002 — token simétrico /api/revalidate. Vem de module.web.revalidate_secret_value.
-variable "web_revalidate_secret" {
+# ISR-WEB-002 — token simétrico /api/revalidate. Só o ARN chega à Lambda (#240).
+variable "web_revalidate_secret_arn" {
   type        = string
-  sensitive   = true
-  description = "Token Bearer pro publisher autenticar POST /api/revalidate na Lambda ISR."
+  description = "ARN do secret com o token Bearer de POST /api/revalidate na Lambda ISR."
 }

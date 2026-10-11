@@ -44,8 +44,7 @@ output "dynamodb_isr_tags_table" {
   value       = aws_dynamodb_table.web_isr_tags.name
 }
 
-output "revalidate_secret_value" {
-  description = "Valor do token Bearer pra POST /api/revalidate. Publisher injeta como env var pra autenticar revalidação on-demand pós-publish (ISR-WEB-002)."
-  value       = aws_secretsmanager_secret_version.web_revalidate.secret_string
-  sensitive   = true
+output "revalidate_secret_arn" {
+  description = "ARN do token Bearer de POST /api/revalidate. O publisher lê o valor no Secrets Manager (fiscal-digital#240), nunca pela env."
+  value       = aws_secretsmanager_secret.web_revalidate.arn
 }

@@ -689,6 +689,8 @@ resource "aws_iam_role_policy" "publisher" {
         Resource = [
           "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:fiscaldigital-x-prod*",
           "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:fiscaldigital-reddit-prod*",
+          # Token de /api/revalidate, lido pelo ARN em vez da env (#240)
+          data.aws_secretsmanager_secret.web_revalidate.arn,
         ]
       },
       {
