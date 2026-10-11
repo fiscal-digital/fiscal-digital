@@ -601,9 +601,13 @@ resource "aws_iam_role_policy" "analyzer" {
         Resource = var.alerts_queue_arn
       },
       {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
-        Resource = data.aws_secretsmanager_secret.anthropic.arn
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue"]
+        # CGU: chave do Portal da Transparência para checkSanctions (#239)
+        Resource = [
+          data.aws_secretsmanager_secret.anthropic.arn,
+          data.aws_secretsmanager_secret.cgu.arn,
+        ]
       },
       {
         Effect   = "Allow"

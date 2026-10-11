@@ -2,6 +2,11 @@ variable "analyzer_role_arn" {
   type = string
 }
 
+# fiscal-digital#239 — chave CGU para checkSanctions no analyzer
+variable "cgu_secret_arn" {
+  type = string
+}
+
 variable "publisher_role_arn" {
   type = string
 }

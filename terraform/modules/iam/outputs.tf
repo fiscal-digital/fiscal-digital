@@ -2,6 +2,10 @@ output "analyzer_role_arn" {
   value = aws_iam_role.analyzer.arn
 }
 
+output "cgu_secret_arn" {
+  value = data.aws_secretsmanager_secret.cgu.arn
+}
+
 output "publisher_role_arn" {
   value = aws_iam_role.publisher.arn
 }

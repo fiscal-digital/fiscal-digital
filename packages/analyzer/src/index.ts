@@ -28,6 +28,7 @@ import {
   isFeatureEnabled,
   maybeWriteSupplier,
 } from '@fiscal-digital/engine'
+import { checkSanctionsWithKey } from './cgu-sanctions'
 import type {
   CollectorMessage,
   Finding,
@@ -346,6 +347,10 @@ function buildContext(gazetteId: string): FiscalContextV2 {
     // Quando feature flag OFF, buildContext ainda inclui a função (custo zero),
     // mas ela nunca é chamada porque fiscalFornecedores (v1) não conhece este campo.
     queryConcentracaoGSI2,
+    // fiscal-digital#239 — sem isto os dois FiscalFornecedores caíam no
+    // checkSanctions default, sem chave da CGU, e fornecedor_sancionado era
+    // inalcançável em produção.
+    checkSanctions: checkSanctionsWithKey,
   }
 }
 
