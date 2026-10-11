@@ -87,6 +87,11 @@ jobs:
       - name: Modelo puro do reconciliador de counters
         run: node --test scripts/reconcile-gazette-counters.test.mjs
 
+      # #213: o dry-run do replay-fiscal é o smoke da GOVERNANCA (Etapa 3) e
+      # não pode escrever em alerts-prod — a memória dos Fiscais fica em RAM.
+      - name: Memória em RAM do dry-run do replay-fiscal
+        run: node --test scripts/replay-dry-run-memory.test.mjs
+
       # ─── Pipeline de infra (precisa de secrets) ──────────────────────────
       # Steps abaixo NAO rodam em PR de fork nem de Dependabot: secrets nao
       # sao expostos a forks por design de seguranca do GitHub Actions, e

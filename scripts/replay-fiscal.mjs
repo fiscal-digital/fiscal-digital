@@ -27,12 +27,16 @@
  *   node scripts/replay-fiscal.mjs --fiscal=fiscal-pessoal --all-cities
  *   node scripts/replay-fiscal.mjs --fiscal=fiscal-licitacoes --city=4305108 --max-gazettes=10
  *   node scripts/replay-fiscal.mjs --fiscal=fiscal-contratos --since=2024-01-01 --city=4305108
+ *   node scripts/replay-fiscal.mjs --fiscal=fiscal-licitacoes --poc --max-gazettes=30   # smoke (GOVERNANCA Etapa 3)
  *
  * Modo DRY-RUN (default):
  *   - Roda Fiscal sobre cada gazette
  *   - NÃO chama generateNarrative (Bedrock Haiku) — substitui por placeholder
- *   - NÃO grava em DDB
+ *   - NÃO grava em alerts-prod: a memória dos Fiscais (DISPENSA#, ADITIVO#, ...)
+ *     fica em RAM (replay-dry-run-memory.mjs). Até #213 ela ia para a tabela.
+ *     O cache de extração (entities-prod) continua sendo lido e preenchido.
  *   - Imprime resumo: gazettes processadas, findings por type
+ *   - Sai com código 1 se alguma gazette deu erro — é isso que o torna smoke
  *
  * Modo APPLY (--apply):
  *   - generateNarrative chamado (Bedrock cost ~$0.77/1k findings publicáveis)
@@ -68,6 +72,7 @@ import {
   querySuppliersContract,
   gazetteKey,
 } from '@fiscal-digital/engine'
+import { createDryRunMemory } from './replay-dry-run-memory.mjs'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -154,6 +159,7 @@ async function persistFinding(finding) {
 
 function buildContext(gazetteId, opts = {}) {
   const cachedExtractor = createCachedExtractEntities({ gazetteId })
+  const memory = opts.memory
 
   return {
     alertsTable: ALERTS_TABLE,
@@ -164,8 +170,8 @@ function buildContext(gazetteId, opts = {}) {
           const result = await generateNarrative.execute({ finding })
           return result.data
         },
-    saveMemory,
-    queryAlertsByCnpj,
+    saveMemory: memory ? memory.saveMemory : saveMemory,
+    queryAlertsByCnpj: memory ? memory.withMemory(queryAlertsByCnpj) : queryAlertsByCnpj,
     querySuppliersContract: (input) => querySuppliersContract.execute(input),
   }
 }
@@ -255,7 +261,7 @@ async function processCity(fiscal, cityId, filters, opts) {
     if (opts.maxGazettes && gazettesProcessed >= opts.maxGazettes) break
     gazettesProcessed++
 
-    const gazetteCtx = buildContext(gazette.gazetteId, { skipNarrative: opts.dryRun })
+    const gazetteCtx = buildContext(gazette.gazetteId, { skipNarrative: opts.dryRun, memory: opts.memory })
 
     let findings = []
     try {
@@ -315,6 +321,8 @@ async function main() {
   const fiscalArg = args.find(a => a.startsWith('--fiscal='))?.replace('--fiscal=', '')
   const cityArg = args.find(a => a.startsWith('--city='))?.replace('--city=', '')
   const allCities = args.includes('--all-cities')
+  // Cidades-padrão de prova de conceito (CLAUDE.md): Caxias do Sul + Porto Alegre
+  const poc = args.includes('--poc')
   const since = args.find(a => a.startsWith('--since='))?.replace('--since=', '')
   const until = args.find(a => a.startsWith('--until='))?.replace('--until=', '')
   const apply = args.includes('--apply')
@@ -335,13 +343,15 @@ async function main() {
     process.exit(1)
   }
 
-  if (!cityArg && !allCities) {
-    console.error('Uso: --city=<id> | --all-cities')
+  if (!cityArg && !allCities && !poc) {
+    console.error('Uso: --city=<id> | --poc | --all-cities')
     process.exit(1)
   }
 
   let cities
-  if (cityArg) {
+  if (poc) {
+    cities = ['4305108', '4314902']
+  } else if (cityArg) {
     cities = [cityArg]
   } else {
     console.log(`Mapeando cidades com ${fiscalArg} em alerts-prod...`)
@@ -377,10 +387,13 @@ async function main() {
   // fiscal-licitacoes se algum dia a query de histórico deixar de ser
   // filtrada por cidade. Manter sequencial preserva a garantia sem custo
   // relevante (o gargalo real é o throttle Bedrock, não o loop em si).
+  // Uma memória por run, compartilhada entre cidades — mesma garantia de ordem
+  // do loop sequencial abaixo.
+  const memory = dryRun ? createDryRunMemory() : null
   const results = []
   for (const cityId of cities) {
     console.log(`\n→ ${cityId}`)
-    const r = await processCity(fiscal, cityId, { since, until }, { dryRun, apply, maxGazettes })
+    const r = await processCity(fiscal, cityId, { since, until }, { dryRun, apply, maxGazettes, memory })
     results.push(r)
     console.log(`  Concluido: ${r.gazettesProcessed} gazettes, ${r.findingsGenerated} findings`)
     const typeList = Object.entries(r.byType).map(([k, v]) => `${k}=${v}`).join(', ')
@@ -412,7 +425,19 @@ async function main() {
   }
   const tCellsTotal = typeCols.map(t => String(totalByType[t] ?? 0).padStart(12)).join('  ')
   console.log(`  ${'TOTAL'.padEnd(16)}  ${String(totalGazettes).padStart(8)}    ${String(totalFindings).padStart(8)}   ${tCellsTotal}`)
-  console.log(`\nModo: ${dryRun ? 'DRY-RUN (nada foi gravado)' : 'APPLY (gravado em alerts-prod)'}`)
+  console.log(`\nModo: ${dryRun ? `DRY-RUN (nada gravado em alerts-prod; ${memory.size()} itens de memória ficaram em RAM)` : 'APPLY (gravado em alerts-prod)'}`)
+
+  // Smoke (#213): erro em qualquer gazette reprova o run. Antes o script
+  // terminava com 0 mesmo com erros, e o resultado dependia de alguém ler o log.
+  const totalErrors = results.reduce((s, r) => s + r.errorsCount, 0)
+  if (totalErrors > 0) {
+    console.error(`\n${totalErrors} erro(s) — run reprovado.`)
+    process.exitCode = 1
+  }
+  if (totalGazettes === 0) {
+    console.error('\nNenhuma gazette processada — run reprovado (smoke sem amostra não prova nada).')
+    process.exitCode = 1
+  }
 }
 
 main().catch(err => {
