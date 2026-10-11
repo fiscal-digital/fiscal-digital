@@ -38,6 +38,13 @@ jest.mock('@aws-sdk/lib-dynamodb', () => ({
   QueryCommand: jest.fn().mockImplementation((input: unknown) => input),
 }))
 
+// Secrets Manager — chave da CGU para checkSanctions (fiscal-digital#239)
+const mockSmSend = jest.fn()
+jest.mock('@aws-sdk/client-secrets-manager', () => ({
+  SecretsManagerClient: jest.fn().mockImplementation(() => ({ send: mockSmSend })),
+  GetSecretValueCommand: jest.fn().mockImplementation((input: unknown) => input),
+}))
+
 // Mocks for fiscais and skills from engine
 const mockAnalisarLicitacoes = jest.fn()
 const mockAnalisarContratos = jest.fn()
@@ -48,6 +55,11 @@ const mockSaveMemoryExecute = jest.fn().mockResolvedValue({
   data: undefined,
   source: 'dynamodb:mock',
   confidence: 1.0,
+})
+const mockCheckSanctionsExecute = jest.fn().mockResolvedValue({
+  data: { sanctioned: false, records: [] },
+  source: 'cgu:mock',
+  confidence: 0.95,
 })
 const mockGenerateNarrativeExecute = jest.fn().mockResolvedValue({
   data: 'Narrativa gerada.',
@@ -75,6 +87,7 @@ jest.mock('@fiscal-digital/engine', () => ({
     execute: jest.fn(),
   })),
   saveMemory: { name: 'save_memory', description: 'mock', execute: mockSaveMemoryExecute },
+  checkSanctions: { name: 'check_sanctions', description: 'mock', execute: mockCheckSanctionsExecute },
   generateNarrative: { name: 'generate_narrative', description: 'mock', execute: mockGenerateNarrativeExecute },
   // gazetteKey — helper para pk determinístico de FINDING (LRN-20260503-022).
   // TEC-ANL-001: retorna key estável para URL presente e null caso contrário —
@@ -131,6 +144,7 @@ jest.mock('@fiscal-digital/engine', () => ({
 // ---------------------------------------------------------------------------
 
 import { handler, resolveExcerpts, assertBatchNotFullyFailed } from '../index'
+import { _resetCguCacheForTests } from '../cgu-sanctions'
 import { getPublishThresholds } from '@fiscal-digital/engine'
 
 // ---------------------------------------------------------------------------
@@ -558,4 +572,46 @@ test('batch inteiro falhando lança em vez de retornar batchItemFailures (#175)'
   const r2 = makeSQSRecord('also not json', 'msg-b')
 
   await expect(handler(makeSQSEvent([r1, r2]))).rejects.toThrow(/todos os 2 records/)
+})
+
+// ---------------------------------------------------------------------------
+// fiscal-digital#239 — FiscalFornecedores recebe checkSanctions com a chave CGU
+// ---------------------------------------------------------------------------
+
+describe('checkSanctions no contexto dos Fiscais (#239)', () => {
+  const ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:fiscaldigital-cgu-prod-abc'
+
+  beforeEach(() => {
+    _resetCguCacheForTests()
+    mockSmSend.mockReset()
+  })
+  afterEach(() => {
+    delete process.env.CGU_SECRET_ARN
+  })
+
+  async function checkSanctionsDoContexto() {
+    await handler(makeSQSEvent([makeSQSRecord(makeCollectorMessage())]))
+    const ctx = mockAnalisarFornecedores.mock.calls[0][0].context
+    expect(typeof ctx.checkSanctions).toBe('function')
+    return ctx.checkSanctions as (input: { cnpj: string }) => Promise<unknown>
+  }
+
+  test('com CGU_SECRET_ARN, a consulta CEIS/CNEP sai com a chave do secret', async () => {
+    process.env.CGU_SECRET_ARN = ARN
+    mockSmSend.mockResolvedValue({ SecretString: JSON.stringify({ api_key: 'chave-cgu' }) })
+
+    const checkSanctions = await checkSanctionsDoContexto()
+    await checkSanctions({ cnpj: '12.345.678/0001-90' })
+
+    expect(mockSmSend).toHaveBeenCalledWith(expect.objectContaining({ SecretId: ARN }))
+    expect(mockCheckSanctionsExecute).toHaveBeenCalledWith({ cnpj: '12.345.678/0001-90', apiKey: 'chave-cgu' })
+  })
+
+  test('sem CGU_SECRET_ARN, consulta sem chave — o engine avisa e não acusa ninguém', async () => {
+    const checkSanctions = await checkSanctionsDoContexto()
+    await checkSanctions({ cnpj: '12.345.678/0001-90' })
+
+    expect(mockSmSend).not.toHaveBeenCalled()
+    expect(mockCheckSanctionsExecute).toHaveBeenCalledWith({ cnpj: '12.345.678/0001-90' })
+  })
 })

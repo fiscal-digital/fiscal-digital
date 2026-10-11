@@ -34,6 +34,7 @@ resource "aws_lambda_function" "analyzer" {
   environment {
     variables = merge(local.common_env, {
       ALERTS_QUEUE_URL = var.alerts_queue_url
+      CGU_SECRET_ARN   = var.cgu_secret_arn
     })
   }
 

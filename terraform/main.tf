@@ -43,6 +43,7 @@ module "lambdas" {
   reddit_enabled        = var.reddit_enabled
   reddit_dry_run        = var.reddit_dry_run
   web_revalidate_secret = module.web.revalidate_secret_value
+  cgu_secret_arn        = module.iam.cgu_secret_arn
 }
 
 module "eventbridge" {
