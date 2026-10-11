@@ -46,10 +46,13 @@
 - **O que:** rodar Fiscal contra gazettes reais das 2 cidades de prova
 - **Como:**
   ```bash
-  node packages/engine/scripts/smoke-fiscal.mjs --fiscal=fiscalContratos --poc
+  node scripts/replay-fiscal.mjs --fiscal=fiscal-contratos --poc --max-gazettes=30
   ```
+  Dry-run por padrão: não grava em `alerts-prod` (a memória dos Fiscais fica
+  em RAM) e sai com código 1 se qualquer gazette der erro ou se nenhuma for
+  processada. O `smoke-fiscal.mjs` citado aqui até #213 nunca existiu.
 - **Critério de aceite:**
-  - **0 erros** em CloudWatch durante o teste
+  - **0 erros** no run (código de saída 0)
   - Findings esperados aparecem (calibração documentada por Fiscal)
   - Latência por gazette < 5s p99
 - **Cidades:** Caxias do Sul (4305108) + Porto Alegre (4314902)
