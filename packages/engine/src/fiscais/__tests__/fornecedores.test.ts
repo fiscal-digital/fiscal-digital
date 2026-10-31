@@ -309,4 +309,46 @@ describe('fiscalFornecedores', () => {
     const resumo = logCalls(infoSpy).find(([msg]) => msg === 'fiscal-fornecedores resumo')
     expect(resumo?.[1]).toMatchObject({ puladosRede: 1, consultados: 0, findings: 0 })
   })
+
+  describe('fornecedor_sancionado', () => {
+    const impedimentoNacional = {
+      type: 'CEIS' as const,
+      sanction: 'Declaração de Inidoneidade com prazo determinado',
+      organ: 'Controladoria-Geral da União',
+      startDate: '2025-01-10',
+      endDate: '2027-01-10',
+      scope: 'Todas as Esferas em todos os Poderes',
+    }
+    const sancoesMock = (sanctioned: boolean, blocking = sanctioned ? [impedimentoNacional] : []) =>
+      jest.fn().mockResolvedValue({
+        data: { sanctioned, records: [impedimentoNacional], blocking },
+        source: 'https://api.portaldatransparencia.gov.br/api-de-dados/ceis',
+        confidence: 0.95,
+      })
+    const contexto = (checkSanctions: FiscalContext['checkSanctions']) => makeContext({
+      extractEntities: makeExtractEntitiesMock({ cnpjs: ['66.222.333/0001-44'], values: [30000] }),
+      validateCNPJ: makeValidateCNPJMock({ cnpj: '66.222.333/0001-44', dataAbertura: '2021-01-10' }),
+      checkSanctions,
+    })
+
+    it('consulta a vigência na data do ato e cita o registro da CGU como evidência verificável', async () => {
+      const checkSanctions = sancoesMock(true)
+      const findings = await fiscalFornecedores.analisar({ gazette: gazetteContratoFornecedorAntigo, cityId: '4305108', context: contexto(checkSanctions) })
+
+      expect(checkSanctions).toHaveBeenCalledWith({ cnpj: '66.222.333/0001-44', referenceDate: '2026-03-15' })
+      const sanc = findings.find(f => f.type === 'fornecedor_sancionado')
+      expect(sanc?.evidence).toHaveLength(2)
+      expect(sanc?.evidence[0].source).toBe(gazetteContratoFornecedorAntigo.url)
+      expect(sanc?.evidence[1].source).toBe('https://portaldatransparencia.gov.br/sancoes/consulta?cpfCnpj=66222333000144')
+      expect(sanc?.evidence[1].excerpt).toContain('Declaração de Inidoneidade')
+      expect(sanc?.evidence[1].excerpt).toContain('Todas as Esferas em todos os Poderes')
+      expect(sanc?.narrative).toContain('Registro vigente na data do ato: CEIS: Declaração de Inidoneidade')
+    })
+
+    it('registro que não impede contratar (blocking vazio) não vira achado', async () => {
+      const findings = await fiscalFornecedores.analisar({ gazette: gazetteContratoFornecedorAntigo, cityId: '4305108', context: contexto(sancoesMock(false)) })
+      expect(findings.filter(f => f.type === 'fornecedor_sancionado')).toHaveLength(0)
+    })
+  })
 })
+

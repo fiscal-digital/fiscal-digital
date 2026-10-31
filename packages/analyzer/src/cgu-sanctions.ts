@@ -60,9 +60,9 @@ export async function loadCguApiKey(): Promise<string | null> {
  * Antes disto o analyzer não injetava nada, o Fiscal caía no default sem
  * `apiKey` e `fornecedor_sancionado` era inalcançável em produção.
  */
-export async function checkSanctionsWithKey(input: { cnpj: string }): Promise<SkillResult<SanctionResult>> {
+export async function checkSanctionsWithKey(input: { cnpj: string; referenceDate?: string }): Promise<SkillResult<SanctionResult>> {
   const apiKey = await loadCguApiKey()
-  return checkSanctions.execute({ cnpj: input.cnpj, ...(apiKey && { apiKey }) })
+  return checkSanctions.execute({ ...input, ...(apiKey && { apiKey }) })
 }
 
 /** @internal — testes */
