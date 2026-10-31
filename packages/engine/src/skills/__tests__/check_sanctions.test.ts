@@ -1,5 +1,5 @@
 import { Logger } from '@aws-lambda-powertools/logger'
-import { checkSanctions, _resetCheckSanctionsWarnForTests } from '../check_sanctions'
+import { checkSanctions, parseCguDate, impedeContratar, _resetCheckSanctionsWarnForTests } from '../check_sanctions'
 
 const mockFetch = jest.fn()
 global.fetch = mockFetch
@@ -8,6 +8,7 @@ const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => un
 
 const FUTURE_DATE = '2099-12-31'
 const PAST_DATE = '2020-01-01'
+const NACIONAL = 'Todas as Esferas em todos os Poderes'
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -42,11 +43,11 @@ describe('checkSanctions', () => {
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
-  it('registros CEIS ativos (sem endDate) resultam em sanctioned true', async () => {
+  it('registros CEIS sem prazo determinado (sem endDate) resultam em sanctioned true', async () => {
     mockFetch
       .mockReturnValueOnce(
         makeJsonResponse([
-          { sancionado: { codigoFormatado: '12.345.678/0001-90' }, tipoSancao: 'Impedimento de Licitar', dataInicioSancao: '2023-01-01', dataFimSancao: undefined, orgaoSancionador: 'TCE-RS' },
+          { sancionado: { codigoFormatado: '12.345.678/0001-90' }, tipoSancao: 'Impedimento/proibição de contratar sem prazo determinado', dataInicioSancao: '2023-01-01', dataFimSancao: undefined, orgaoSancionador: 'TCE-RS', abrangenciaDefinidaDecisaoJudicial: NACIONAL },
         ]),
       )
       .mockReturnValueOnce(makeJsonResponse([]))
@@ -66,7 +67,7 @@ describe('checkSanctions', () => {
     mockFetch
       .mockReturnValueOnce(
         makeJsonResponse([
-          { sancionado: { codigoFormatado: '12.345.678/0001-90' }, tipoSancao: 'Suspensão', dataInicioSancao: '2024-01-01', dataFimSancao: FUTURE_DATE, orgaoSancionador: 'CGU' },
+          { sancionado: { codigoFormatado: '12.345.678/0001-90' }, tipoSancao: 'Suspensão', dataInicioSancao: '2024-01-01', dataFimSancao: FUTURE_DATE, orgaoSancionador: 'CGU', abrangenciaDefinidaDecisaoJudicial: NACIONAL },
         ]),
       )
       .mockReturnValueOnce(makeJsonResponse([]))
@@ -103,7 +104,7 @@ describe('checkSanctions', () => {
       .mockReturnValueOnce(Promise.reject(new Error('CEIS timeout')))
       .mockReturnValueOnce(
         makeJsonResponse([
-          { sancionado: { codigoFormatado: '12.345.678/0001-90' }, tipoSancao: 'Inabilitação', dataInicioSancao: '2024-06-01', dataFimSancao: FUTURE_DATE, orgaoSancionador: 'TCU' },
+          { sancionado: { codigoFormatado: '12.345.678/0001-90' }, tipoSancao: 'Declaração de Inidoneidade com prazo determinado', dataInicioSancao: '2024-06-01', dataFimSancao: FUTURE_DATE, orgaoSancionador: 'TCU', abrangenciaDefinidaDecisaoJudicial: NACIONAL },
         ]),
       )
 
@@ -187,18 +188,96 @@ describe('checkSanctions', () => {
         sancionado: { nome: 'EMPRESA X', codigoFormatado: '72.810.211/0001-09' },
         tipoSancao: { descricaoResumida: 'Impedimento/proibição de contratar com prazo determinado' },
         orgaoSancionador: { nome: 'PROCURADORIA GERAL DO ESTADO', siglaUf: 'SP' },
-        dataInicioSancao: '2026-04-10',
-        dataFimSancao: FUTURE_DATE,
+        dataInicioSancao: '10/04/2026',
+        dataFimSancao: '31/12/2099',
+        abrangenciaDefinidaDecisaoJudicial: NACIONAL,
+        id: 123,
       }]))
       .mockReturnValueOnce(makeJsonResponse([]))
-    const result = await checkSanctions.execute({ cnpj: '72810211000109', apiKey: 'k' })
+    const result = await checkSanctions.execute({ cnpj: '72810211000109', apiKey: 'k', referenceDate: '2026-10-29' })
     expect(result.data.sanctioned).toBe(true)
     expect(result.data.records).toEqual([{
       type: 'CEIS',
       sanction: 'Impedimento/proibição de contratar com prazo determinado',
       organ: 'PROCURADORIA GERAL DO ESTADO',
+      organUf: 'SP',
       startDate: '2026-04-10',
-      endDate: FUTURE_DATE,
+      endDate: '2099-12-31',
+      scope: NACIONAL,
+      cguId: 123,
     }])
+  })
+
+  // Regressão 31/10/2026: alerta publicado em Salvador (gazette 2026-10-29)
+  // afirmava "empresa impedida de contratar" para um registro CNEP de MULTA,
+  // aplicada pela SECONT/ES, restrita à esfera do órgão, com fim "Sem
+  // informação". Registro abaixo é o devolvido pela API naquele dia.
+  describe('vigência, tipo e abrangência (shape real da API: DD/MM/AAAA)', () => {
+    const multaEstadualReal = {
+      sancionado: { nome: 'NADIA CORREIA DE ALMEIDA - ME', codigoFormatado: '10.275.216/0001-13' },
+      tipoSancao: { descricaoResumida: 'Multa' },
+      orgaoSancionador: { nome: 'Secretaria de Estado de Controle e Transparência - (SECONT/Espírito Santo)', siglaUf: 'ES', esfera: 'ESTADUAL' },
+      dataInicioSancao: '09/10/2026',
+      dataFimSancao: 'Sem informação',
+      abrangenciaDefinidaDecisaoJudicial: 'Na Esfera e no Poder do órgão sancionador',
+      id: 406629,
+    }
+    const impedimento = (fim: string, abrangencia = NACIONAL, inicio = '01/01/2020') => ({
+      sancionado: { codigoFormatado: '10.275.216/0001-13' },
+      tipoSancao: { descricaoResumida: 'Impedimento/proibição de contratar com prazo determinado' },
+      dataInicioSancao: inicio,
+      dataFimSancao: fim,
+      abrangenciaDefinidaDecisaoJudicial: abrangencia,
+    })
+    async function run(registros: object[], referenceDate = '2026-10-29') {
+      mockFetch.mockReturnValueOnce(makeJsonResponse([])).mockReturnValueOnce(makeJsonResponse(registros))
+      return checkSanctions.execute({ cnpj: '10275216000113', apiKey: 'k', referenceDate })
+    }
+
+    it('multa estadual com fim "Sem informação" NÃO é impedimento de contratar', async () => {
+      const result = await run([multaEstadualReal])
+      expect(result.data.records).toHaveLength(1)
+      expect(result.data.records[0].endDate).toBeUndefined()
+      expect(result.data.sanctioned).toBe(false)
+      expect(result.data.blocking).toEqual([])
+    })
+
+    it('impedimento encerrado em dia 21–31 de ano passado é inativo (string "25/03/2021" >= "2026-…" era true)', async () => {
+      expect((await run([impedimento('25/03/2021')])).data.sanctioned).toBe(false)
+    })
+
+    it('impedimento vigente com fim em dia 01–20 é ativo (string "10/04/2099" >= "2026-…" era false)', async () => {
+      expect((await run([impedimento('10/04/2099')])).data.sanctioned).toBe(true)
+    })
+
+    it('impedimento restrito ao órgão/esfera do sancionador não alcança o município', async () => {
+      for (const abrangencia of ['No órgão sancionador', 'Na Esfera e no Poder do órgão sancionador', 'Em todos os Poderes da Esfera do órgão sancionador', 'Sem Informação']) {
+        mockFetch.mockReset()
+        expect((await run([impedimento('31/12/2099', abrangencia)])).data.sanctioned).toBe(false)
+      }
+    })
+
+    it('vigência é avaliada na data do ato: sanção que começou depois não conta', async () => {
+      expect((await run([impedimento('31/12/2099', NACIONAL, '01/06/2026')], '2025-03-10')).data.sanctioned).toBe(false)
+    })
+
+    it('com prazo determinado e fim "Sem informação" não é presumido vigente', async () => {
+      expect((await run([impedimento('Sem informação')])).data.sanctioned).toBe(false)
+    })
+  })
+
+  describe('parseCguDate / impedeContratar', () => {
+    it('normaliza DD/MM/AAAA e ISO; "Sem informação" vira undefined', () => {
+      expect(parseCguDate('09/10/2026')).toBe('2026-10-09')
+      expect(parseCguDate('2026-10-09')).toBe('2026-10-09')
+      expect(parseCguDate('Sem informação')).toBeUndefined()
+      expect(parseCguDate(undefined)).toBeUndefined()
+    })
+
+    it('Suspensão/Interdição das atividades e Publicação extraordinária não impedem contratar', () => {
+      for (const sanction of ['Suspensão/Interdição das atividades com prazo determinado', 'Publicação extraordinária da decisão condenatória', 'Dissolução compulsória da PJ', 'Multa']) {
+        expect(impedeContratar({ type: 'CNEP', sanction, scope: NACIONAL, endDate: '2099-12-31' }, '2026-10-29')).toBe(false)
+      }
+    })
   })
 })
