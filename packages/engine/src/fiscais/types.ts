@@ -37,7 +37,7 @@ export interface FiscalContext {
   generateNarrative?: (...args: unknown[]) => Promise<string>                            // mock em teste
   saveMemory?: typeof _saveMemory                                                         // permite mock em teste
   validateCNPJ?: (input: { cnpj: string }) => Promise<SkillResult<Partial<SupplierProfile>>>  // Fiscal de Fornecedores
-  checkSanctions?: (input: { cnpj: string }) => Promise<SkillResult<SanctionResult>>           // Fiscal de Fornecedores (CEIS/CNEP CGU)
+  checkSanctions?: (input: { cnpj: string; referenceDate?: string }) => Promise<SkillResult<SanctionResult>>           // Fiscal de Fornecedores (CEIS/CNEP CGU)
   /**
    * Cross-reference de contrato original em `suppliers-prod` (EVO-002).
    * Usado pelo FiscalContratos para calcular % de aditivo. Retorna null se

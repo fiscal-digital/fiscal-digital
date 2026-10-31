@@ -2,7 +2,8 @@ import { extractEntities as defaultExtractEntities } from '../skills/extract_ent
 import { scoreRisk } from '../skills/score_risk'
 import { validateCNPJ as defaultValidateCNPJ } from '../skills/validate_cnpj'
 import { checkSanctions as defaultCheckSanctions } from '../skills/check_sanctions'
-import type { Finding, RiskFactor } from '../types'
+import type { SanctionRecord } from '../skills/check_sanctions'
+import type { Evidence, Finding, RiskFactor } from '../types'
 import type { Fiscal, AnalisarInput } from './types'
 import { createLogger } from '../logger'
 
@@ -125,11 +126,26 @@ function narrativaSituacaoIrregular(
   )
 }
 
+/** Uma linha verificável por registro: cadastro, tipo, órgão, abrangência, vigência. */
+function descreverSancao(r: SanctionRecord): string {
+  const orgao = r.organ ? ` — ${r.organ}${r.organUf ? ` (${r.organUf})` : ''}` : ''
+  const vigencia = r.startDate
+    ? `, desde ${formatDate(r.startDate)}${r.endDate ? ` até ${formatDate(r.endDate)}` : ''}`
+    : ''
+  return `${r.type}: ${r.sanction}${orgao}; abrangência: ${r.scope ?? 'não informada'}${vigencia}`
+}
+
+/** Consulta pública do Portal da Transparência para o CNPJ — o leitor confere sem chave de API. */
+function urlConsultaSancoes(cnpj: string): string {
+  return `https://portaldatransparencia.gov.br/sancoes/consulta?cpfCnpj=${cnpj.replace(/[.\-/\s]/g, '')}`
+}
+
 function narrativaSancionado(
   gazetteDate: string,
   cnpj: string,
   razaoSocial: string | undefined,
   valor: number | undefined,
+  sancoes: SanctionRecord[],
 ): string {
   const valorStr = valor !== undefined ? ` no valor de R$ ${formatBRL(valor)}` : ''
   const razaoStr = razaoSocial ? ` (${razaoSocial})` : ''
@@ -138,6 +154,7 @@ function narrativaSancionado(
     `com empresa CNPJ ${cnpj}${razaoStr} listada em base nacional de sanções ` +
     `(CEIS/CNEP — Cadastro de Empresas Inidôneas e Suspensas / Cadastro Nacional ` +
     `de Empresas Punidas, mantidos pela CGU). ` +
+    `Registro vigente na data do ato: ${sancoes.map(descreverSancao).join(' | ')}. ` +
     `O documento aponta possível contratação com empresa impedida de contratar ` +
     `com a administração pública (Lei 12.846/2013, Lei 8.666/1993 Art. 87).`
   )
@@ -243,17 +260,24 @@ export const fiscalFornecedores: Fiscal = {
         // ── Detecção: Empresa em CEIS/CNEP (CGU) ────────────────────────────────
         // Sanção CGU = empresa impedida de contratar com administração pública
         try {
-          const sanctionResult = await checkSanctionsFn({ cnpj })
-          const sanctioned = sanctionResult.data?.sanctioned === true
-          if (sanctioned) {
+          // A sanção tem que estar vigente na data do ATO, não na data da análise
+          // (replay de 2021 com sanção de 2026 não é contratação com sancionado).
+          const sanctionResult = await checkSanctionsFn({ cnpj, referenceDate: gazette.date })
+          const blocking = sanctionResult.data?.blocking ?? []
+          if (sanctionResult.data?.sanctioned === true && blocking.length > 0) {
+            const evidenciaCgu: Evidence = {
+              source: urlConsultaSancoes(cnpj),
+              excerpt: blocking.map(descreverSancao).join('\n'),
+              date: blocking[0].startDate ?? gazette.date,
+            }
             const findingSanc: Finding = {
               fiscalId: FISCAL_ID,
               cityId,
               type: 'fornecedor_sancionado',
               riskScore: 95,
               confidence: 0.95,
-              evidence: [{ source: gazette.url, excerpt, date: gazette.date }],
-              narrative: narrativaSancionado(gazette.date, cnpj, razaoSocial, valor),
+              evidence: [{ source: gazette.url, excerpt, date: gazette.date }, evidenciaCgu],
+              narrative: narrativaSancionado(gazette.date, cnpj, razaoSocial, valor, blocking),
               legalBasis: 'Lei 12.846/2013 + Lei 8.666/1993 Art. 87 (CEIS/CNEP — CGU)',
               cnpj,
               ...(secretaria && { secretaria }),
