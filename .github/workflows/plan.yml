@@ -149,6 +149,11 @@ jobs:
       - name: Run tflint
         if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         working-directory: terraform
+        # `tflint --init` baixa o plugin aws pela API do GitHub. Sem token, a
+        # cota é de 60 req/h por IP, compartilhada com outros jobs do runner, e
+        # o gate caía com 403 sem relação com o PR (#253, 11/10 e 31/10).
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           tflint --init
           tflint --recursive --format=compact --minimum-failure-severity=error
