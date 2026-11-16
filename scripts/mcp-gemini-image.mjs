@@ -5,14 +5,14 @@
  * Resolve a GEMINI_API_KEY e lança o servidor `mcp-image`. Permite desenvolver
  * em qualquer máquina com credencial AWS, sem depender de env var local:
  *   1. Se GEMINI_API_KEY já estiver no ambiente, usa (fast path / CI).
- *   2. Senão, busca do AWS Secrets Manager (fiscaldigital-gemini-dev).
+ *   2. Senão, busca do AWS SSM Parameter Store (/fiscal-digital/dev/gemini).
  *
  * IMPORTANTE: stdout é o canal JSON-RPC do MCP — nunca escrever nele.
  * Todo log vai para stderr.
  */
 import { execSync, spawn } from 'node:child_process';
 
-const SECRET_ID = 'fiscaldigital-gemini-dev';
+const PARAM_NAME = '/fiscal-digital/dev/gemini';
 const REGION = 'us-east-1';
 
 const log = (m) => process.stderr.write(`[mcp-gemini-image] ${m}\n`);
@@ -21,17 +21,17 @@ let apiKey = process.env.GEMINI_API_KEY;
 
 if (!apiKey) {
   try {
-    log(`buscando chave no AWS Secrets Manager (${SECRET_ID})...`);
-    // SECRET_ID/REGION são constantes — sem input do usuário, sem risco de injeção.
+    log(`buscando chave no AWS SSM Parameter Store (${PARAM_NAME})...`);
+    // PARAM_NAME/REGION são constantes — sem input do usuário, sem risco de injeção.
     const out = execSync(
-      `aws secretsmanager get-secret-value --secret-id ${SECRET_ID} --query SecretString --output text --region ${REGION}`,
+      `aws ssm get-parameter --name ${PARAM_NAME} --with-decryption --query Parameter.Value --output text --region ${REGION}`,
       { encoding: 'utf8' },
     );
     apiKey = JSON.parse(out.trim()).api_key;
     log('chave resolvida via AWS.');
   } catch (e) {
-    log(`ERRO ao buscar secret: ${e.message}`);
-    log('Confira credenciais AWS (aws sts get-caller-identity) e acesso ao secret.');
+    log(`ERRO ao buscar parametro: ${e.message}`);
+    log('Confira credenciais AWS (aws sts get-caller-identity) e acesso ao parametro.');
     process.exit(1);
   }
 }
