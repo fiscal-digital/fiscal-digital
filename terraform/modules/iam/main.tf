@@ -1,10 +1,5 @@
 data "aws_caller_identity" "current" {}
 
-# Lookup do secret por nome — evita expor account ID em prod.tfvars
-data "aws_secretsmanager_secret" "anthropic" {
-  name = "fiscaldigital-anthropic-prod"
-}
-
 # ISR revalidate token — criado em terraform/modules/web/main.tf
 data "aws_secretsmanager_secret" "web_revalidate" {
   name = "fiscal-digital-revalidate-token-prod"
@@ -130,7 +125,6 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
         Effect = "Allow"
         Resource = [
-          data.aws_secretsmanager_secret.anthropic.arn,
           data.aws_secretsmanager_secret.cgu.arn,
         ]
         Sid = "SecretsManagerRead"
@@ -605,7 +599,6 @@ resource "aws_iam_role_policy" "analyzer" {
         Action = ["secretsmanager:GetSecretValue"]
         # CGU: chave do Portal da Transparência para checkSanctions (#239)
         Resource = [
-          data.aws_secretsmanager_secret.anthropic.arn,
           data.aws_secretsmanager_secret.cgu.arn,
         ]
       },

@@ -549,7 +549,6 @@ nas mesmas redes com o mesmo alcance do alerta original.
 
 | Secret | Campos |
 |---|---|
-| `fiscaldigital-anthropic-prod` | `api_key` |
 | `fiscaldigital-x-prod` | `api_key`, `api_secret`, `access_token`, `access_token_secret` (bot: @LiFiscalDigital) |
 | `fiscaldigital-reddit-prod` | `client_id`, `client_secret`, `username`, `password` (bot: Lineu) |
 

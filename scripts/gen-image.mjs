@@ -7,7 +7,7 @@
  *
  * Resolução da chave (mesma lógica do wrapper MCP):
  *   1. env GEMINI_API_KEY (fast path / CI), senão
- *   2. AWS Secrets Manager: fiscaldigital-gemini-dev (campo api_key).
+ *   2. AWS SSM Parameter Store: /fiscal-digital/dev/gemini (SecureString, campo api_key).
  *
  * Usado pelos skills /ig-story e /linkedin-post. O texto factual/legal NÃO deve
  * ser pedido ao modelo (risco de garble viola "sempre citar a fonte"); o prompt
@@ -17,7 +17,7 @@ import { execSync } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const SECRET_ID = 'fiscaldigital-gemini-dev';
+const PARAM_NAME = '/fiscal-digital/dev/gemini';
 const REGION = 'us-east-1';
 const DEFAULT_MODEL = 'gemini-3.1-flash-image';
 
@@ -30,11 +30,11 @@ function parseArgs(argv) {
 function resolveKey() {
   if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
   const out = execSync(
-    `aws secretsmanager get-secret-value --secret-id ${SECRET_ID} --query SecretString --output text --region ${REGION}`,
+    `aws ssm get-parameter --name ${PARAM_NAME} --with-decryption --query Parameter.Value --output text --region ${REGION}`,
     { encoding: 'utf8' },
   );
   const key = JSON.parse(out.trim()).api_key;
-  if (!key) throw new Error('secret fiscaldigital-gemini-dev tem api_key vazio');
+  if (!key) throw new Error('parametro /fiscal-digital/dev/gemini tem api_key vazio');
   return key;
 }
 
