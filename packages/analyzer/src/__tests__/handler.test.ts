@@ -38,11 +38,11 @@ jest.mock('@aws-sdk/lib-dynamodb', () => ({
   QueryCommand: jest.fn().mockImplementation((input: unknown) => input),
 }))
 
-// Secrets Manager — chave da CGU para checkSanctions (fiscal-digital#239)
+// SSM — chave da CGU para checkSanctions (fiscal-digital#239)
 const mockSmSend = jest.fn()
-jest.mock('@aws-sdk/client-secrets-manager', () => ({
-  SecretsManagerClient: jest.fn().mockImplementation(() => ({ send: mockSmSend })),
-  GetSecretValueCommand: jest.fn().mockImplementation((input: unknown) => input),
+jest.mock('@aws-sdk/client-ssm', () => ({
+  SSMClient: jest.fn().mockImplementation(() => ({ send: mockSmSend })),
+  GetParameterCommand: jest.fn().mockImplementation((input: unknown) => input),
 }))
 
 // Mocks for fiscais and skills from engine
@@ -579,14 +579,14 @@ test('batch inteiro falhando lança em vez de retornar batchItemFailures (#175)'
 // ---------------------------------------------------------------------------
 
 describe('checkSanctions no contexto dos Fiscais (#239)', () => {
-  const ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:fiscaldigital-cgu-prod-abc'
+  const NAME = '/fiscal-digital/prod/cgu'
 
   beforeEach(() => {
     _resetCguCacheForTests()
     mockSmSend.mockReset()
   })
   afterEach(() => {
-    delete process.env.CGU_SECRET_ARN
+    delete process.env.CGU_PARAM_NAME
   })
 
   async function checkSanctionsDoContexto() {
@@ -596,18 +596,18 @@ describe('checkSanctions no contexto dos Fiscais (#239)', () => {
     return ctx.checkSanctions as (input: { cnpj: string }) => Promise<unknown>
   }
 
-  test('com CGU_SECRET_ARN, a consulta CEIS/CNEP sai com a chave do secret', async () => {
-    process.env.CGU_SECRET_ARN = ARN
-    mockSmSend.mockResolvedValue({ SecretString: JSON.stringify({ api_key: 'chave-cgu' }) })
+  test('com CGU_PARAM_NAME, a consulta CEIS/CNEP sai com a chave do parametro', async () => {
+    process.env.CGU_PARAM_NAME = NAME
+    mockSmSend.mockResolvedValue({ Parameter: { Value: JSON.stringify({ api_key: 'chave-cgu' }) } })
 
     const checkSanctions = await checkSanctionsDoContexto()
     await checkSanctions({ cnpj: '12.345.678/0001-90' })
 
-    expect(mockSmSend).toHaveBeenCalledWith(expect.objectContaining({ SecretId: ARN }))
+    expect(mockSmSend).toHaveBeenCalledWith(expect.objectContaining({ Name: NAME, WithDecryption: true }))
     expect(mockCheckSanctionsExecute).toHaveBeenCalledWith({ cnpj: '12.345.678/0001-90', apiKey: 'chave-cgu' })
   })
 
-  test('sem CGU_SECRET_ARN, consulta sem chave — o engine avisa e não acusa ninguém', async () => {
+  test('sem CGU_PARAM_NAME, consulta sem chave — o engine avisa e não acusa ninguém', async () => {
     const checkSanctions = await checkSanctionsDoContexto()
     await checkSanctions({ cnpj: '12.345.678/0001-90' })
 

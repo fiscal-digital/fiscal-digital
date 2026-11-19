@@ -1,28 +1,28 @@
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager'
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm'
 import { createLogger, getCity, type Finding } from '@fiscal-digital/engine'
 
 const logger = createLogger('web-revalidate')
-const secretsClient = new SecretsManagerClient({})
+const ssmClient = new SSMClient({})
 
 // Locales do site — espelha `fiscal-digital-web/i18n/routing.ts`. Desde o
 // web#81, `/pt` e `/en` são só redirects 308: revalidar esses paths não
 // purgava página nenhuma.
 export const WEB_LOCALES = ['pt-br', 'en-us'] as const
 
-// Token lido do Secrets Manager pelo ARN (fiscal-digital#240) — o valor não
-// fica mais na env da Lambda. Cache por container; null = já tentou e falhou.
+// Token lido do SSM Parameter Store pelo nome (fiscal-digital#240; saiu do
+// Secrets Manager em 2026-11-19) — o valor não fica na env da Lambda. Cache por container; null = já tentou e falhou.
 let cachedSecret: string | null | undefined
 
 async function loadRevalidateSecret(): Promise<string | null> {
   if (cachedSecret !== undefined) return cachedSecret
-  const arn = process.env.WEB_REVALIDATE_SECRET_ARN
-  if (!arn) {
+  const name = process.env.WEB_REVALIDATE_PARAM_NAME
+  if (!name) {
     cachedSecret = null
     return null
   }
   try {
-    const res = await secretsClient.send(new GetSecretValueCommand({ SecretId: arn }))
-    cachedSecret = res.SecretString || null
+    const res = await ssmClient.send(new GetParameterCommand({ Name: name, WithDecryption: true }))
+    cachedSecret = res.Parameter?.Value || null
   } catch (err) {
     logger.warn('falha ao ler o token de revalidate', {
       err: err instanceof Error ? err.message : String(err),
@@ -46,7 +46,7 @@ const REVALIDATE_TIMEOUT_MS = 5_000
  * (revalidate ISR) para ≤5s.
  *
  * Best-effort:
- * - Sem token (WEB_REVALIDATE_SECRET_ARN ausente ou ilegível) → loga e retorna
+ * - Sem token (WEB_REVALIDATE_PARAM_NAME ausente ou ilegível) → loga e retorna
  * - Falha de rede / 4xx / 5xx → loga e retorna (publish já é sucesso)
  * - Timeout 5s — não bloqueia processamento de SQS
  *

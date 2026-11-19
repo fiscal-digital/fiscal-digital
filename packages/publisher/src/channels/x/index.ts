@@ -1,33 +1,32 @@
 ﻿import { createLogger } from '@fiscal-digital/engine'
 
 const logger = createLogger('x')
-import {
-  SecretsManagerClient,
-  GetSecretValueCommand,
-} from '@aws-sdk/client-secrets-manager'
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm'
 import type { Finding } from '@fiscal-digital/engine'
 import type { PublishChannel, PublishResult } from '../types'
 import { ChannelDryRunError } from '../types'
 import { XClient, type XCredentials } from './client'
 import { formatTweet, tweetLength } from './format'
 
-const X_SECRET_ID = 'fiscaldigital-x-prod'
+// SSM SecureString (saiu do Secrets Manager em 2026-11-19 por custo)
+const X_PARAM_NAME = '/fiscal-digital/prod/x'
 const X_USERNAME = 'LiFiscalDigital'
 
 let cachedClient: XClient | null = null
-const secretsClient = new SecretsManagerClient({})
+const ssmClient = new SSMClient({})
 
 async function loadClient(): Promise<XClient> {
   if (cachedClient) return cachedClient
 
-  const res = await secretsClient.send(
-    new GetSecretValueCommand({ SecretId: X_SECRET_ID }),
+  const res = await ssmClient.send(
+    new GetParameterCommand({ Name: X_PARAM_NAME, WithDecryption: true }),
   )
-  if (!res.SecretString) {
-    throw new Error(`Secret ${X_SECRET_ID} vazio ou binário`)
+  const raw = res.Parameter?.Value
+  if (!raw) {
+    throw new Error(`Parametro ${X_PARAM_NAME} vazio`)
   }
 
-  const creds = JSON.parse(res.SecretString) as XCredentials
+  const creds = JSON.parse(raw) as XCredentials
   cachedClient = new XClient(creds, X_USERNAME)
   return cachedClient
 }

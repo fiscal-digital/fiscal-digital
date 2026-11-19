@@ -34,7 +34,7 @@ resource "aws_lambda_function" "analyzer" {
   environment {
     variables = merge(local.common_env, {
       ALERTS_QUEUE_URL = var.alerts_queue_url
-      CGU_SECRET_ARN   = var.cgu_secret_arn
+      CGU_PARAM_NAME   = var.cgu_param_name
     })
   }
 
@@ -62,7 +62,7 @@ resource "aws_lambda_function" "publisher" {
       REDDIT_ENABLED = var.reddit_enabled
       REDDIT_DRY_RUN = var.reddit_dry_run
       # ISR-WEB-002: token Bearer pro hook /api/revalidate (best-effort).
-      WEB_REVALIDATE_SECRET_ARN = var.web_revalidate_secret_arn
+      WEB_REVALIDATE_PARAM_NAME = var.web_revalidate_param_name
     })
   }
 

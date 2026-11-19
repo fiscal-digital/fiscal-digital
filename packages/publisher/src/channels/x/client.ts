@@ -2,7 +2,7 @@ import { TwitterApi, ApiResponseError } from 'twitter-api-v2'
 import { RateLimitError } from '../types'
 
 /**
- * OAuth 1.0a User Context — schema do secret fiscaldigital-x-prod.
+ * OAuth 1.0a User Context — schema do parametro SSM /fiscal-digital/prod/x.
  *
  * 4 keys obtidas em developer.x.com → app → Keys and tokens:
  *   - Consumer Keys (API Key + API Key Secret)
