@@ -113,25 +113,6 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
       },
       {
-        # Legado: o token saiu para o SSM (2026-11-19). Fica so para o apply que
-        # apaga o secret antigo; remover no PR seguinte.
-        Action = [
-          "secretsmanager:DescribeSecret",
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:GetResourcePolicy",
-          "secretsmanager:PutSecretValue",
-          "secretsmanager:UpdateSecret",
-          "secretsmanager:UpdateSecretVersionStage",
-          "secretsmanager:DeleteSecret",
-          "secretsmanager:ListSecretVersionIds",
-          "secretsmanager:TagResource",
-          "secretsmanager:UntagResource",
-        ]
-        Effect   = "Allow"
-        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:fiscal-digital-revalidate-token-prod*"
-        Sid      = "SecretsManagerWebRevalidate"
-      },
-      {
         # Resource = "*" obrigatório — iam:List* não suporta resource-level (ver IAM Action Reference)
         Action   = ["iam:ListOpenIDConnectProviders"]
         Effect   = "Allow"
