@@ -332,6 +332,7 @@ resource "aws_ssm_parameter" "web_revalidate" {
   name        = "/fiscal-digital/prod/web-revalidate-token"
   description = "Token simétrico para POST /api/revalidate da Lambda ISR. Publisher usa o mesmo valor pra autenticar revalidação on-demand."
   type        = "SecureString"
+  key_id      = data.aws_kms_key.main.arn # CMK do projeto (CKV_AWS_337); publisher ja tem kms:Decrypt nela
   value       = random_password.web_revalidate_token.result
 }
 
