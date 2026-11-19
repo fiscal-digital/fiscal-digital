@@ -547,9 +547,20 @@ nas mesmas redes com o mesmo alcance do alerta original.
 
 ## Secrets de Produção
 
+SSM Parameter Store (SecureString, chave `aws/ssm`; saíram do Secrets Manager em 2026-11-19 por custo):
+
+| Parâmetro | Campos |
+|---|---|
+| `/fiscal-digital/prod/x` | `api_key`, `api_secret`, `access_token`, `access_token_secret` (bot: @LiFiscalDigital) |
+| `/fiscal-digital/prod/cgu` | `api_key` (Portal da Transparência; analyzer e supplier-collector) |
+| `/fiscal-digital/prod/web-revalidate-token` | valor cru (Terraform, `modules/web`) |
+
+Leitura: `aws ssm get-parameter --name <nome> --with-decryption --query Parameter.Value --output text`
+
+Secrets Manager:
+
 | Secret | Campos |
 |---|---|
-| `fiscaldigital-x-prod` | `api_key`, `api_secret`, `access_token`, `access_token_secret` (bot: @LiFiscalDigital) |
 | `fiscaldigital-reddit-prod` | `client_id`, `client_secret`, `username`, `password` (bot: Lineu) |
 
 Padrão de leitura:

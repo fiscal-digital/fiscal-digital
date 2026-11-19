@@ -310,7 +310,7 @@ resource "aws_lambda_function" "web_isr" {
       ISR_TAG_TABLE_NAME                  = aws_dynamodb_table.web_isr_tags.name
       # ISR-WEB-002: token simétrico para /api/revalidate. Publisher usa o
       # mesmo secret pra autenticar revalidações on-demand pós-ingestão.
-      WEB_REVALIDATE_SECRET = aws_secretsmanager_secret_version.web_revalidate.secret_string
+      WEB_REVALIDATE_SECRET = random_password.web_revalidate_token.result
     }
   }
 
@@ -319,23 +319,20 @@ resource "aws_lambda_function" "web_isr" {
   }
 }
 
-# ─── Secrets Manager — token /api/revalidate (ISR-WEB-002) ──────────────────
-
-resource "aws_secretsmanager_secret" "web_revalidate" {
-  name                    = "fiscal-digital-revalidate-token-prod"
-  description             = "Token simétrico para POST /api/revalidate da Lambda ISR. Publisher usa o mesmo valor pra autenticar revalidação on-demand."
-  recovery_window_in_days = 7
-  kms_key_id              = data.aws_kms_key.main.arn
-}
+# ─── SSM Parameter Store — token /api/revalidate (ISR-WEB-002) ──────────────
+# Saiu do Secrets Manager em 2026-11-19 (custo): SecureString no tier
+# Standard e gratuito. Mesmo valor (random_password inalterado).
 
 resource "random_password" "web_revalidate_token" {
   length  = 48
   special = false # base64-safe pra header Authorization
 }
 
-resource "aws_secretsmanager_secret_version" "web_revalidate" {
-  secret_id     = aws_secretsmanager_secret.web_revalidate.id
-  secret_string = random_password.web_revalidate_token.result
+resource "aws_ssm_parameter" "web_revalidate" {
+  name        = "/fiscal-digital/prod/web-revalidate-token"
+  description = "Token simétrico para POST /api/revalidate da Lambda ISR. Publisher usa o mesmo valor pra autenticar revalidação on-demand."
+  type        = "SecureString"
+  value       = random_password.web_revalidate_token.result
 }
 
 resource "aws_lambda_function_url" "web_isr" {

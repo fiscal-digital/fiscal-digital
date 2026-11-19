@@ -1,15 +1,13 @@
 data "aws_caller_identity" "current" {}
 
-# ISR revalidate token — criado em terraform/modules/web/main.tf
-data "aws_secretsmanager_secret" "web_revalidate" {
-  name = "fiscal-digital-revalidate-token-prod"
-}
-
-# CGU Portal da Transparencia secret — gerenciado fora do terraform (rotacao manual).
-# Lookup por nome para que o GitHub Actions role possa ler o ARN real sem
-# hardcoding e sem expor account ID em repo OSS.
-data "aws_secretsmanager_secret" "cgu" {
-  name = "fiscaldigital-cgu-prod"
+# Parametros SSM (SecureString, chave aws/ssm) lidos pelas Lambdas. Sairam do
+# Secrets Manager em 2026-11-19 (custo). A chave AWS-managed nao exige
+# kms:Decrypt na identity policy.
+locals {
+  ssm_param_arn_prefix = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter"
+  cgu_param_arn        = "${local.ssm_param_arn_prefix}/fiscal-digital/prod/cgu"
+  x_param_arn          = "${local.ssm_param_arn_prefix}/fiscal-digital/prod/x"
+  revalidate_param_arn = "${local.ssm_param_arn_prefix}/fiscal-digital/prod/web-revalidate-token"
 }
 
 # ─── GitHub Actions OIDC ─────────────────────────────────────────────────────
@@ -115,23 +113,8 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
       },
       {
-        # GetResourcePolicy necessário para o data source do Terraform ler a secret.
-        # Inclui CGU secret (fiscaldigital-cgu-prod) para que o collectors repo
-        # possa resolver o ARN via data source no terraform plan/apply (MIT-02/EVO-002).
-        Action = [
-          "secretsmanager:DescribeSecret",
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:GetResourcePolicy",
-        ]
-        Effect = "Allow"
-        Resource = [
-          data.aws_secretsmanager_secret.cgu.arn,
-        ]
-        Sid = "SecretsManagerRead"
-      },
-      {
-        # ISR revalidate token (ISR-WEB-002) — Terraform precisa gerenciar
-        # o secret + a versão (PutSecretValue) + tags + delete para refactors.
+        # Legado: o token saiu para o SSM (2026-11-19). Fica so para o apply que
+        # apaga o secret antigo; remover no PR seguinte.
         Action = [
           "secretsmanager:DescribeSecret",
           "secretsmanager:GetSecretValue",
@@ -145,7 +128,7 @@ resource "aws_iam_role_policy" "github_actions" {
           "secretsmanager:UntagResource",
         ]
         Effect   = "Allow"
-        Resource = data.aws_secretsmanager_secret.web_revalidate.arn
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:fiscal-digital-revalidate-token-prod*"
         Sid      = "SecretsManagerWebRevalidate"
       },
       {
@@ -596,11 +579,9 @@ resource "aws_iam_role_policy" "analyzer" {
       },
       {
         Effect = "Allow"
-        Action = ["secretsmanager:GetSecretValue"]
+        Action = ["ssm:GetParameter"]
         # CGU: chave do Portal da Transparência para checkSanctions (#239)
-        Resource = [
-          data.aws_secretsmanager_secret.cgu.arn,
-        ]
+        Resource = [local.cgu_param_arn]
       },
       {
         Effect   = "Allow"
@@ -680,10 +661,16 @@ resource "aws_iam_role_policy" "publisher" {
         Effect = "Allow"
         Action = ["secretsmanager:GetSecretValue"]
         Resource = [
-          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:fiscaldigital-x-prod*",
           "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:fiscaldigital-reddit-prod*",
-          # Token de /api/revalidate, lido pelo ARN em vez da env (#240)
-          data.aws_secretsmanager_secret.web_revalidate.arn,
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = ["ssm:GetParameter"]
+        Resource = [
+          local.x_param_arn,
+          # Token de /api/revalidate, lido pelo nome em vez da env (#240)
+          local.revalidate_param_arn,
         ]
       },
       {
@@ -935,17 +922,6 @@ resource "aws_iam_role_policy" "github_actions_collectors" {
           "lambda:UpdateEventSourceMapping",
         ]
         Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:event-source-mapping:*"
-      },
-      {
-        # GetSecretValue para o secret CGU no plano e no runtime do collector.
-        Sid    = "SecretsManagerReadCgu"
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:DescribeSecret",
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:GetResourcePolicy",
-        ]
-        Resource = data.aws_secretsmanager_secret.cgu.arn
       },
       {
         # Resource = "*" obrigatório — iam:List* não suporta resource-level

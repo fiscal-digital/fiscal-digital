@@ -42,8 +42,8 @@ module "lambdas" {
   x_dry_run                 = var.x_dry_run
   reddit_enabled            = var.reddit_enabled
   reddit_dry_run            = var.reddit_dry_run
-  web_revalidate_secret_arn = module.web.revalidate_secret_arn
-  cgu_secret_arn            = module.iam.cgu_secret_arn
+  web_revalidate_param_name = module.web.revalidate_param_name
+  cgu_param_name            = local.cgu_param_name
 }
 
 module "eventbridge" {
@@ -184,4 +184,10 @@ resource "aws_ssm_parameter" "enable_fiscal_fornecedores_v2" {
 import {
   to = module.web.aws_s3_bucket.web
   id = "fiscal-digital-web-prod"
+}
+
+# CGU Portal da Transparencia: SSM SecureString gerenciado fora do terraform
+# (rotacao manual). Saiu do Secrets Manager em 2026-11-19 (custo).
+locals {
+  cgu_param_name = "/fiscal-digital/prod/cgu"
 }

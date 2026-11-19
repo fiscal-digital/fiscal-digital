@@ -3,8 +3,9 @@ variable "analyzer_role_arn" {
 }
 
 # fiscal-digital#239 — chave CGU para checkSanctions no analyzer
-variable "cgu_secret_arn" {
-  type = string
+variable "cgu_param_name" {
+  type        = string
+  description = "Parametro SSM (SecureString) com a chave da CGU."
 }
 
 variable "publisher_role_arn" {
@@ -56,8 +57,8 @@ variable "reddit_dry_run" {
   default = "true"
 }
 
-# ISR-WEB-002 — token simétrico /api/revalidate. Só o ARN chega à Lambda (#240).
-variable "web_revalidate_secret_arn" {
+# ISR-WEB-002 — token simétrico /api/revalidate. Só o nome do parametro chega à Lambda (#240).
+variable "web_revalidate_param_name" {
   type        = string
-  description = "ARN do secret com o token Bearer de POST /api/revalidate na Lambda ISR."
+  description = "Parametro SSM (SecureString) com o token Bearer de POST /api/revalidate na Lambda ISR."
 }
