@@ -163,33 +163,12 @@ resource "aws_cloudwatch_metric_alarm" "publisher_errors" {
   }
 }
 
-# ── AWS Budget — $10 alerta / $20 bloqueio ────────────────────────────────────
-# Nota: bloqueio real de gastos requer AWS Organizations + SCP.
-# Esta config notifica por email em 50% ($10) e 100% ($20) do limite.
-
-resource "aws_budgets_budget" "fiscal_digital" {
-  name         = "fiscal-digital-monthly-prod"
-  budget_type  = "COST"
-  limit_amount = "20"
-  limit_unit   = "USD"
-  time_unit    = "MONTHLY"
-
-  notification {
-    comparison_operator        = "GREATER_THAN"
-    threshold                  = 50 # 50% de $20 = $10
-    threshold_type             = "PERCENTAGE"
-    notification_type          = "ACTUAL"
-    subscriber_email_addresses = [var.alert_email]
-  }
-
-  notification {
-    comparison_operator        = "GREATER_THAN"
-    threshold                  = 100 # 100% = $20
-    threshold_type             = "PERCENTAGE"
-    notification_type          = "ACTUAL"
-    subscriber_email_addresses = [var.alert_email]
-  }
-}
+# ── AWS Budget ───────────────────────────────────────────────────────────────
+# Removido em 2026-11-27: o budget nao tinha filtro e media a conta inteira
+# (US$ 44 em novembro contra o limite de US$ 20), alertando todo mes. O budget
+# total da conta (criado fora deste repo) cobre o custo. Um budget proprio do
+# Fiscal Digital volta quando os recursos tiverem a tag Project (em outubro,
+# so US$ 5,27 do custo da conta tinham Project=fiscal-digital).
 
 # ── Alarmes de Errors por Lambda (#145) ──────────────────────────────────────
 #
